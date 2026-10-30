@@ -30,6 +30,7 @@ import { getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFa
 import { VicoLogo } from '@client/components/VicoLogo';
 import { getFallbackBootstrap } from '@client/lib/clientFallbackStore';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
+import { fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import {
   formatDateVn,
   formatVnd,
@@ -136,12 +137,23 @@ export function LogsQcTraceTab({
 
   const reloadLogs = async () => {
     try {
+      const sbLogs = await fetchLogsFromSupabase();
+      if (sbLogs && sbLogs.length > 0) {
+        setLogs(sbLogs);
+        return;
+      }
       const res = await apiClient.get<{ items: ProductionLogDto[] }>('/logs?includeVoided=1');
       setLogs(res.items || []);
     } catch {
       setLogs(bootstrap.recentLogs || []);
     }
   };
+
+  useEffect(() => {
+    if (bootstrap?.recentLogs) {
+      setLogs(bootstrap.recentLogs);
+    }
+  }, [bootstrap?.recentLogs]);
 
   const reloadQc = async () => {
     try {
@@ -292,7 +304,26 @@ export function LogsQcTraceTab({
   useEffect(() => {
     void reloadLogs();
     void reloadQc();
-  }, []);
+
+    const handleRealtimeUpdate = () => {
+      void reloadLogs();
+      if (onRefreshBootstrap) void onRefreshBootstrap();
+    };
+
+    window.addEventListener('gcck:report-submitted', handleRealtimeUpdate);
+    window.addEventListener('storage', handleRealtimeUpdate);
+
+    const unsubSupabase = subscribeSupabaseLogChanges(() => {
+      void reloadLogs();
+      if (onRefreshBootstrap) void onRefreshBootstrap();
+    });
+
+    return () => {
+      window.removeEventListener('gcck:report-submitted', handleRealtimeUpdate);
+      window.removeEventListener('storage', handleRealtimeUpdate);
+      if (unsubSupabase) unsubSupabase();
+    };
+  }, [onRefreshBootstrap]);
 
   useEffect(() => {
     if (subView === 'TRACE' && !traceData && tracePoInput) {

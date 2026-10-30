@@ -18,6 +18,7 @@ import type {
   WorkerDto,
 } from '@shared/types';
 import seedData from '../../../data/seed_gcck_1233.json';
+import { pushLogToSupabase } from './supabaseClient';
 
 export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';
@@ -196,6 +197,28 @@ export function saveClientStoredLog(log: any): void {
   }
 }
 
+export function getAllFallbackLogs(): any[] {
+  const stored = getClientStoredLogs();
+  const seed = (seedData.recentLogs || []) as any[];
+  const seen = new Set<string>();
+  const list: any[] = [];
+  for (const l of stored) {
+    const key = String(l.recordUid || l.id);
+    if (!seen.has(key)) {
+      seen.add(key);
+      list.push(l);
+    }
+  }
+  for (const l of seed) {
+    const key = String(l.recordUid || l.id || l.rowNum);
+    if (!seen.has(key)) {
+      seen.add(key);
+      list.push(l);
+    }
+  }
+  return list;
+}
+
 const LOCAL_HANDOVERS_KEY = 'GCCK_LOCAL_HANDOVERS_V1';
 
 export const INITIAL_HANDOVERS: HandoverSlipRow[] = [
@@ -290,9 +313,7 @@ export function saveFallbackHandover(row: HandoverSlipRow): void {
 
 export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): BootstrapPayload {
   const user = currentUser || getFallbackUser('NV00214');
-  const storedLogs = getClientStoredLogs();
-  const seedLogs = (seedData.recentLogs || []) as any[];
-  const combinedLogs = [...storedLogs, ...seedLogs];
+  const combinedLogs = getAllFallbackLogs();
 
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -452,26 +473,74 @@ export async function submitDirectToGoogleAppsScript(
     console.warn('Direct GAS sync warning (stored offline):', gasErr);
   }
 
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} ${hours}:${minutes}`;
+
   const mockLogDto: any = {
     id: Date.now(),
     recordUid,
-    workDate: payload.workDate || todayStr,
-    workerId: payload.workerId,
-    workerName: worker.name,
-    customer: op?.customer || 'Vico - Nội bộ / Khách lẻ',
-    productName: op?.productName || 'Sản phẩm GCCK',
-    poId: payload.poId || 'PO485-01',
-    opName: op?.opName || payload.ncId || 'Gia công',
-    machineName: machName,
-    okQty: payload.okQty || 0,
-    reworkQty: payload.reworkQty || 0,
-    scrapQty,
-    income: turnIncome,
-    shiftType: payload.shiftType || 'Ca 1',
     createdAt: new Date().toISOString(),
+    timeStr,
+    workDate: payload.workDate || todayStr,
+    shiftType: payload.shiftType || 'Ca 1 (Sáng 06h-14h)',
+    startTime: payload.startTime || '07:30',
+    endTime: payload.endTime || '16:30',
+    overtimeMinutes: Number(payload.overtimeMinutes || 0),
+    isSunday: payload.isSunday ? 1 : 0,
+    isLightsOut: payload.isLightsOut ? 1 : 0,
+    workerId: payload.workerId,
+    workerName: worker.name || (payload as any).workerName || 'Công nhân GCCK',
+    machineId: (payload as any).machineId || 'M01',
+    machineName: machName,
+    machineMode: payload.machineMode || 'FIRST',
+    poId: payload.poId || 'PO-THEO-KH',
+    spId: (payload as any).spId || op?.spId || null,
+    customer: (payload as any).customer || op?.customer || 'Vico - Nội bộ / Khách lẻ',
+    productName: (payload as any).productName || op?.productName || 'Sản phẩm GCCK',
+    ncId: payload.ncId || op?.ncId || 'NC001',
+    opName: (payload as any).opName || op?.opName || payload.ncId || 'Gia công',
+    stage: op?.stage || 'End',
+    stepOrder: op?.stepOrder || 1,
+    isFinalOp: op?.isFinalOp || 1,
+    stdSeconds: op?.stdSeconds || 1800,
+    okQty: Number(payload.okQty || 0),
+    reworkQty: Number(payload.reworkQty || 0),
+    scrapQty,
+    defectType: scrapQty > 0 ? (payload.defectType || 'Không rõ lỗi') : 'Không có lỗi',
+    damageValue: Number(payload.damageValue || 0),
+    stopMinutes: Number(payload.stopMinutes || 0),
+    stopReason: payload.stopReason || 'Không có dừng máy',
+    toolCode: payload.toolCode || '',
+    edgesUsed,
+    selfCheckOk: 1,
+    qcStatus: 'PASSED',
+    pieceWage: turnIncome,
+    otBonusWage: 0,
+    waitWage: 0,
+    mealAllowance: 0,
+    scrapPenalty: 0,
+    income: turnIncome,
+    directPieceIncome: turnIncome,
+    batchCost: turnIncome,
+    kpiPct: 100,
+    kpiStatus: 'Đạt 100% ĐM',
+    photoUrl: payload.photoBase64 || '',
+    handoverNote: (payload as any).handoverNote || '',
+    materialLot: payload.materialLot || '',
+    note: (payload as any).note || payload.handoverNote || '',
+    isVoided: 0,
   };
 
   saveClientStoredLog(mockLogDto);
+
+  // Sync to Supabase Cloud if configured
+  void pushLogToSupabase(mockLogDto);
+
+  // Broadcast event across UI components
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('gcck:report-submitted', { detail: mockLogDto }));
+  }
 
   return {
     success: true,

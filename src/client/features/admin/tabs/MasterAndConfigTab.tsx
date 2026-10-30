@@ -26,6 +26,8 @@ import {
   Upload,
   Users,
   Wrench,
+  Database,
+  Zap,
 } from 'lucide-react';
 import type {
   CuttingTool,
@@ -44,6 +46,11 @@ import {
   parseOperationsWorkbookBuffer,
 } from '@client/lib/excelService';
 import { formatDurationSec, formatNumber, formatVnd } from '@client/lib/formatters';
+import {
+  getStoredSupabaseConfig,
+  saveStoredSupabaseConfig,
+  isSupabaseConnected,
+} from '@client/lib/supabaseClient';
 import {
   Badge,
   Button,
@@ -721,6 +728,22 @@ export function MasterAndConfigTab({
     MANAGER_CHAT_ID: String(bootstrap.config?.MANAGER_CHAT_ID || ''),
   });
   const [outboxItems, setOutboxItems] = useState<SyncOutboxItem[]>([]);
+  const [supabaseUrl, setSupabaseUrl] = useState(() => getStoredSupabaseConfig().url);
+  const [supabaseKey, setSupabaseKey] = useState(() => getStoredSupabaseConfig().anonKey);
+  const [showSupabaseKey, setShowSupabaseKey] = useState(false);
+  const [supabaseConnected, setSupabaseConnected] = useState(() => isSupabaseConnected());
+
+  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    saveStoredSupabaseConfig(supabaseUrl, supabaseKey);
+    const connected = isSupabaseConnected();
+    setSupabaseConnected(connected);
+    if (connected) {
+      toast.success('Đã lưu cấu hình Supabase Cloud! Dữ liệu được đồng bộ realtime đa thiết bị.');
+    } else {
+      toast.warning('Đã xóa cấu hình Supabase (hệ thống sẽ lưu tạm cục bộ offline).');
+    }
+  };
   const [flushingOutbox, setFlushingOutbox] = useState(false);
 
   const loadAdminConfigAndOutbox = async () => {
@@ -1653,6 +1676,109 @@ export function MasterAndConfigTab({
             </Card>
           ) : (
             <>
+              {/* SUPABASE CLOUD SYNC CARD */}
+              <Card className="border-l-4 border-l-indigo-600 bg-white shadow-sm">
+                <form noValidate onSubmit={handleSaveSupabaseConfig} className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200">
+                        <Zap className="h-4 w-4 fill-indigo-500 text-indigo-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">
+                          Cơ Sở Dữ Liệu Đám Mây Supabase (Đồng Bộ Đa Thiết Bị &amp; GitHub Pages)
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                          Kết nối Database PostgreSQL đám mây miễn phí để đồng bộ Báo cáo sản lượng giữa Điện thoại công nhân và Máy tính Quản đốc.
+                        </p>
+                      </div>
+                    </div>
+                    <div>
+                      {supabaseConnected ? (
+                        <Badge variant="success">● Đã kết nối Supabase Cloud</Badge>
+                      ) : (
+                        <Badge variant="warning">○ Chưa cấu hình (Lưu trữ cục bộ Offline)</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">
+                        Supabase Project URL *
+                      </label>
+                      <input
+                        type="url"
+                        value={supabaseUrl}
+                        onChange={(e) => setSupabaseUrl(e.target.value)}
+                        placeholder="https://xyzcompany.supabase.co"
+                        className="font-mono-num min-h-[40px] w-full rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/15"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-slate-700">
+                        Supabase Anon Key (Public Key) *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showSupabaseKey ? 'text' : 'password'}
+                          value={supabaseKey}
+                          onChange={(e) => setSupabaseKey(e.target.value)}
+                          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI..."
+                          className="font-mono-num min-h-[40px] w-full rounded-lg border border-slate-300 bg-white pl-3 pr-10 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/15"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSupabaseKey((v) => !v)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900"
+                          aria-label="Ẩn/Hiện Supabase Key"
+                        >
+                          {showSupabaseKey ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <p className="text-[11px] text-slate-500">
+                      💡 <strong>Mẹo:</strong> File khởi tạo bảng CSDL có sẵn tại <code className="rounded bg-slate-100 px-1 font-mono-num text-slate-700 font-bold">supabase_schema.sql</code> ở thư mục gốc mã nguồn.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {supabaseConnected && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setSupabaseUrl('');
+                            setSupabaseKey('');
+                            saveStoredSupabaseConfig('', '');
+                            setSupabaseConnected(false);
+                            toast.warning('Đã ngắt kết nối Supabase Cloud.');
+                          }}
+                        >
+                          Ngắt kết nối
+                        </Button>
+                      )}
+                      <Button
+                        type="submit"
+                        variant="primary"
+                        size="sm"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                      >
+                        <Save className="h-4 w-4" />
+                        Lưu Cấu Hình Supabase
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+              </Card>
+
               {/* DATABASE BACKUP CARD */}
               <Card className="border-l-4 border-l-emerald-600 bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-4">

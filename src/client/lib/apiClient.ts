@@ -1,4 +1,5 @@
 import {
+  getAllFallbackLogs,
   getFallbackBootstrap,
   getFallbackHandovers,
   getFallbackSession,
@@ -173,6 +174,12 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   }
   if (norm.includes('/costing')) {
     return FALLBACK_PRODUCTS as unknown as T;
+  }
+  if (norm.includes('/logs')) {
+    if (options.method === 'PATCH' || options.method === 'DELETE') {
+      return { success: true } as unknown as T;
+    }
+    return { items: getAllFallbackLogs() } as unknown as T;
   }
   if (norm.includes('/qc/inspections')) {
     return [] as unknown as T;
