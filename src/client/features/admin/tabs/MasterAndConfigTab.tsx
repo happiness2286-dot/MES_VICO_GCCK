@@ -28,7 +28,10 @@ import {
   Wrench,
   Database,
   Zap,
+  Copy,
+  Smartphone,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import type {
   CuttingTool,
   MachineInfo,
@@ -50,6 +53,7 @@ import {
   getStoredSupabaseConfig,
   saveStoredSupabaseConfig,
   isSupabaseConnected,
+  generateSupabaseConnectUrl,
 } from '@client/lib/supabaseClient';
 import {
   Badge,
@@ -1775,6 +1779,63 @@ export function MasterAndConfigTab({
                         Lưu Cấu Hình Supabase
                       </Button>
                     </div>
+                  </div>
+
+                  {/* QR Code and 1-Click Connect for Worker Mobile Phones */}
+                  {supabaseUrl && supabaseKey && (
+                    <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4">
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div className="rounded-xl border border-slate-300 bg-white p-2.5 shadow-sm shrink-0">
+                          <QRCodeSVG
+                            value={generateSupabaseConnectUrl(supabaseUrl, supabaseKey)}
+                            size={140}
+                          />
+                        </div>
+                        <div className="space-y-2 text-center sm:text-left">
+                          <div className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2 py-0.5 text-xs font-bold text-white">
+                            <Smartphone className="h-3.5 w-3.5" />
+                            <span>Mã QR Kết Nối Tự Động Điện Thoại Công Nhân</span>
+                          </div>
+                          <p className="text-xs font-medium text-slate-700 leading-relaxed">
+                            Mở máy ảnh (Camera) trên bất kỳ điện thoại công nhân nào và quét mã QR này. Điện thoại sẽ tự động kết nối Supabase Cloud — Khi công nhân gửi báo cáo ca, quản đốc trên PC sẽ nhận được số liệu ngay lập tức!
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 pt-1 justify-center sm:justify-start">
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => {
+                                const link = generateSupabaseConnectUrl(supabaseUrl, supabaseKey);
+                                void navigator.clipboard.writeText(link);
+                                toast.success('Đã sao chép link kết nối Cloud để gửi qua Zalo xưởng!');
+                              }}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              <span>Sao chép link gửi Zalo xưởng</span>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Local Network Wi-Fi Info */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-xs text-blue-900">
+                    <div>
+                      <strong>🌐 Hoặc kết nối qua Wi-Fi Xưởng:</strong> Trên điện thoại kết nối cùng Wi-Fi xưởng, mở trình duyệt gõ: <code className="rounded bg-white px-2 py-0.5 font-mono-num font-bold text-blue-700">http://192.168.1.124:5173</code> (dữ liệu ghi trực tiếp vào máy chủ PC này).
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        void navigator.clipboard.writeText('http://192.168.1.124:5173');
+                        toast.info('Đã sao chép địa chỉ Wi-Fi xưởng!');
+                      }}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Sao chép IP</span>
+                    </Button>
                   </div>
                 </form>
               </Card>

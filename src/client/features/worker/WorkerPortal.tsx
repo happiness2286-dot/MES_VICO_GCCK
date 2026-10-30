@@ -61,7 +61,8 @@ import {
   formatNumber,
   formatVnd,
 } from '../../lib/formatters';
-import { navigateTo } from '../../lib/navigation';
+import { isStaticHost, navigateTo } from '../../lib/navigation';
+import { isSupabaseConnected, saveStoredSupabaseConfig } from '../../lib/supabaseClient';
 import {
   flushOfflineOutbox,
   generateIdempotentRecordUid,
@@ -70,7 +71,7 @@ import {
   submitReportWithOfflineFallback,
   subscribeOfflineOutbox,
 } from '../../lib/offlineOutbox';
-import { Badge, Button, Card, useToast } from '../../components/ui/IndustrialPrimitives';
+import { Badge, Button, Card, Modal, useToast } from '../../components/ui/IndustrialPrimitives';
 import { QrScannerModal, SampleQrPreset } from './QrScannerModal';
 import { PickerOptionItem, SearchablePickerSheet } from './SearchablePickerSheet';
 import { WorkerGuideModal } from './WorkerGuideModal';
@@ -245,6 +246,9 @@ export function WorkerPortal() {
   const [ordersFilter, setOrdersFilter] = useState<'ALL' | 'PENDING_FAI' | 'SCHEDULE'>('ALL');
   const [ordersSearch, setOrdersSearch] = useState<string>('');
   const initializedSelectionRef = useRef<boolean>(false);
+  const [cloudConnected, setCloudConnected] = useState<boolean>(() => isSupabaseConnected());
+  const [cloudModalOpen, setCloudModalOpen] = useState<boolean>(false);
+  const [cloudInputLink, setCloudInputLink] = useState<string>('');
 
   // Subscribe online/offline & outbox
   useEffect(() => {
@@ -485,6 +489,24 @@ export function WorkerPortal() {
 
   const handleQrDetected = useCallback(
     (rawQr: string) => {
+      // 1. Check if this is a Cloud Supabase Connect QR
+      if (rawQr.includes('sb_url=') && rawQr.includes('sb_key=')) {
+        try {
+          const u = new URL(rawQr.startsWith('http') ? rawQr : `https://dummy/${rawQr}`);
+          const sbUrl = u.searchParams.get('sb_url') || '';
+          const sbKey = u.searchParams.get('sb_key') || '';
+          if (sbUrl && sbKey) {
+            saveStoredSupabaseConfig(sbUrl, sbKey);
+            setCloudConnected(true);
+            setCloudModalOpen(false);
+            toast.success('🎉 Kết nối Supabase Cloud thành công! Điện thoại đã được đồng bộ với Quản đốc.');
+            return;
+          }
+        } catch (err) {
+          console.warn('QR cloud parse error:', err);
+        }
+      }
+
       const parsed = parseTravelerQrPayload(rawQr);
       if (!parsed.valid) {
         toast.error(`Mã QR không đúng chuẩn GCCK: "${rawQr}"`);
@@ -960,6 +982,35 @@ export function WorkerPortal() {
     }
   };
 
+  const handleSaveManualCloudConfig = (inputStr: string) => {
+    const trimmed = inputStr.trim();
+    if (!trimmed) {
+      toast.warning('Vui lòng dán link kết nối Cloud do Quản đốc chia sẻ.');
+      return;
+    }
+    try {
+      let sbUrl = '';
+      let sbKey = '';
+      if (trimmed.includes('sb_url=') && trimmed.includes('sb_key=')) {
+        const u = new URL(trimmed.startsWith('http') ? trimmed : `https://dummy/${trimmed}`);
+        sbUrl = u.searchParams.get('sb_url') || '';
+        sbKey = u.searchParams.get('sb_key') || '';
+      }
+
+      if (sbUrl && sbKey) {
+        saveStoredSupabaseConfig(sbUrl, sbKey);
+        setCloudConnected(true);
+        setCloudModalOpen(false);
+        setCloudInputLink('');
+        toast.success('🎉 Kết nối Supabase Cloud thành công! Báo cáo ca sẽ gửi về Quản đốc ngay lập tức.');
+      } else {
+        toast.warning('Link không chứa thông số kết nối hợp lệ. Bạn hãy bấm Quét mã QR từ màn hình Quản đốc.');
+      }
+    } catch {
+      toast.error('Không thể nhận diện đường link kết nối.');
+    }
+  };
+
   const handleToolSwap = async () => {
     if (!toolCode) {
       toast.warning('Vui lòng chọn mã dao cụ trước khi đổi chíp.');
@@ -1231,6 +1282,39 @@ export function WorkerPortal() {
 
       {/* ==================== MAIN CONTENT AREA ==================== */}
       <main className="mx-auto w-full max-w-3xl space-y-3 px-2.5 pt-3 sm:px-4">
+        {/* Device Cloud Connection Status */}
+        {isStaticHost() && !cloudConnected ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 shadow-sm">
+            <div className="flex min-w-0 items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+              <span className="truncate">
+                Chưa kết nối Cloud: Báo cáo chỉ lưu trên máy này và Quản lý chưa nhận được.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCloudModalOpen(true)}
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1 text-xs font-black text-white shadow hover:bg-amber-700"
+            >
+              Kết Nối Cloud Ngay
+            </button>
+          </div>
+        ) : cloudConnected ? (
+          <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-[11px] font-bold text-emerald-800">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              Supabase Cloud: Đang kết nối trực tiếp — Báo cáo gửi về Quản đốc tức thì.
+            </span>
+            <button
+              type="button"
+              onClick={() => setCloudModalOpen(true)}
+              className="text-[10px] text-emerald-700 underline hover:text-emerald-900"
+            >
+              Cấu hình
+            </button>
+          </div>
+        ) : null}
+
         {/* ==================== TAB 1: ⚡ BÁO CÁO SẢN XUẤT ==================== */}
         {activeTab === 'REPORT' && (
           <>
@@ -2896,6 +2980,85 @@ export function WorkerPortal() {
         }}
         onSuccess={() => loadBootstrapData(true)}
       />
+
+      {/* Cloud Supabase Configuration Modal */}
+      <Modal
+        open={cloudModalOpen}
+        onClose={() => setCloudModalOpen(false)}
+        title="📱 Kết Nối Cloud CSDL Supabase"
+        subtitle="Đồng bộ tức thì báo cáo ca giữa điện thoại này và máy tính Quản đốc"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-slate-700">
+            <p className="font-semibold leading-relaxed">
+              Khi chạy trên GitHub Pages, mỗi điện thoại cần kết nối với CSDL Cloud Supabase để Quản lý có thể xem được báo cáo theo thời gian thực (Realtime).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block font-bold text-slate-800">
+              Cách 1: Quét mã QR từ màn hình Quản Đốc (Khuyên dùng)
+            </label>
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+              onClick={() => {
+                setCloudModalOpen(false);
+                setQrModalOpen(true);
+              }}
+            >
+              <QrCode className="h-4 w-4" />
+              <span>Mở Camera Quét Mã QR Cấu Hình</span>
+            </Button>
+            <p className="text-[11px] text-slate-500">
+              Yêu cầu Quản đốc mở tab <strong>Master &amp; Hệ Thống $\rightarrow$ Cấu hình Supabase</strong> và chiếu camera vào mã QR.
+            </p>
+          </div>
+
+          <div className="border-t border-slate-200 pt-3 space-y-2">
+            <label className="block font-bold text-slate-800">
+              Cách 2: Dán đường link do Quản đốc gửi (Zalo)
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={cloudInputLink}
+                onChange={(e) => setCloudInputLink(e.target.value)}
+                placeholder="Dán link chứa sb_url=... vào đây"
+                className="font-mono-num flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none"
+              />
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white font-bold"
+                onClick={() => handleSaveManualCloudConfig(cloudInputLink)}
+              >
+                Lưu
+              </Button>
+            </div>
+          </div>
+
+          {cloudConnected && (
+            <div className="border-t border-slate-200 pt-3 text-center">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  saveStoredSupabaseConfig('', '');
+                  setCloudConnected(false);
+                  toast.warning('Đã ngắt kết nối Cloud Supabase.');
+                }}
+              >
+                Ngắt kết nối Cloud trên máy này
+              </Button>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

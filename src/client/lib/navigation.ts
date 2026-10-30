@@ -56,6 +56,7 @@ export function navigateTo(path: string): void {
       window.location.hash = targetHash;
     }
     window.dispatchEvent(new CustomEvent(NAV_EVENT));
+    try { window.scrollTo(0, 0); } catch {}
     return;
   }
 
@@ -64,6 +65,7 @@ export function navigateTo(path: string): void {
   if (currentFull === fullPath) return;
   window.history.pushState({}, '', fullPath);
   window.dispatchEvent(new CustomEvent(NAV_EVENT));
+  try { window.scrollTo(0, 0); } catch {}
 }
 
 export function useLocationPath(): string {

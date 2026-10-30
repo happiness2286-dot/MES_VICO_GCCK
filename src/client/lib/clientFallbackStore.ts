@@ -20,7 +20,7 @@ import type {
   WorkerDto,
 } from '@shared/types';
 import seedData from '../../../data/seed_gcck_1233.json';
-import { pushLogToSupabase } from './supabaseClient';
+import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 
 export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';
@@ -571,18 +571,35 @@ export async function submitDirectToGoogleAppsScript(
   saveClientStoredLog(mockLogDto);
 
   // Sync to Supabase Cloud if configured
-  void pushLogToSupabase(mockLogDto);
+  let cloudSynced = false;
+  if (isSupabaseConnected()) {
+    try {
+      cloudSynced = await pushLogToSupabase(mockLogDto);
+    } catch (sbErr) {
+      console.warn('Supabase push error:', sbErr);
+    }
+  }
 
   // Broadcast event across UI components
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('gcck:report-submitted', { detail: mockLogDto }));
   }
 
+  const successMessage = cloudSynced
+    ? '✅ Đã lưu và đồng bộ tức thì lên Supabase Cloud (Quản lý thấy ngay)!'
+    : isSupabaseConnected()
+      ? 'Đã lưu vào bộ nhớ máy (Đang thử kết nối lại Supabase Cloud).'
+      : '⚠️ Đã lưu vào bộ nhớ điện thoại này. Chưa đồng bộ về Quản lý do chưa kết nối Supabase Cloud!';
+
+  const warnings = !cloudSynced && !isSupabaseConnected()
+    ? ['⚠️ Máy này chưa kết nối Supabase Cloud. Hãy quét mã QR kết nối từ Quản đốc hoặc mở Wi-Fi xưởng để đồng bộ.']
+    : [];
+
   return {
     success: true,
     deduplicated: false,
-    message: 'Ghi nhận báo cáo thành công vào Nhật Ký Sản Lượng.',
-    warnings: [],
+    message: successMessage,
+    warnings,
     log: mockLogDto,
     payroll: {
       effectiveMachineMode: 'FIRST',

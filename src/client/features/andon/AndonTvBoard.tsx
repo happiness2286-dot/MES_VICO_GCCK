@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertOctagon,
+  ArrowLeft,
   Award,
   Clock,
   Cpu,
@@ -19,6 +20,7 @@ import { removeVietnameseTones } from '@shared/vnSearch';
 import { apiClient } from '../../lib/apiClient';
 import { getFallbackAndonLive } from '../../lib/clientFallbackStore';
 import { formatDateVn, formatNumber } from '../../lib/formatters';
+import { navigateTo } from '../../lib/navigation';
 import { Badge } from '../../components/ui/IndustrialPrimitives';
 
 type AndonDisplayMode = 'ALL_ZONES' | 'CAROUSEL';
@@ -282,8 +284,27 @@ export function AndonTvBoard() {
               </div>
             </div>
 
-            {/* Kiosk Controls */}
+            {/* Kiosk Controls & Fast Navigation */}
             <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => navigateTo('/admin')}
+                className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition-colors hover:border-blue-500 hover:bg-slate-50 hover:text-blue-700"
+                title="Quay lại phân hệ Quản trị Admin"
+              >
+                <ArrowLeft className="h-4 w-4 text-blue-600" />
+                <span>Quản Trị</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigateTo('/worker')}
+                className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm transition-colors hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"
+                title="Về Cổng Báo Cáo Công Nhân"
+              >
+                <span>Cổng Thợ</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() =>

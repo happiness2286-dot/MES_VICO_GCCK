@@ -116,10 +116,21 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
               type="button"
               variant="secondary"
               size="lg"
-              onClick={() => navigateTo('/worker')}
+              onClick={() => navigateTo('/admin?tab=orders')}
+              title="Quay lại phân hệ Quản Trị Admin"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>Quay lại</span>
+              <span>Quản Trị PO</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              onClick={() => navigateTo('/worker')}
+              title="Về Cổng Công Nhân"
+            >
+              <span>Cổng Thợ</span>
             </Button>
 
             {/* Searchable PO Switcher */}

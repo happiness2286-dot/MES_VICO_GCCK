@@ -1,23 +1,76 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionLogDto } from '@shared/types';
+import bundledCloudConfig from '../config/cloudConfig.json';
 
 const STORAGE_KEY_URL = 'GCCK_SUPABASE_URL';
 const STORAGE_KEY_KEY = 'GCCK_SUPABASE_ANON_KEY';
 
 export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
   if (typeof window === 'undefined') {
-    return { url: '', anonKey: '' };
+    return {
+      url: bundledCloudConfig.supabaseUrl || '',
+      anonKey: bundledCloudConfig.supabaseAnonKey || '',
+    };
   }
-  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
 
+  // 1. Auto-extract from URL query parameters (search or hash) so scanning QR or opening shared link auto-connects this phone/device
+  try {
+    const searchParams = new URLSearchParams(window.location.search);
+    let hashParams: URLSearchParams | null = null;
+    const hashIdx = window.location.hash.indexOf('?');
+    if (hashIdx >= 0) {
+      hashParams = new URLSearchParams(window.location.hash.slice(hashIdx + 1));
+    }
+
+    const qUrl = searchParams.get('sb_url') || hashParams?.get('sb_url');
+    const qKey = searchParams.get('sb_key') || hashParams?.get('sb_key');
+
+    if (qUrl && qKey) {
+      saveStoredSupabaseConfig(qUrl, qKey);
+      return { url: qUrl.trim(), anonKey: qKey.trim() };
+    }
+  } catch (err) {
+    console.warn('URL Supabase config parse error:', err);
+  }
+
+  // 2. Check localStorage
   const localUrl = localStorage.getItem(STORAGE_KEY_URL) || '';
   const localKey = localStorage.getItem(STORAGE_KEY_KEY) || '';
+  if (localUrl && localKey) {
+    return { url: localUrl, anonKey: localKey };
+  }
+
+  // 3. Check Vite build-time environment variables
+  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
+  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+  if (envUrl && envKey) {
+    return { url: envUrl, anonKey: envKey };
+  }
+
+  // 4. Check bundled configuration file
+  const bundledUrl = bundledCloudConfig.supabaseUrl || '';
+  const bundledKey = bundledCloudConfig.supabaseAnonKey || '';
+  if (bundledUrl && bundledKey) {
+    return { url: bundledUrl, anonKey: bundledKey };
+  }
 
   return {
-    url: localUrl || envUrl,
-    anonKey: localKey || envKey,
+    url: localUrl || envUrl || bundledUrl,
+    anonKey: localKey || envKey || bundledKey,
   };
+}
+
+export function generateSupabaseConnectUrl(overrideUrl?: string, overrideKey?: string): string {
+  if (typeof window === 'undefined') return '';
+  const cfg = getStoredSupabaseConfig();
+  const url = overrideUrl || cfg.url;
+  const key = overrideKey || cfg.anonKey;
+  if (!url || !key) return '';
+
+  const origin = window.location.origin;
+  const pathname = window.location.pathname.replace(/\/$/, '');
+  const baseUrl = `${origin}${pathname}`;
+  return `${baseUrl}/?sb_url=${encodeURIComponent(url)}&sb_key=${encodeURIComponent(key)}#/worker`;
 }
 
 export function saveStoredSupabaseConfig(url: string, anonKey: string): void {
