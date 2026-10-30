@@ -41,6 +41,70 @@ const HandoverSlipPrintView = React.lazy(() =>
   }))
 );
 
+
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('MES Client View Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
+          <div className="max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-sm">
+            <div className="mb-3 text-3xl">⚠️</div>
+            <h2 className="text-base font-bold text-slate-900">Không thể tải phân hệ MES</h2>
+            <p className="mt-1 text-xs text-slate-600">
+              {this.state.error?.message || 'Đã xảy ra sự cố trong quá trình nạp giao diện.'}
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.reload();
+                }}
+                className="rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow hover:bg-blue-700"
+              >
+                🔄 Tải lại trang
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  navigateTo('/worker');
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Về cổng Công nhân
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ShellRouter() {
   const pathname = useLocationPath();
 
@@ -80,7 +144,9 @@ function ShellRouter() {
           </div>
         }
       >
-        {content}
+        <ErrorBoundary>
+          {content}
+        </ErrorBoundary>
       </Suspense>
     </div>
   );

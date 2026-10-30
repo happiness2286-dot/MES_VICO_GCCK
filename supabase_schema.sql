@@ -199,3 +199,4 @@ CREATE POLICY "Allow anon all on handovers" ON handover_slips FOR ALL TO anon US
 ALTER PUBLICATION supabase_realtime ADD TABLE production_logs;
 ALTER PUBLICATION supabase_realtime ADD TABLE handover_slips;
 ALTER PUBLICATION supabase_realtime ADD TABLE machines;
+

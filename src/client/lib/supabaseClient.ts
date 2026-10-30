@@ -236,3 +236,4 @@ export function subscribeSupabaseLogChanges(onChange: () => void): (() => void) 
     return null;
   }
 }
+

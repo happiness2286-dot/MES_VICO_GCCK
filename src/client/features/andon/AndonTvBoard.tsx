@@ -17,6 +17,7 @@ import {
 import type { AndonLivePayload } from '@shared/types';
 import { removeVietnameseTones } from '@shared/vnSearch';
 import { apiClient } from '../../lib/apiClient';
+import { getFallbackAndonLive } from '../../lib/clientFallbackStore';
 import { formatDateVn, formatNumber } from '../../lib/formatters';
 import { Badge } from '../../components/ui/IndustrialPrimitives';
 
@@ -114,7 +115,7 @@ function resolveMachineVisualState(m: AndonLivePayload['machines'][number]): {
 }
 
 export function AndonTvBoard() {
-  const [data, setData] = useState<AndonLivePayload | null>(null);
+  const [data, setData] = useState<AndonLivePayload>(() => getFallbackAndonLive());
   const [loading, setLoading] = useState<boolean>(true);
   const [now, setNow] = useState<Date>(() => new Date());
   const [displayMode, setDisplayMode] = useState<AndonDisplayMode>('ALL_ZONES');
@@ -247,7 +248,7 @@ export function AndonTvBoard() {
                   {spindlePct}%
                 </span>
                 <span className="font-mono-num text-xs font-semibold text-slate-600">
-                  ({data?.summary.runningCount ?? 0}/{data?.summary.totalMachines ?? 0} máy)
+                  ({data?.summary?.runningCount ?? 0}/{data?.summary?.totalMachines ?? 0} máy)
                 </span>
               </div>
             </div>
@@ -259,11 +260,11 @@ export function AndonTvBoard() {
               </div>
               <div className="font-mono-num tabular-nums text-lg font-black sm:text-2xl">
                 <span className="text-emerald-700">
-                  {formatNumber(data?.summary.todayOkQty ?? 0)} OK
+                  {formatNumber(data?.summary?.todayOkQty ?? 0)} OK
                 </span>
                 <span className="mx-1.5 text-slate-500">/</span>
                 <span className="text-rose-700">
-                  {formatNumber(data?.summary.todayScrapQty ?? 0)} NG
+                  {formatNumber(data?.summary?.todayScrapQty ?? 0)} NG
                 </span>
               </div>
             </div>
@@ -382,7 +383,7 @@ export function AndonTvBoard() {
               <div className="text-xs font-semibold text-emerald-700">🟢 Hoạt động tốt</div>
             </div>
             <span className="font-mono-num text-2xl font-black text-emerald-700">
-              {data?.summary.runningCount ?? 0}
+              {data?.summary?.runningCount ?? 0}
             </span>
           </div>
 
@@ -392,7 +393,7 @@ export function AndonTvBoard() {
               <div className="text-xs font-semibold text-amber-800">🟡 Chuẩn bị gá</div>
             </div>
             <span className="font-mono-num text-2xl font-black text-amber-700">
-              {data?.summary.setupCount ?? 0}
+              {data?.summary?.setupCount ?? 0}
             </span>
           </div>
 
@@ -402,7 +403,7 @@ export function AndonTvBoard() {
               <div className="text-xs font-semibold text-rose-700">🔴 Cần xử lý</div>
             </div>
             <span className="font-mono-num text-2xl font-black text-rose-700">
-              {data?.summary.stoppedCount ?? 0}
+              {data?.summary?.stoppedCount ?? 0}
             </span>
           </div>
 
@@ -422,7 +423,7 @@ export function AndonTvBoard() {
               <div className="text-xs font-semibold text-slate-600">⚪ Chờ điều độ</div>
             </div>
             <span className="font-mono-num text-2xl font-black text-slate-700">
-              {data?.summary.idleCount ?? 0}
+              {data?.summary?.idleCount ?? 0}
             </span>
           </div>
         </section>
@@ -454,19 +455,19 @@ export function AndonTvBoard() {
                 {/* Color Legend */}
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
                   <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
-                    🟢 Chạy: {data?.summary.runningCount ?? 0}
+                    🟢 Chạy: {data?.summary?.runningCount ?? 0}
                   </span>
                   <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
-                    🟡 Setup: {data?.summary.setupCount ?? 0}
+                    🟡 Setup: {data?.summary?.setupCount ?? 0}
                   </span>
                   <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
-                    🔴 Sự cố: {data?.summary.stoppedCount ?? 0}
+                    🔴 Sự cố: {data?.summary?.stoppedCount ?? 0}
                   </span>
                   <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-violet-700">
                     🟣 Chờ phôi / Đêm
                   </span>
                   <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-700">
-                    ⚪ Nghỉ: {data?.summary.idleCount ?? 0}
+                    ⚪ Nghỉ: {data?.summary?.idleCount ?? 0}
                   </span>
                 </div>
               </div>

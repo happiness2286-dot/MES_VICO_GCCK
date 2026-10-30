@@ -1,4 +1,6 @@
 import type {
+  AndonLivePayload,
+  MachineStatus,
   AppRole,
   AuthSessionResponse,
   AuthSessionUser,
@@ -765,5 +767,196 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
       isOverloaded: false,
       outsourceRecommendations: [],
     },
+  };
+}
+
+export function getFallbackAndonLive(): AndonLivePayload {
+  const now = new Date();
+  const vDate = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const allLogs = getAllFallbackLogs();
+  const todayLogs = allLogs.filter((l) => l.workDate === vDate && !l.isVoided);
+  const todayOkQty = todayLogs.reduce((acc, l) => acc + (Number(l.okQty) || 0), 0);
+  const todayScrapQty = todayLogs.reduce((acc, l) => acc + (Number(l.scrapQty) || 0), 0);
+
+  const machines = FALLBACK_MACHINES.map((m, idx) => {
+    let status: MachineStatus = (m.status as MachineStatus) || 'RUNNING';
+    let isLightsOut = false;
+    let isBottleneck = false;
+    let loadPct = 65 + ((idx * 7) % 45);
+
+    if (idx === 3 || idx === 11) {
+      status = 'STOPPED';
+      loadPct = 40;
+    } else if (idx === 5) {
+      status = 'SETUP';
+      loadPct = 80;
+    } else if (idx === 7) {
+      status = 'IDLE';
+      loadPct = 20;
+    } else if (idx === 2 || idx === 4) {
+      isBottleneck = true;
+      loadPct = 108;
+    } else if (idx >= 18) {
+      isLightsOut = true;
+      loadPct = 90;
+    }
+
+    const assignedOrder = FALLBACK_ORDERS[idx % FALLBACK_ORDERS.length];
+    const assignedOp = FALLBACK_OPERATIONS[idx % FALLBACK_OPERATIONS.length];
+
+    return {
+      id: m.id,
+      name: m.name,
+      group: m.group,
+      status,
+      currentWorkerName:
+        status === 'RUNNING' || status === 'SETUP'
+          ? m.currentWorkerName || 'Trần Văn Quỳnh'
+          : null,
+      currentPoId:
+        status === 'RUNNING' || status === 'SETUP'
+          ? m.currentPoId || assignedOrder?.poId || 'PO485-01'
+          : null,
+      currentNcId:
+        status === 'RUNNING' || status === 'SETUP'
+          ? m.currentNcId || assignedOp?.ncId || 'NC001'
+          : null,
+      currentProductName:
+        status === 'RUNNING' || status === 'SETUP'
+          ? assignedOrder?.productName || assignedOp?.productName || 'Đĩa búa'
+          : null,
+      currentOpName:
+        status === 'RUNNING' || status === 'SETUP'
+          ? assignedOp?.opName || 'Tiện CNC'
+          : null,
+      stopReason:
+        status === 'STOPPED'
+          ? m.stopReason || 'Chờ phôi thép SCM440 từ kho'
+          : null,
+      isLightsOut,
+      loadPct,
+      isBottleneck,
+    };
+  });
+
+  const runningCount = machines.filter((m) => m.status === 'RUNNING').length;
+  const setupCount = machines.filter((m) => m.status === 'SETUP').length;
+  const stoppedCount = machines.filter((m) => m.status === 'STOPPED').length;
+  const idleCount = machines.length - runningCount - setupCount - stoppedCount;
+  const spindleRunPct =
+    machines.length > 0 ? Math.round((runningCount / machines.length) * 100) : 0;
+
+  const urgentOrders = FALLBACK_ORDERS.filter((po) => po.remainQty > 0)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 12)
+    .map((po) => ({
+      poId: po.poId,
+      customer: po.customer,
+      productName: po.productName,
+      qtyPo: po.qtyPo,
+      finishedQty: po.finishedQty,
+      remainQty: po.remainQty,
+      dueDate: po.dueDate,
+      isOverdue: Boolean(po.dueDate && po.dueDate < vDate),
+      progressPct:
+        po.qtyPo > 0
+          ? Math.min(100, Math.round((po.finishedQty / po.qtyPo) * 100))
+          : 0,
+      status: po.status,
+    }));
+
+  const workerStatsMap = new Map<
+    string,
+    {
+      workerId: string;
+      workerName: string;
+      earnedSec: number;
+      okQty: number;
+      kpis: number[];
+    }
+  >();
+  allLogs
+    .filter((l) => !l.isVoided)
+    .forEach((l) => {
+      const wId = l.workerId || 'NV00214';
+      const entry = workerStatsMap.get(wId) || {
+        workerId: wId,
+        workerName: l.workerName || 'Công nhân',
+        earnedSec: 0,
+        okQty: 0,
+        kpis: [] as number[],
+      };
+      entry.earnedSec += (Number(l.okQty) || 0) * (Number(l.stdSeconds) || 1800);
+      entry.okQty += Number(l.okQty) || 0;
+      if (l.kpiPct) entry.kpis.push(Number(l.kpiPct));
+      workerStatsMap.set(wId, entry);
+    });
+
+  let workerLeaderboard = Array.from(workerStatsMap.values())
+    .sort((a, b) => b.earnedSec - a.earnedSec)
+    .slice(0, 10)
+    .map((w, idx) => ({
+      rank: idx + 1,
+      workerId: w.workerId,
+      workerName: w.workerName,
+      earnedStdHours: Number((w.earnedSec / 3600).toFixed(1)),
+      kpiPct: w.kpis.length
+        ? Math.round(w.kpis.reduce((a, b) => a + b, 0) / w.kpis.length)
+        : 100,
+      okQtyTotal: w.okQty,
+    }));
+
+  if (workerLeaderboard.length === 0) {
+    workerLeaderboard = [
+      {
+        rank: 1,
+        workerId: 'NV00214',
+        workerName: 'Trần Văn Quỳnh',
+        earnedStdHours: 14.5,
+        kpiPct: 112,
+        okQtyTotal: 18,
+      },
+      {
+        rank: 2,
+        workerId: 'NV00215',
+        workerName: 'Nguyễn Văn Duy',
+        earnedStdHours: 12.8,
+        kpiPct: 104,
+        okQtyTotal: 15,
+      },
+      {
+        rank: 3,
+        workerId: 'NV00216',
+        workerName: 'Lê Minh Tuấn',
+        earnedStdHours: 11.2,
+        kpiPct: 98,
+        okQtyTotal: 12,
+      },
+    ];
+  }
+
+  const alertsTicker: string[] = [
+    '🔔 Phân xưởng Gia công Cơ khí Thắng Lợi — Tín hiệu giám sát sản xuất Realtime đang kết nối.',
+    '🟢 18/23 máy đang chạy tải ổn định.',
+    '⚠️ Máy Phay CNC 4 đang chờ cấp phôi SCM440 từ kho.',
+  ];
+
+  return {
+    serverTime: now.toISOString(),
+    vietnamDate: vDate,
+    spindleRunPct,
+    summary: {
+      totalMachines: machines.length,
+      runningCount,
+      setupCount,
+      stoppedCount,
+      idleCount,
+      todayOkQty: todayOkQty || 26,
+      todayScrapQty: todayScrapQty || 0,
+    },
+    machines,
+    urgentOrders,
+    workerLeaderboard,
+    alertsTicker,
   };
 }

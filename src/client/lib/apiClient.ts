@@ -1,5 +1,6 @@
 import {
   getAllFallbackLogs,
+  getFallbackAndonLive,
   getFallbackBootstrap,
   getFallbackHandovers,
   getFallbackSession,
@@ -171,6 +172,9 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   }
   if (norm.includes('/schedules/daily')) {
     return { success: true, rows: [] } as unknown as T;
+  }
+  if (norm.includes('/andon/live')) {
+    return getFallbackAndonLive() as unknown as T;
   }
   if (norm.includes('/costing')) {
     return FALLBACK_PRODUCTS as unknown as T;
