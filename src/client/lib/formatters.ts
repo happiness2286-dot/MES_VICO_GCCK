@@ -61,8 +61,13 @@ export function sanitizeExcelCellValue(val: unknown): string | number {
   return s;
 }
 
-export function getTravelerPoIdFromLocation(pathname: string = window.location.pathname): string {
-  const m = /^\/print\/traveler\/([^/?#]+)/i.exec(pathname);
+export function getTravelerPoIdFromLocation(pathname?: string): string {
+  const current =
+    pathname ||
+    (typeof window !== 'undefined'
+      ? (window.location.hash || window.location.pathname)
+      : '');
+  const m = /(?:^|[/#])(?:print\/)?traveler\/([^/?#]+)/i.exec(current);
   return m ? decodeURIComponent(m[1]) : 'PO485-01';
 }
 

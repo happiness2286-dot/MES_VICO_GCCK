@@ -1,36 +1,35 @@
 <!DOCTYPE html>
 <html lang="vi">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#2563EB" />
-  <link rel="icon" type="image/png" href="./assets/vico_logo-Dcd85INz-Dcd85INz-Dcd85INz-Dcd85INz-Dcd85INz-Dcd85INz-Dcd85INz-Dcd85INz-Dcd85INz.png" />
-  <title>GCCK Thắng Lợi — Hệ Thống Điều Hành Sản Xuất MES</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap"
-    rel="stylesheet" />
-  <script>
-    (function () {
-      var params = new URLSearchParams(window.location.search);
-      var redirect = params.get('p');
-      if (redirect) {
-        params.delete('p');
-        var search = params.toString() ? ('?' + params.toString()) : '';
-        var base = window.location.pathname.replace(/\/$/, '');
-        var normSub = redirect.startsWith('/') ? redirect : '/' + redirect;
-        window.location.replace(base + '/#' + normSub + search + window.location.hash);
-      }
-    })();
-  </script>
-  <script type="module" crossorigin src="./assets/index-BEWwwQld.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CNdaSVcM.css">
-</head>
-
-<body class="bg-industrial-canvas text-slate-900 antialiased selection:bg-blue-600/15 selection:text-blue-900">
-  <div id="root"></div>
-</body>
-
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GCCK Thắng Lợi Lean MES</title>
+    <script>
+      (function() {
+        var l = window.location;
+        var pathname = l.pathname;
+        var base = '';
+        if (l.hostname.includes('github.io')) {
+          var segs = pathname.split('/').filter(Boolean);
+          if (segs.length > 0) {
+            base = '/' + segs[0];
+          }
+        }
+        var sub = pathname;
+        if (base && sub.startsWith(base)) {
+          sub = sub.slice(base.length);
+        }
+        if (!sub || sub === '/') {
+          sub = '/';
+        } else if (!sub.startsWith('/')) {
+          sub = '/' + sub;
+        }
+        var target = (base || '') + '/#' + sub + l.search + l.hash;
+        window.location.replace(target);
+      })();
+    </script>
+  </head>
+  <body style="font-family: sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background-color: #F8FAFC; color: #334155;">
+    <p style="font-weight: 600; font-size: 14px;">Đang chuyển hướng về cổng điều hành MES Thắng Lợi...</p>
+  </body>
 </html>

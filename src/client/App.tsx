@@ -4,6 +4,11 @@ import { AuthProvider } from './context/AuthContext';
 import { TopRoleBar } from './components/TopRoleBar';
 import { navigateTo, useLocationPath } from './lib/navigation';
 import { getTravelerPoIdFromLocation } from './lib/formatters';
+import { AndonTvBoard } from './features/andon/AndonTvBoard';
+import { JobTravelerPrint } from './features/print/JobTravelerPrint';
+import { DailySchedulePrint } from './features/print/DailySchedulePrint';
+import { WeeklyReportPrint } from './features/print/WeeklyReportPrint';
+import { HandoverSlipPrint } from './features/print/HandoverSlipPrint';
 
 const WorkerView = React.lazy(() =>
   import('./features/worker/WorkerPortal').then((m) => ({
@@ -15,32 +20,6 @@ const AdminView = React.lazy(() =>
     default: (m.AdminPortal || (m as any).default) as React.ComponentType<any>,
   }))
 );
-const AndonView = React.lazy(() =>
-  import('./features/andon/AndonTvBoard').then((m) => ({
-    default: (m.AndonTvBoard || (m as any).default) as React.ComponentType<any>,
-  }))
-);
-const PrintView = React.lazy(() =>
-  import('./features/print/JobTravelerPrint').then((m) => ({
-    default: (m.JobTravelerPrint || (m as any).default) as React.ComponentType<any>,
-  }))
-);
-const DailySchedulePrintView = React.lazy(() =>
-  import('./features/print/DailySchedulePrint').then((m) => ({
-    default: (m.DailySchedulePrint || (m as any).default) as React.ComponentType<any>,
-  }))
-);
-const WeeklyReportPrintView = React.lazy(() =>
-  import('./features/print/WeeklyReportPrint').then((m) => ({
-    default: (m.WeeklyReportPrint || (m as any).default) as React.ComponentType<any>,
-  }))
-);
-const HandoverSlipPrintView = React.lazy(() =>
-  import('./features/print/HandoverSlipPrint').then((m) => ({
-    default: (m.HandoverSlipPrint || (m as any).default) as React.ComponentType<any>,
-  }))
-);
-
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -120,16 +99,16 @@ function ShellRouter() {
   if (pathname.startsWith('/admin')) {
     content = <AdminView />;
   } else if (pathname.startsWith('/andon')) {
-    content = <AndonView />;
+    content = <AndonTvBoard />;
   } else if (pathname.startsWith('/print/daily-schedule')) {
-    content = <DailySchedulePrintView />;
+    content = <DailySchedulePrint />;
   } else if (pathname.startsWith('/print/weekly-report')) {
-    content = <WeeklyReportPrintView />;
+    content = <WeeklyReportPrint />;
   } else if (pathname.startsWith('/print/handover')) {
-    content = <HandoverSlipPrintView />;
+    content = <HandoverSlipPrint />;
   } else if (pathname.startsWith('/print/traveler')) {
     const poId = getTravelerPoIdFromLocation(pathname);
-    content = <PrintView poId={poId} />;
+    content = <JobTravelerPrint poId={poId} />;
   } else {
     content = <WorkerView />;
   }
@@ -137,17 +116,17 @@ function ShellRouter() {
   return (
     <div className="min-h-screen w-full max-w-full bg-industrial-canvas text-slate-900">
       <TopRoleBar currentPath={pathname} />
-      <Suspense
-        fallback={
-          <div className="flex min-h-[60vh] items-center justify-center px-4 text-sm font-semibold text-slate-600">
-            Đang tải phân hệ MES...
-          </div>
-        }
-      >
-        <ErrorBoundary>
+      <ErrorBoundary>
+        <Suspense
+          fallback={
+            <div className="flex min-h-[60vh] items-center justify-center px-4 text-sm font-semibold text-slate-600">
+              Đang tải phân hệ MES...
+            </div>
+          }
+        >
           {content}
-        </ErrorBoundary>
-      </Suspense>
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }
