@@ -135,7 +135,7 @@ export function FaiInspectionModal({
                 className="w-full"
               >
                 <UserCheck className="h-4 w-4" />
-                Chuyển nhanh sang Tổ Trưởng / QC (NV_KT02) để ký duyệt
+                Chuyển nhanh sang Tổ Trưởng / QC (NV00266) để ký duyệt
               </Button>
             ) : (
               <Button

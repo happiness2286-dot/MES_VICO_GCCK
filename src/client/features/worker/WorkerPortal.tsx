@@ -97,7 +97,7 @@ import {
 } from './shopfloorHelpers';
 
 type WorkerTab = 'REPORT' | 'ORDERS_FAI' | 'SALARY_HISTORY';
-type PickerKind = 'PO' | 'PRODUCT' | 'OPERATION' | 'MACHINE' | 'TOOL' | 'WORKER_SWITCH' | null;
+type PickerKind = 'PO' | 'PRODUCT' | 'OPERATION' | 'MACHINE' | 'TOOL' | null;
 
 const SHIFT_OPTIONS = [
   { value: 'Ca 1 (Sáng 06h-14h)', shortLabel: 'Ca 1 (06h-14h)', badge: '1.0x' },
@@ -152,7 +152,7 @@ function getNowVietnamHhMm(): string {
 }
 
 export function WorkerPortal() {
-  const { user, authMode, quickSwitch, quickSwitchProfiles, openPinModal, refreshSession } =
+  const { user, authMode, quickSwitch, openPinModal, openChangePinModal, logout, refreshSession } =
     useAuth();
   const toast = useToast();
 
@@ -916,30 +916,6 @@ export function WorkerPortal() {
       };
     }
 
-    if (activePicker === 'WORKER_SWITCH') {
-      const opts: PickerOptionItem[] = quickSwitchProfiles.map((p) => ({
-        id: p.workerId,
-        primaryText: `${p.name}`,
-        secondaryText: `Chức danh: ${p.title} · Chế độ: ${p.salaryMode}`,
-        metaBadge: p.workerId,
-        metaVariant: p.appRole === 'WORKER' ? 'emerald' : 'sky',
-        rightText: p.role,
-      }));
-      return {
-        title: 'Đổi Phiên Nhân Sự Đứng Máy (Demo Nhanh)',
-        subtitle: 'Thu nhập cá nhân được bảo mật riêng theo từng tài khoản',
-        options: opts,
-        selectedId: user?.workerId || '',
-        onSelect: (wid: string) => {
-          void quickSwitch({ workerId: wid })
-            .then((u) => {
-              if (u) toast.success(`Đã chuyển sang phiên làm việc của ${u.name}`);
-            })
-            .catch(() => openPinModal(wid));
-        },
-      };
-    }
-
     return null;
   }, [
     activePicker,
@@ -948,7 +924,6 @@ export function WorkerPortal() {
     operationsList,
     machinesList,
     toolsList,
-    quickSwitchProfiles,
     selectedPoId,
     selectedProduct?.spId,
     selectedSpId,
@@ -1203,15 +1178,9 @@ export function WorkerPortal() {
             <div className="flex flex-col justify-between gap-1">
               <button
                 type="button"
-                title="Đổi Công Nhân / PIN"
-                aria-label="Đổi Công Nhân / PIN"
-                onClick={() => {
-                  if (authMode === 'DEMO_QUICK' && quickSwitchProfiles.length > 0) {
-                    setActivePicker('WORKER_SWITCH');
-                  } else {
-                    openPinModal(user?.workerId);
-                  }
-                }}
+                title="Đổi mã PIN / Mật khẩu cá nhân"
+                aria-label="Đổi mã PIN / Mật khẩu cá nhân"
+                onClick={openChangePinModal}
                 className="flex h-7 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700"
               >
                 <KeyRound className="h-3.5 w-3.5 text-blue-600" />
@@ -2918,12 +2887,12 @@ export function WorkerPortal() {
         user={user}
         authMode={authMode}
         onSwitchToQc={async () => {
-          await quickSwitch({ workerId: 'NV_KT02' });
-          toast.info('Đã chuyển sang quyền Tổ Trưởng / QC (Nguyễn Văn Duy)');
+          await quickSwitch({ workerId: 'NV00266' });
+          toast.info('Đã chuyển sang quyền Tổ Trưởng / QC (Trần Văn Dũng)');
         }}
         onOpenPinForQc={() => {
           setFaiTargetPo(null);
-          openPinModal('NV_KT02');
+          openPinModal('NV00266');
         }}
         onSuccess={() => loadBootstrapData(true)}
       />

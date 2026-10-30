@@ -4,6 +4,7 @@ import type { AuthMode, QuickSwitchProfile } from '../../shared/types';
 import {
   clearSessionCookie,
   getSessionSecret,
+  hashPin,
   loadUserById,
   mapLegacyRoleToAppRole,
   requireAuth,
@@ -134,16 +135,11 @@ export function createAuthRoutes(db: DatabaseSync): Router {
     const roleHint = normalizeVn(req.body?.role || '').toUpperCase();
 
     if (targetId === 'NV00112') targetId = 'NV00214';
-    if (targetId === 'NV00102') targetId = 'NV_KT02';
-    if (targetId === 'NV00101') targetId = 'NV_KT01';
-    if (targetId === 'NV00103') targetId = 'NV_KT03';
 
     if (!targetId) {
       if (roleHint === 'ADMIN' || roleHint === 'DIRECTOR' || roleHint === 'QĐ') {
         targetId = 'NV00053';
-      } else if (roleHint === 'QC') {
-        targetId = 'NV_KT02';
-      } else if (roleHint === 'SHIFT_LEADER' || roleHint === 'TC' || roleHint === 'KT') {
+      } else if (roleHint === 'QC' || roleHint === 'SHIFT_LEADER' || roleHint === 'TC' || roleHint === 'KT') {
         targetId = 'NV00266';
       } else {
         targetId = 'NV00214';
@@ -165,6 +161,44 @@ export function createAuthRoutes(db: DatabaseSync): Router {
       authMode,
       token,
       user,
+    });
+  });
+
+  router.post('/auth/change-pin', (req, res) => {
+    const rawId = normalizeVn(
+      req.body?.workerId || req.authUser?.workerId || ''
+    );
+    const currentPin = String(req.body?.currentPin ?? '').trim();
+    const newPin = String(req.body?.newPin ?? '').trim();
+
+    if (!rawId || !currentPin || !newPin) {
+      res.status(400).json({ error: 'Vui lòng nhập đầy đủ Mã nhân viên, mật khẩu hiện tại và mật khẩu mới.' });
+      return;
+    }
+
+    if (newPin.length < 4) {
+      res.status(400).json({ error: 'Mật khẩu mới phải có tối thiểu 4 ký tự.' });
+      return;
+    }
+
+    const row = db
+      .prepare(
+        `SELECT id, pin_hash, is_active FROM workers
+         WHERE (UPPER(id) = UPPER(?) OR LOWER(username) = LOWER(?)) AND is_active = 1`
+      )
+      .get(rawId, rawId) as { id: string; pin_hash: string; is_active: number } | undefined;
+
+    if (!row || !verifyPin(currentPin, String(row.pin_hash))) {
+      res.status(401).json({ error: 'Mật khẩu hiện tại không chính xác.' });
+      return;
+    }
+
+    const newHash = hashPin(newPin);
+    db.prepare('UPDATE workers SET pin_hash = ? WHERE id = ?').run(newHash, row.id);
+
+    res.json({
+      success: true,
+      message: 'Đổi mật khẩu thành công! Hãy ghi nhớ mật khẩu mới của bạn.',
     });
   });
 

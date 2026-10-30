@@ -39,7 +39,7 @@ if (count === 0) {
   ins.run(
     '2026-10-15',
     'Bảo dưỡng thiết bị',
-    'Kỹ thuật Đinh Văn Thiên',
+    'Trưởng ca Trần Văn Dũng',
     'Kiểm tra định kỳ và thay dầu làm mát cho máy tiện OKUMA T630 vào ca ngày Chủ nhật 18/10.',
     'Bình thường',
     'APPROVED'

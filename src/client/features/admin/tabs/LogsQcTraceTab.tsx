@@ -205,7 +205,7 @@ export function LogsQcTraceTab({
   const [hoRawQtyMissing, setHoRawQtyMissing] = useState(0);
   const [hoNote, setHoNote] = useState('');
   const [hoReceiver, setHoReceiver] = useState('Trần Văn Dũng');
-  const [hoSender, setHoSender] = useState(user?.name || 'Nguyễn Văn Duy');
+  const [hoSender, setHoSender] = useState(user?.name || 'Trần Văn Dũng');
   const [submittingHo, setSubmittingHo] = useState(false);
 
   const reloadHandovers = async () => {

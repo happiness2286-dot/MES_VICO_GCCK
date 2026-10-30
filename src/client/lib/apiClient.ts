@@ -8,7 +8,9 @@ import {
   getFallbackUser,
   getFallbackWeeklyReport,
   saveFallbackHandover,
+  setCustomPin,
   submitDirectToGoogleAppsScript,
+  verifyFallbackPin,
   FALLBACK_PRODUCTS,
 } from './clientFallbackStore';
 import { isStaticHost } from './navigation';
@@ -140,7 +142,7 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   }
   if (norm.includes('/auth/quick-switch')) {
     const body = options.json as any;
-    const workerId = body?.workerId || 'NV_KT02';
+    const workerId = body?.workerId || 'NV00266';
     const user = getFallbackUser(workerId);
     return {
       token: `client-demo-token-${workerId}`,
@@ -150,12 +152,30 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   }
   if (norm.includes('/auth/login')) {
     const body = options.json as any;
-    const workerId = body?.workerId || 'NV00053';
-    const user = getFallbackUser(workerId);
+    const rawId = body?.workerId || body?.workerIdOrUsername || 'NV00214';
+    const pin = body?.pin || '';
+    if (!verifyFallbackPin(rawId, pin)) {
+      throw new ApiError('Mã nhân viên hoặc mã PIN không chính xác.', 401);
+    }
+    const user = getFallbackUser(rawId);
     return {
-      token: `client-demo-token-${workerId}`,
+      token: `client-demo-token-${user.workerId}`,
       user,
       authMode: 'DEMO_QUICK',
+    } as unknown as T;
+  }
+  if (norm.includes('/auth/change-pin')) {
+    const body = options.json as any;
+    const workerId = body?.workerId || 'NV00214';
+    const currentPin = String(body?.currentPin || '').trim();
+    const newPin = String(body?.newPin || '').trim();
+    if (!verifyFallbackPin(workerId, currentPin)) {
+      throw new ApiError('Mật khẩu hiện tại không chính xác.', 401);
+    }
+    setCustomPin(workerId, newPin);
+    return {
+      success: true,
+      message: 'Đổi mật khẩu thành công! Hãy ghi nhớ mật khẩu mới của bạn.',
     } as unknown as T;
   }
   if (norm.includes('/bootstrap')) {

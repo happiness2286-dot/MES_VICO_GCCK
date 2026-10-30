@@ -106,14 +106,7 @@ export function getSessionSecret(db: DatabaseSync): string {
 
 export function loadUserById(db: DatabaseSync, workerId: string): AuthSessionUser | null {
   const normId = String(workerId || '').trim();
-  const aliasId =
-    normId === 'NV_KT01' ? 'NV00101' :
-    normId === 'NV_KT02' ? 'NV00102' :
-    normId === 'NV_KT03' ? 'NV00103' :
-    normId === 'NV00101' ? 'NV_KT01' :
-    normId === 'NV00102' ? 'NV_KT02' :
-    normId === 'NV00103' ? 'NV_KT03' :
-    normId === 'NV00112' ? 'NV00214' : normId;
+  const aliasId = normId === 'NV00112' ? 'NV00214' : normId;
 
   const row = db
     .prepare(

@@ -6,6 +6,7 @@ import {
   CloudOff,
   Factory,
   KeyRound,
+  LogOut,
   MonitorPlay,
   Printer,
   Shield,
@@ -28,7 +29,7 @@ export interface TopRoleBarProps {
 }
 
 export function TopRoleBar({ currentPath }: TopRoleBarProps) {
-  const { user, authMode, quickSwitch, openPinModal } = useAuth();
+  const { user, authMode, quickSwitch, openPinModal, openChangePinModal, logout } = useAuth();
   const toast = useToast();
   const [collapsedKiosk, setCollapsedKiosk] = useState(false);
   const [outboxCount, setOutboxCount] = useState<number>(() => getOfflineOutbox().length);
@@ -145,7 +146,7 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
 
           <button
             type="button"
-            onClick={() => void handleRoleNav('/admin?tab=logs_qc', 'NV_KT02', '🔍 Tổ Trưởng / QC', 'logs_qc')}
+            onClick={() => void handleRoleNav('/admin?tab=logs_qc', 'NV00266', '🔍 Tổ Trưởng / QC', 'logs_qc')}
             className={pillCls(isQcActive)}
           >
             <UserCheck className="h-3.5 w-3.5 text-amber-600" />
@@ -216,32 +217,52 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
           )}
 
           {user ? (
-            <Badge
-              variant={
-                user.appRole === 'ADMIN' || user.appRole === 'DIRECTOR'
-                  ? 'info'
-                  : user.appRole === 'QC' || user.appRole === 'SHIFT_LEADER'
-                    ? 'warning'
-                    : 'success'
-              }
-              className="max-w-[200px] truncate py-1"
-            >
-              <span className="truncate">
-                {user.name} ({user.workerId})
-              </span>
-            </Badge>
-          ) : (
-            <Badge variant="neutral">Chưa đăng nhập</Badge>
-          )}
+            <>
+              <Badge
+                variant={
+                  user.appRole === 'ADMIN' || user.appRole === 'DIRECTOR'
+                    ? 'info'
+                    : user.appRole === 'QC' || user.appRole === 'SHIFT_LEADER'
+                      ? 'warning'
+                      : 'success'
+                }
+                className="max-w-[200px] truncate py-1"
+              >
+                <span className="truncate">
+                  {user.name} ({user.workerId})
+                </span>
+              </Badge>
 
-          <button
-            type="button"
-            onClick={() => openPinModal(user?.workerId)}
-            className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-500 hover:text-blue-700"
-          >
-            <KeyRound className="h-3.5 w-3.5 text-blue-600" />
-            <span>Đổi PIN / TK</span>
-          </button>
+              <button
+                type="button"
+                onClick={openChangePinModal}
+                className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:border-blue-500 hover:text-blue-700"
+                title="Đổi mật khẩu / PIN cá nhân"
+              >
+                <KeyRound className="h-3.5 w-3.5 text-blue-600" />
+                <span>Đổi PIN</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700 shadow-2xs transition-colors hover:bg-rose-100"
+                title="Đăng xuất khỏi thiết bị này"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Thoát</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => openPinModal()}
+              className="inline-flex min-h-[32px] items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1 text-xs font-bold text-white shadow-sm transition-colors hover:bg-blue-700"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              <span>Đăng nhập cá nhân</span>
+            </button>
+          )}
 
           {isAndon && (
             <button

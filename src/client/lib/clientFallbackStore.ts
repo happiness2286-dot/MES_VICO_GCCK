@@ -109,9 +109,7 @@ export const FALLBACK_WORKERS: WorkerDto[] = (seedData.workers || []).map((w: an
   let appRole: AppRole = 'WORKER';
   if (w.id === 'NV00053' || w.role === 'QĐ' || w.title?.includes('Quản đốc')) {
     appRole = 'ADMIN';
-  } else if (w.id === 'NV_KT02' || w.title?.includes('QC')) {
-    appRole = 'QC';
-  } else if (w.role === 'TC' || w.title?.includes('Trưởng ca')) {
+  } else if (w.id === 'NV00266' || w.role === 'TC' || w.title?.includes('Trưởng ca') || w.title?.includes('QC')) {
     appRole = 'SHIFT_LEADER';
   } else if (w.role === 'KT') {
     appRole = 'SHIFT_LEADER';
@@ -140,19 +138,11 @@ export const FALLBACK_PROFILES: QuickSwitchProfile[] = [
     salaryMode: 'KHOAN',
   },
   {
-    workerId: 'NV_KT02',
-    name: 'Nguyễn Văn Duy',
-    role: 'KT',
-    appRole: 'QC',
-    title: 'Kiểm soát chất lượng QC',
-    salaryMode: 'LUONG_NGAY',
-  },
-  {
     workerId: 'NV00266',
     name: 'Trần Văn Dũng',
     role: 'TC',
     appRole: 'SHIFT_LEADER',
-    title: 'Trưởng ca sản xuất',
+    title: 'Trưởng ca / Kiểm soát QC',
     salaryMode: 'LUONG_NGAY',
   },
   {
@@ -164,6 +154,50 @@ export const FALLBACK_PROFILES: QuickSwitchProfile[] = [
     salaryMode: 'LUONG_NGAY',
   },
 ];
+
+const CUSTOM_PINS_KEY = 'GCCK_WORKER_CUSTOM_PINS_V1';
+
+export function getCustomPin(workerId: string): string | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(CUSTOM_PINS_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw);
+    return map[workerId.toUpperCase()] || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCustomPin(workerId: string, newPin: string): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const raw = localStorage.getItem(CUSTOM_PINS_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[workerId.toUpperCase()] = newPin;
+    localStorage.setItem(CUSTOM_PINS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+export function verifyFallbackPin(workerIdOrUsername: string, pin: string): boolean {
+  const norm = workerIdOrUsername.trim().toLowerCase();
+  const worker = FALLBACK_WORKERS.find(
+    (w) => w.id.toLowerCase() === norm || (w.username && w.username.toLowerCase() === norm)
+  );
+  if (!worker) return false;
+
+  const custom = getCustomPin(worker.id);
+  if (custom) {
+    return custom === pin;
+  }
+
+  if (worker.id === 'NV00053') {
+    return pin === 'admin123' || pin === '1234';
+  }
+  return pin === '1234';
+}
 
 export function getFallbackUser(workerId: string = 'NV00214'): AuthSessionUser {
   const w = FALLBACK_WORKERS.find((x) => x.id === workerId) || FALLBACK_WORKERS[0];
@@ -242,7 +276,7 @@ export const INITIAL_HANDOVERS: HandoverSlipRow[] = [
     rawQtyMissing: 0,
     note: 'Đã hoàn thành tiện NC1 + NC2, chuyển nhiệt luyện thấm cacbon',
     receiverName: 'Trần Văn Dũng',
-    senderName: 'Nguyễn Văn Duy',
+    senderName: 'Trần Văn Quỳnh',
     createdAt: new Date().toISOString(),
   },
   {
@@ -263,7 +297,7 @@ export const INITIAL_HANDOVERS: HandoverSlipRow[] = [
     rawQtyMissing: 0,
     note: 'Chuyển xưởng hoàn thiện mài phẳng và cạo ba-via',
     receiverName: 'Phùng Gia Phúc',
-    senderName: 'Đinh Văn Thiên',
+    senderName: 'Phạm Văn Tráng',
     createdAt: new Date().toISOString(),
   },
   {
@@ -644,8 +678,8 @@ export function getFallbackTraveler(poId: string): JobTravelerDto {
         opName: mappedOps[0]?.opName || 'Gia công',
         machineName: 'Máy Tiện CNC 1',
         operatorId: 'NV00214',
-        inspectorId: 'NV_KT02',
-        inspectorName: 'Nguyễn Văn Duy (KCS)',
+        inspectorId: 'NV00266',
+        inspectorName: 'Trần Văn Dũng (KCS)',
         result: 'PASS',
         sampleSize: 1,
         defectQty: 0,
@@ -919,7 +953,7 @@ export function getFallbackAndonLive(): AndonLivePayload {
       {
         rank: 2,
         workerId: 'NV00215',
-        workerName: 'Nguyễn Văn Duy',
+        workerName: 'Phạm Văn Tráng',
         earnedStdHours: 12.8,
         kpiPct: 104,
         okQtyTotal: 15,

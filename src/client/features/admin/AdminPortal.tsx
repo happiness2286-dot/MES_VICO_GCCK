@@ -171,7 +171,7 @@ export function AdminPortal() {
   useEffect(() => {
     if (!authLoading && (!user || !canEnterManagement)) {
       const urlTab = getTabFromUrl() || activeTab;
-      const targetWorkerId = urlTab === 'logs_qc' ? 'NV_KT02' : 'NV00053';
+      const targetWorkerId = urlTab === 'logs_qc' ? 'NV00266' : 'NV00053';
       void quickSwitch({ workerId: targetWorkerId });
     }
   }, [authLoading, user, canEnterManagement, activeTab, quickSwitch]);
@@ -450,7 +450,7 @@ export function AdminPortal() {
   useEffect(() => {
     if (!authLoading && (!user || !canEnterManagement) && authMode === 'DEMO_QUICK') {
       const tab = getTabFromUrl();
-      const targetId = tab === 'logs_qc' ? 'NV_KT02' : 'NV00053';
+      const targetId = tab === 'logs_qc' ? 'NV00266' : 'NV00053';
       void quickSwitch({ workerId: targetId });
     }
   }, [authLoading, user, canEnterManagement, authMode, quickSwitch]);

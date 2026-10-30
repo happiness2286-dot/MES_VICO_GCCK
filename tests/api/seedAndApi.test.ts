@@ -55,8 +55,8 @@ describe('SQLite WAL Seeder, RBAC Security & Atomic MES REST API', () => {
     const boot = await agent.get('/api/v1/bootstrap');
     expect(boot.status).toBe(200);
 
-    // 16 workers loaded, fake CHAT_ID_NV... stripped, colleague salaries hidden
-    expect(boot.body.workers).toHaveLength(16);
+    // 13 active workers loaded (after removing 3 former staff)
+    expect(boot.body.workers).toHaveLength(13);
     const selfWorker = boot.body.workers.find((w: any) => w.id === 'NV00214');
     const otherWorker = boot.body.workers.find((w: any) => w.id === 'NV00053');
     expect(selfWorker.costPerSec).toBeCloseTo(13.89, 2);
@@ -137,7 +137,7 @@ describe('SQLite WAL Seeder, RBAC Security & Atomic MES REST API', () => {
     // Attendance & 3P Payroll
     const attRes = await adminAgent.get('/api/v1/attendance/2026-10');
     expect(attRes.status).toBe(200);
-    expect(attRes.body.employees).toHaveLength(16);
+    expect(attRes.body.employees).toHaveLength(13);
 
     const cellRes = await adminAgent
       .put('/api/v1/attendance/2026-10/cell')
@@ -146,7 +146,7 @@ describe('SQLite WAL Seeder, RBAC Security & Atomic MES REST API', () => {
 
     const payRes = await adminAgent.get('/api/v1/payroll/2026-10');
     expect(payRes.status).toBe(200);
-    expect(payRes.body.rows).toHaveLength(16);
+    expect(payRes.body.rows).toHaveLength(13);
   });
 
   it('processes POST /reports atomically: ignores client-tampered rate, deduplicates recordUid, caps shift meal, and updates PO finishedQty on final op', async () => {
@@ -488,7 +488,7 @@ describe('SQLite WAL Seeder, RBAC Security & Atomic MES REST API', () => {
     const sessRes = await freshAgent.get('/api/v1/auth/session');
     expect(sessRes.status).toBe(200);
     expect(sessRes.body.authMode).toBe('STRICT_PIN');
-    expect(sessRes.body.quickSwitchProfiles.length).toBeGreaterThanOrEqual(16);
+    expect(sessRes.body.quickSwitchProfiles.length).toBeGreaterThanOrEqual(13);
     expect(JSON.stringify(sessRes.body.quickSwitchProfiles)).not.toContain('baseSalary');
     expect(JSON.stringify(sessRes.body.quickSwitchProfiles)).not.toContain('pinHash');
 
