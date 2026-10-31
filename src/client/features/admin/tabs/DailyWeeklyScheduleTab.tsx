@@ -693,8 +693,8 @@ export function DailyWeeklyScheduleTab({
   return (
     <div className="space-y-4">
       {/* Sub-tab Navigation Banner */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 p-1">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1">
           <button
             type="button"
             onClick={() => setSubTab('daily')}
@@ -717,14 +717,14 @@ export function DailyWeeklyScheduleTab({
             }`}
           >
             <CalendarCheck2 className="h-4 w-4" />
-            <span>2. Báo Cáo Tuần (Thứ 5 &rarr; Thứ 4) &amp; Cân Bằng Tải</span>
+            <span>2. Báo Cáo Tuần (T5 → T4) &amp; Cân Bằng Tải</span>
           </button>
           <button
             type="button"
             onClick={() => setSubTab('daily_report')}
             className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold transition-all ${
               subTab === 'daily_report'
-                ? 'bg-blue-600 text-white shadow-sm'
+                ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
