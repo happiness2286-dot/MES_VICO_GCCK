@@ -856,3 +856,35 @@ export interface SyncOutboxItem {
   createdAt: string;
   sentAt: string | null;
 }
+
+// ==================== DAILY QUALITY REPORT (FORM BM.KTCN.04.03) ====================
+export interface DailyQualityReportItem {
+  id: string;
+  orderNumber: number; // TT: 1, 2, ...
+  productName: string; // Tên Sản Phẩm
+  customer: string; // Khách Hàng
+  steelGrade: string; // Mác Thép
+  assessedQty: number; // Số lượng Đánh giá
+  okQty: number; // Đạt - Số lượng
+  okPct: number; // Đạt - %
+  reworkQty: number; // Xử lý - Số lượng
+  reworkPct: number; // Xử lý - %
+  reworkReason: string; // Xử lý - Tình trạng lỗi
+  scrapQty: number; // Hỏng - Số lượng
+  scrapPct: number; // Hỏng - %
+  scrapReason: string; // Hỏng - Tình trạng hỏng
+  note: string; // Ghi chú
+}
+
+export interface DailyQualityReportData {
+  reportDate: string; // YYYY-MM-DD
+  reportCode: string; // BM.KTCN.04.03
+  issueNo: string; // 01
+  effectiveDate: string; // 28/03/2026
+  workshop: string; // GIA CÔNG CƠ KHÍ
+  companyName: string; // CÔNG TY TNHH THẮNG LỢI
+  items: DailyQualityReportItem[];
+  preparedBy: string; // Người Lập Biểu
+  qcBy: string; // Tổ Trưởng / QC
+  approvedBy: string; // Quản Đốc Phân Xưởng
+}

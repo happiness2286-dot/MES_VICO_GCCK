@@ -52,6 +52,7 @@ import {
 } from '@client/components/ui/IndustrialPrimitives';
 import { getFallbackBootstrap } from '@client/lib/clientFallbackStore';
 import { DEFAULT_DRIVE_FOLDER_URL } from '@shared/driveHelper';
+import { DailyQualityReportSection } from './DailyQualityReportSection';
 import type { AdminTabCommonProps } from '../types';
 
 interface DailyDateMeta {
@@ -67,7 +68,7 @@ export function DailyWeeklyScheduleTab({
 }: AdminTabCommonProps) {
   const bootstrap = rawBootstrap || getFallbackBootstrap();
   const toast = useToast();
-  const [subTab, setSubTab] = useState<'daily' | 'weekly'>('daily');
+  const [subTab, setSubTab] = useState<'daily' | 'weekly' | 'daily_report'>('daily');
 
   // ==================== TAB 1: DAILY SCHEDULE STATE ====================
   const [selectedDate, setSelectedDate] = useState<string>('2026-10-21');
@@ -700,6 +701,18 @@ export function DailyWeeklyScheduleTab({
           >
             <CalendarCheck2 className="h-4 w-4" />
             <span>2. Báo Cáo Tuần (Thứ 5 &rarr; Thứ 4) &amp; Cân Bằng Tải</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubTab('daily_report')}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold transition-all ${
+              subTab === 'daily_report'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            <span>3. Báo Cáo Ngày (Form BM.KTCN.04.03)</span>
           </button>
         </div>
 
@@ -1842,6 +1855,13 @@ export function DailyWeeklyScheduleTab({
             </div>
           )}
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUB-TAB 3: BÁO CÁO NGÀY (FORM BM.KTCN.04.03)                              */}
+      {/* ========================================================================= */}
+      {subTab === 'daily_report' && (
+        <DailyQualityReportSection bootstrap={bootstrap} />
       )}
 
       {/* ========================================================================= */}

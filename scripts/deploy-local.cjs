@@ -9,10 +9,17 @@ const distAssets = path.join(distClient, 'assets');
 const rootAssets = path.join(rootDir, 'assets');
 if (fs.existsSync(distAssets)) {
   fs.mkdirSync(rootAssets, { recursive: true });
-  for (const file of fs.readdirSync(distAssets)) {
+  const distFiles = new Set(fs.readdirSync(distAssets));
+  // Clean obsolete root assets
+  for (const file of fs.readdirSync(rootAssets)) {
+    if (!distFiles.has(file)) {
+      try { fs.unlinkSync(path.join(rootAssets, file)); } catch (_) {}
+    }
+  }
+  for (const file of distFiles) {
     fs.copyFileSync(path.join(distAssets, file), path.join(rootAssets, file));
   }
-  console.log('Copied assets to root/assets');
+  console.log('Copied assets to root/assets (and cleaned obsolete files)');
 }
 
 // 2. Read dist/client/index.html

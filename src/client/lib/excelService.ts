@@ -1,6 +1,7 @@
 import type ExcelJS from 'exceljs';
 import type {
   DailyPlanRow,
+  DailyQualityReportData,
   EmployeeAttSummary,
   Payroll3PRow,
   ProductCostingSummary,
@@ -776,6 +777,258 @@ export async function downloadPayroll3PExcel(
 ): Promise<void> {
   const bytes = await buildPayroll3PWorkbook(yearMonth, rows);
   downloadWorkbookBytes(bytes, `GCCK_ThangLoi_BangChotLuong_KPI_3P_${yearMonth}.xlsx`);
+}
+
+// ==================== DAILY QUALITY REPORT WORKBOOK (FORM BM.KTCN.04.03) ====================
+export async function buildDailyQualityReportWorkbook(
+  report: DailyQualityReportData
+): Promise<Uint8Array> {
+  const wb = await createExcelWorkbook();
+  wb.creator = 'GCCK Thắng Lợi Lean MES';
+  const ws = wb.addWorksheet('BAO_CAO_NGAY', {
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9, // A4
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.4, right: 0.4, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
+    views: [{ state: 'frozen', ySplit: 6 }],
+  });
+
+  const [y, m, d] = report.reportDate.split('-');
+  const displayDate = d && m && y ? `${d}/${m}/${y}` : report.reportDate;
+
+  // Header top row
+  const r1 = ws.addRow([
+    report.companyName || 'CÔNG TY TNHH THẮNG LỢI',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    `Mã số: ${report.reportCode || 'BM.KTCN.04.03'}`,
+  ]);
+  r1.font = { bold: true, size: 11, color: { argb: 'FF1E293B' } };
+
+  const r2 = ws.addRow([
+    '',
+    '',
+    '',
+    '',
+    'BÁO CÁO NGÀY',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    `Lần ban hành: ${report.issueNo || '01'}`,
+  ]);
+  r2.font = { bold: true, size: 14, color: { argb: 'FF0F172A' } };
+
+  const r3 = ws.addRow([
+    `Phân xưởng: ${report.workshop || 'GIA CÔNG CƠ KHÍ'}`,
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    `Ngày hiệu lực: ${report.effectiveDate || '28/03/2026'}`,
+  ]);
+  r3.font = { bold: false, size: 10, italic: true, color: { argb: 'FF475569' } };
+
+  const r4 = ws.addRow([`Ngày báo cáo: ${displayDate}`]);
+  r4.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+
+  ws.addRow([]); // Spacer
+
+  // Table Column Headers (2 rows for merged subcolumns)
+  const headerRow1 = [
+    'TT',
+    'Tên Sản Phẩm',
+    'Khách Hàng',
+    'Mác Thép',
+    'Số lượng Đánh giá',
+    'Đạt',
+    '',
+    'Xử lý',
+    '',
+    '',
+    'Hỏng',
+    '',
+    '',
+    'Ghi chú',
+  ];
+  const headerRow2 = [
+    '',
+    '',
+    '',
+    '',
+    '',
+    'Số lượng',
+    '%',
+    'Số lượng',
+    '%',
+    'Tình trạng lỗi',
+    'Số lượng',
+    '%',
+    'Tình trạng hỏng',
+    '',
+  ];
+
+  const hr1 = ws.addRow(headerRow1);
+  const hr2 = ws.addRow(headerRow2);
+
+  [hr1, hr2].forEach((row) => {
+    row.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    row.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    row.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E40AF' }, // Navy blue
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        left: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        bottom: { style: 'thin', color: { argb: 'FF94A3B8' } },
+        right: { style: 'thin', color: { argb: 'FF94A3B8' } },
+      };
+    });
+  });
+
+  // Merge headers
+  // Row 6 and Row 7
+  ws.mergeCells('A6:A7'); // TT
+  ws.mergeCells('B6:B7'); // Tên SP
+  ws.mergeCells('C6:C7'); // KH
+  ws.mergeCells('D6:D7'); // Mác Thép
+  ws.mergeCells('E6:E7'); // SL Đánh giá
+  ws.mergeCells('F6:G6'); // Đạt (SL, %)
+  ws.mergeCells('H6:J6'); // Xử lý (SL, %, Lỗi)
+  ws.mergeCells('K6:M6'); // Hỏng (SL, %, Hỏng)
+  ws.mergeCells('N6:N7'); // Ghi chú
+
+  let sumAssessed = 0;
+  let sumOk = 0;
+  let sumRework = 0;
+  let sumScrap = 0;
+
+  report.items.forEach((item, idx) => {
+    sumAssessed += item.assessedQty;
+    sumOk += item.okQty;
+    sumRework += item.reworkQty;
+    sumScrap += item.scrapQty;
+
+    const row = ws.addRow([
+      idx + 1,
+      sanitizeForExcel(item.productName),
+      sanitizeForExcel(item.customer),
+      sanitizeForExcel(item.steelGrade),
+      item.assessedQty,
+      item.okQty,
+      `${Math.round(item.okPct)}%`,
+      item.reworkQty,
+      `${Math.round(item.reworkPct)}%`,
+      sanitizeForExcel(item.reworkReason),
+      item.scrapQty,
+      `${Math.round(item.scrapPct)}%`,
+      sanitizeForExcel(item.scrapReason),
+      sanitizeForExcel(item.note),
+    ]);
+
+    row.font = { size: 10, color: { argb: 'FF0F172A' } };
+    row.alignment = { vertical: 'middle' };
+    row.eachCell((cell, colNum) => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+      if ([1, 5, 6, 7, 8, 9, 11, 12].includes(colNum)) {
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+    });
+  });
+
+  // Summary Row
+  const overallOkPct = sumAssessed > 0 ? Math.round((sumOk / sumAssessed) * 100) : 100;
+  const overallRwPct = sumAssessed > 0 ? Math.round((sumRework / sumAssessed) * 100) : 0;
+  const overallScrapPct = sumAssessed > 0 ? Math.round((sumScrap / sumAssessed) * 100) : 0;
+
+  const sumRow = ws.addRow([
+    'TỔNG CỘNG',
+    '',
+    '',
+    '',
+    sumAssessed,
+    sumOk,
+    `${overallOkPct}%`,
+    sumRework,
+    `${overallRwPct}%`,
+    '',
+    sumScrap,
+    `${overallScrapPct}%`,
+    '',
+    '',
+  ]);
+
+  ws.mergeCells(`A${sumRow.number}:D${sumRow.number}`);
+  sumRow.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
+  sumRow.eachCell((cell, colNum) => {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF1F5F9' },
+    };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF0F172A' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    };
+    if (colNum >= 5) {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    }
+  });
+
+  ws.addRow([]); // Spacer
+  ws.addRow([]); // Spacer
+
+  // Signatures Row
+  const sigRow1 = ws.addRow(['', 'Người Lập Biểu', '', '', '', 'Tổ Trưởng / QC', '', '', '', 'Quản Đốc Phân Xưởng', '', '']);
+  sigRow1.font = { bold: true, size: 11, color: { argb: 'FF0F172A' } };
+  sigRow1.alignment = { horizontal: 'center' };
+
+  const sigRow2 = ws.addRow(['', '(Ký, họ tên)', '', '', '', '(Ký, họ tên)', '', '', '', '(Ký, đóng dấu)', '', '']);
+  sigRow2.font = { italic: true, size: 9, color: { argb: 'FF64748B' } };
+  sigRow2.alignment = { horizontal: 'center' };
+
+  autoFitColumns(ws, 8, 36);
+  return workbookToBytes(wb);
+}
+
+export async function downloadDailyQualityReportExcel(
+  report: DailyQualityReportData
+): Promise<void> {
+  const bytes = await buildDailyQualityReportWorkbook(report);
+  downloadWorkbookBytes(
+    bytes,
+    `BM.KTCN.04.03_BaoCaoNgay_${report.reportDate}.xlsx`
+  );
 }
 
 export function fileToUint8Array(file: File): Promise<Uint8Array> {
