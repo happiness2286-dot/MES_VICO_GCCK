@@ -68,7 +68,24 @@ export function DailyWeeklyScheduleTab({
 }: AdminTabCommonProps) {
   const bootstrap = rawBootstrap || getFallbackBootstrap();
   const toast = useToast();
-  const [subTab, setSubTab] = useState<'daily' | 'weekly' | 'daily_report'>('daily');
+  const [subTab, setSubTabState] = useState<'daily' | 'weekly' | 'daily_report'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      const st = p.get('subtab') || p.get('subTab');
+      if (st === 'daily_report' || st === 'report' || st === 'quality' || st === 'bm0403') return 'daily_report';
+      if (st === 'weekly') return 'weekly';
+    }
+    return 'daily';
+  });
+
+  const setSubTab = (tab: 'daily' | 'weekly' | 'daily_report') => {
+    setSubTabState(tab);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('subtab', tab);
+      window.history.replaceState({}, '', url.toString());
+    } catch (_) {}
+  };
 
   // ==================== TAB 1: DAILY SCHEDULE STATE ====================
   const [selectedDate, setSelectedDate] = useState<string>('2026-10-21');

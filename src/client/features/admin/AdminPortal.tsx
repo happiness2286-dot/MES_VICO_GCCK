@@ -267,10 +267,10 @@ export function AdminPortal() {
       {
         key: 'daily_schedule',
         shortLabel: 'Kế Hoạch & Tuần',
-        label: '3. Kế Hoạch Ngày QR & Báo Cáo Tuần',
-        subtitle: 'Form VICO QT.01.BM01 & Chu kỳ T5-T4',
+        label: '3. Kế Hoạch & Báo Cáo Ngày / Tuần (BM.KTCN.04.03)',
+        subtitle: 'Kế hoạch ngày QT.01, Báo cáo tuần & Báo cáo ngày Form BM.KTCN.04.03',
         icon: CalendarClock,
-        badgeText: 'VICO Form',
+        badgeText: 'Form 04.03',
         badgeVariant: 'info',
       },
       {
