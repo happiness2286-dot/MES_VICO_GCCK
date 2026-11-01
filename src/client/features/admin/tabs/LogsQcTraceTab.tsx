@@ -28,7 +28,7 @@ import type {
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { clearAllClientStoredLogs, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
+import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
 import { deleteAllLogsFromSupabase, fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import {
@@ -293,8 +293,9 @@ export function LogsQcTraceTab({
   const [hoDateFilter, setHoDateFilter] = useState('');
   const [hoDeptFilter, setHoDeptFilter] = useState<'ALL' | HandoverDept>('ALL');
   const [hoModalOpen, setHoModalOpen] = useState(false);
+  const [editingHoId, setEditingHoId] = useState<string | null>(null);
 
-  // New Handover Form State
+  // New / Edit Handover Form State
   const [hoDate, setHoDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [hoFromDept, setHoFromDept] = useState<HandoverDept>('PX_GIA_CONG');
   const [hoToDept, setHoToDept] = useState<HandoverDept>('PX_NHIET_LUYEN');
@@ -320,6 +321,61 @@ export function LogsQcTraceTab({
     } catch {
       setHandovers(getFallbackHandovers());
     }
+  };
+
+  const handleOpenEditHandover = (row: HandoverSlipRow) => {
+    setEditingHoId(row.id);
+    setHoDate(row.handoverDate || new Date().toISOString().slice(0, 10));
+    setHoFromDept(row.fromDept);
+    setHoToDept(row.toDept);
+    setHoSelectedPo(row.poId || '');
+    setHoProdName(row.productName);
+    setHoCustomer(row.customer);
+    setHoUnit(row.unit || 'Cái');
+    setHoProdQtyTransferred(row.prodQtyTransferred || 0);
+    setHoProdQtyDefect(row.prodQtyDefect || 0);
+    setHoProdQtyMissing(row.prodQtyMissing || 0);
+    setHoRawQtyTransferred(row.rawQtyTransferred || 0);
+    setHoRawQtyDefect(row.rawQtyDefect || 0);
+    setHoRawQtyMissing(row.rawQtyMissing || 0);
+    setHoNote(row.note || '');
+    setHoReceiver(row.receiverName || '');
+    setHoSender(row.senderName || user?.name || '');
+    setHoModalOpen(true);
+  };
+
+  const handleOpenCreateHandover = () => {
+    setEditingHoId(null);
+    setHoDate(new Date().toISOString().slice(0, 10));
+    setHoFromDept('PX_GIA_CONG');
+    setHoToDept('PX_NHIET_LUYEN');
+    const firstPo = bootstrap.ordersList[0];
+    setHoSelectedPo(firstPo?.poId || '');
+    setHoProdName(firstPo?.productName || '');
+    setHoCustomer(firstPo?.customer || '');
+    setHoUnit('Cái');
+    setHoProdQtyTransferred(firstPo?.finishedQty || 0);
+    setHoProdQtyDefect(0);
+    setHoProdQtyMissing(0);
+    setHoRawQtyTransferred(firstPo?.qtyPo || 0);
+    setHoRawQtyDefect(0);
+    setHoRawQtyMissing(0);
+    setHoNote('');
+    setHoReceiver('Trần Văn Dũng');
+    setHoSender(user?.name || 'Trần Văn Quỳnh');
+    setHoModalOpen(true);
+  };
+
+  const handleDeleteHandover = async (id: string) => {
+    if (!window.confirm('Bạn có chắc muốn xóa phiếu bàn giao này không?')) return;
+    try {
+      await apiClient.delete(`/handovers/${id}`);
+    } catch {
+      // fallback
+    }
+    deleteFallbackHandover(id);
+    setHandovers((prev) => prev.filter((h) => h.id !== id));
+    toast.success('Đã xóa phiếu bàn giao thành công.');
   };
 
   const handleSelectPoForHandover = (poId: string) => {
@@ -356,8 +412,10 @@ export function LogsQcTraceTab({
     }
     setSubmittingHo(true);
     try {
-      const newRow: HandoverSlipRow = {
-        id: `HO-${Date.now()}`,
+      const rowId = editingHoId || `HO-${Date.now()}`;
+      const existingRow = editingHoId ? handovers.find((h) => h.id === editingHoId) : null;
+      const targetRow: HandoverSlipRow = {
+        id: rowId,
         handoverDate: hoDate,
         fromDept: hoFromDept,
         toDept: hoToDept,
@@ -374,13 +432,28 @@ export function LogsQcTraceTab({
         note: hoNote.trim(),
         receiverName: hoReceiver.trim(),
         senderName: hoSender.trim(),
-        createdAt: new Date().toISOString(),
+        createdAt: existingRow?.createdAt || new Date().toISOString(),
       };
 
-      await apiClient.post('/handovers', newRow);
-      saveFallbackHandover(newRow);
-      setHandovers((prev) => [newRow, ...prev]);
-      toast.success('Đã lưu thành công phiếu chuyển giao công đoạn BM.GC.01.02!');
+      if (editingHoId) {
+        try {
+          await apiClient.patch(`/handovers/${editingHoId}`, targetRow);
+        } catch {
+          // fallback
+        }
+        saveFallbackHandover(targetRow);
+        setHandovers((prev) => prev.map((h) => (h.id === editingHoId ? targetRow : h)));
+        toast.success('Đã cập nhật thành công số liệu chuyển giao công đoạn BM.GC.01.02!');
+      } else {
+        try {
+          await apiClient.post('/handovers', targetRow);
+        } catch {
+          // fallback
+        }
+        saveFallbackHandover(targetRow);
+        setHandovers((prev) => [targetRow, ...prev]);
+        toast.success('Đã lưu thành công phiếu chuyển giao công đoạn BM.GC.01.02!');
+      }
       setHoModalOpen(false);
     } catch (err: any) {
       toast.error(err?.message || 'Lỗi khi lưu phiếu bàn giao.');
@@ -766,10 +839,10 @@ export function LogsQcTraceTab({
             <Button
               variant="primary"
               size="sm"
-              onClick={() => setHoModalOpen(true)}
+              onClick={handleOpenCreateHandover}
             >
               <Plus className="h-4 w-4" />
-              ➕ Lập Phiếu Bàn Giao Mới
+              ➕ Lập Phiếu / Nhập Số Liệu Đã Chuyển Trước Đó
             </Button>
           </div>
         )}
@@ -1752,10 +1825,10 @@ export function LogsQcTraceTab({
                 <Button
                   variant="primary"
                   size="sm"
-                  onClick={() => setHoModalOpen(true)}
+                  onClick={handleOpenCreateHandover}
                 >
                   <Plus className="h-4 w-4" />
-                  ➕ Lập Phiếu Mới
+                  ➕ Lập Phiếu Mới / Nhập Số Liệu Bàn Giao
                 </Button>
               </div>
             </div>
@@ -1780,7 +1853,8 @@ export function LogsQcTraceTab({
                     </th>
                     <th rowSpan={2} className="border-r border-slate-200 p-2.5">Tuyến Bàn Giao</th>
                     <th rowSpan={2} className="border-r border-slate-200 p-2.5">Người Nhận / Người Giao</th>
-                    <th rowSpan={2} className="p-2.5">Ghi Chú</th>
+                    <th rowSpan={2} className="border-r border-slate-200 p-2.5">Ghi Chú</th>
+                    <th rowSpan={2} className="p-2.5 text-center whitespace-nowrap min-w-[90px]">Thao Tác</th>
                   </tr>
                   <tr className="border-b border-slate-300 bg-slate-50 text-[11px] font-bold text-slate-700 text-center">
                     <th className="border-r border-slate-200 p-1.5 bg-emerald-50 text-emerald-800">Số chuyển</th>
@@ -1794,8 +1868,20 @@ export function LogsQcTraceTab({
                 <tbody className="divide-y divide-slate-200 bg-white">
                   {filteredHandovers.length === 0 ? (
                     <tr>
-                      <td colSpan={13} className="p-8 text-center font-medium text-slate-500">
-                        Không có phiếu chuyển giao công đoạn nào phù hợp với bộ lọc.
+                      <td colSpan={14} className="p-12 text-center">
+                        <div className="flex flex-col items-center justify-center space-y-3">
+                          <div className="text-slate-500 font-medium">
+                            Chưa có phiếu chuyển giao công đoạn nào được ghi nhận cho tháng 11.
+                          </div>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={handleOpenCreateHandover}
+                          >
+                            <Plus className="h-4 w-4 mr-1" />
+                            Nhập Số Liệu Chuyển Giao Mới / Bổ Sung Số Liệu Tháng 11
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ) : (
@@ -1862,8 +1948,28 @@ export function LogsQcTraceTab({
                               <strong>Giao:</strong> {row.senderName || '—'}
                             </div>
                           </td>
-                          <td className="p-2.5 text-xs text-slate-600">
+                          <td className="border-r border-slate-200 p-2.5 text-xs text-slate-600">
                             {row.note || '—'}
+                          </td>
+                          <td className="p-2 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditHandover(row)}
+                                className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-colors"
+                                title="Chỉnh sửa số liệu phiếu bàn giao đã chuyển trước đó"
+                              >
+                                <Edit3 className="h-3 w-3" /> Sửa
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteHandover(row.id)}
+                                className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                                title="Xóa phiếu bàn giao này"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1876,14 +1982,28 @@ export function LogsQcTraceTab({
         </div>
       )}
 
-      {/* ==================== MODAL: LẬP PHIẾU CHUYỂN GIAO CÔNG ĐOẠN (BM.GC.01.02) ==================== */}
+      {/* ==================== MODAL: LẬP / CHỈNH SỬA PHIẾU CHUYỂN GIAO CÔNG ĐOẠN (BM.GC.01.02) ==================== */}
       <Modal
         open={hoModalOpen}
         onClose={() => setHoModalOpen(false)}
-        title="📋 Lập Phiếu Chuyển Giao Công Đoạn Gia Công (BM.GC.01.02)"
+        title={
+          editingHoId
+            ? '✏️ Chỉnh Sửa Số Liệu Bàn Giao Đã Chuyển Trước Đó (BM.GC.01.02)'
+            : '📋 Lập Phiếu / Nhập Số Liệu Bàn Giao Đã Chuyển Trước Đó (BM.GC.01.02)'
+        }
         maxWidthClass="max-w-2xl"
       >
         <form onSubmit={(e) => void handleSaveHandover(e)} className="space-y-4 text-xs">
+          {/* Notification / Guide Banner */}
+          {editingHoId ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-[11px] text-amber-900 font-medium">
+              💡 <strong>Đang chỉnh sửa số liệu bàn giao:</strong> Bạn có thể sửa ngày bàn giao (trong quá khứ), số lượng BTP/Phôi đã chuyển, lỗi hỏng, số thiếu để số liệu vào đúng thực tế đã chuyển trước đó.
+            </div>
+          ) : (
+            <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-2.5 text-[11px] text-emerald-900 font-medium">
+              💡 <strong>Nhập số liệu chuyển giao mới hoặc đã chuyển trước đó:</strong> Bạn có thể chọn ngày bàn giao trong quá khứ để nạp bù số liệu hàng đã chuyển giữa các phân xưởng từ trước.
+            </div>
+          )}
           {/* Quick PO Selector */}
           <div>
             <label className="mb-1 block font-bold text-slate-700 uppercase">
@@ -2102,7 +2222,7 @@ export function LogsQcTraceTab({
               size="md"
               disabled={submittingHo}
             >
-              {submittingHo ? 'Đang Lưu...' : '💾 Lưu Phiếu Bàn Giao'}
+              {submittingHo ? 'Đang Lưu...' : editingHoId ? '💾 Lưu Cập Nhật Số Liệu' : '➕ Lưu Phiếu Bàn Giao'}
             </Button>
           </div>
         </form>

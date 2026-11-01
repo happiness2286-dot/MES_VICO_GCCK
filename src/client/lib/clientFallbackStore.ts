@@ -320,92 +320,52 @@ export function getAllFallbackLogs(): any[] {
   return list;
 }
 
-const LOCAL_HANDOVERS_KEY = 'GCCK_LOCAL_HANDOVERS_V1';
+const LOCAL_HANDOVERS_KEY = 'GCCK_LOCAL_HANDOVERS_V2';
 
-export const INITIAL_HANDOVERS: HandoverSlipRow[] = [
-  {
-    id: 'HO-2026-001',
-    handoverDate: new Date().toISOString().slice(0, 10),
-    fromDept: 'PX_GIA_CONG',
-    toDept: 'PX_NHIET_LUYEN',
-    poId: 'PO485-01',
-    spId: 'SP002',
-    productName: 'ALKTOP 1342 M',
-    customer: 'Win-Win - PO485',
-    unit: 'Cái',
-    prodQtyTransferred: 84,
-    prodQtyDefect: 2,
-    prodQtyMissing: 4,
-    rawQtyTransferred: 90,
-    rawQtyDefect: 0,
-    rawQtyMissing: 0,
-    note: 'Đã hoàn thành tiện NC1 + NC2, chuyển nhiệt luyện thấm cacbon',
-    receiverName: 'Trần Văn Dũng',
-    senderName: 'Trần Văn Quỳnh',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'HO-2026-002',
-    handoverDate: new Date().toISOString().slice(0, 10),
-    fromDept: 'PX_GIA_CONG',
-    toDept: 'PX_HOAN_THIEN',
-    poId: 'PO-2026-015',
-    spId: 'SP001',
-    productName: 'Pattern Drawing No 2CG00382',
-    customer: 'TFG',
-    unit: 'Cái',
-    prodQtyTransferred: 35,
-    prodQtyDefect: 1,
-    prodQtyMissing: 0,
-    rawQtyTransferred: 36,
-    rawQtyDefect: 0,
-    rawQtyMissing: 0,
-    note: 'Chuyển xưởng hoàn thiện mài phẳng và cạo ba-via',
-    receiverName: 'Phùng Gia Phúc',
-    senderName: 'Phạm Văn Tráng',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'HO-2026-003',
-    handoverDate: new Date().toISOString().slice(0, 10),
-    fromDept: 'PHONG_KHVT',
-    toDept: 'PX_GIA_CONG',
-    poId: 'PO-2026-088',
-    spId: 'SP005',
-    productName: 'Thanh đập đá vôi',
-    customer: 'Hùng HD - XM Hoàng Thạch',
-    unit: 'Cái',
-    prodQtyTransferred: 0,
-    prodQtyDefect: 0,
-    prodQtyMissing: 0,
-    rawQtyTransferred: 20,
-    rawQtyDefect: 1,
-    rawQtyMissing: 0,
-    note: 'Kho KHVT cấp 20 phôi đúc, phát hiện 1 phôi nứt xỉ cần đúc bù',
-    receiverName: 'Trần Văn Quỳnh',
-    senderName: 'Kho KHVT',
-    createdAt: new Date().toISOString(),
-  },
-];
+export const INITIAL_HANDOVERS: HandoverSlipRow[] = [];
 
 export function getFallbackHandovers(dateStr?: string): HandoverSlipRow[] {
   try {
+    // Clear old sample cache if present
+    localStorage.removeItem('GCCK_LOCAL_HANDOVERS_V1');
     const raw = localStorage.getItem(LOCAL_HANDOVERS_KEY);
     const list: HandoverSlipRow[] = raw ? JSON.parse(raw) : INITIAL_HANDOVERS;
     if (dateStr) {
-      const filtered = list.filter((h) => h.handoverDate === dateStr);
-      return filtered.length > 0 ? filtered : list;
+      return list.filter((h) => h.handoverDate === dateStr);
     }
     return list;
   } catch {
-    return INITIAL_HANDOVERS;
+    return [];
+  }
+}
+
+export function clearAllFallbackHandovers(): void {
+  try {
+    localStorage.removeItem(LOCAL_HANDOVERS_KEY);
+    localStorage.removeItem('GCCK_LOCAL_HANDOVERS_V1');
+  } catch {
+    // ignore
   }
 }
 
 export function saveFallbackHandover(row: HandoverSlipRow): void {
   try {
     const list = getFallbackHandovers();
-    list.unshift(row);
+    const idx = list.findIndex((h) => h.id === row.id);
+    if (idx >= 0) {
+      list[idx] = row;
+    } else {
+      list.unshift(row);
+    }
+    localStorage.setItem(LOCAL_HANDOVERS_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
+export function deleteFallbackHandover(id: string): void {
+  try {
+    const list = getFallbackHandovers().filter((h) => h.id !== id);
     localStorage.setItem(LOCAL_HANDOVERS_KEY, JSON.stringify(list));
   } catch {
     // ignore
