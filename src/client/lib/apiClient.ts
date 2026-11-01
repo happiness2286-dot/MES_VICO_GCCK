@@ -1,6 +1,10 @@
 import {
   getAllFallbackLogs,
   getFallbackAndonLive,
+  getFallbackAttendance,
+  saveFallbackAttendanceCell,
+  batchFallbackAttendance,
+  getFallbackPayroll,
   getFallbackBootstrap,
   getFallbackHandovers,
   getFallbackSession,
@@ -12,6 +16,8 @@ import {
   submitDirectToGoogleAppsScript,
   verifyFallbackPin,
   FALLBACK_PRODUCTS,
+  FALLBACK_ORDERS,
+  FALLBACK_WORKERS,
 } from './clientFallbackStore';
 import { isStaticHost } from './navigation';
 
@@ -181,6 +187,48 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   if (norm.includes('/bootstrap')) {
     return getFallbackBootstrap() as unknown as T;
   }
+  if (norm.includes('/qc/inspections') || norm.includes('/qc')) {
+    if (options.method === 'POST') {
+      return { success: true, id: Date.now() } as unknown as T;
+    }
+    return { items: [] } as unknown as T;
+  }
+  if (norm.includes('/attendance')) {
+    const parts = path.split('?')[0].split('/').filter(Boolean);
+    const ym = parts.find((p) => /^\d{4}-\d{2}$/.test(p)) || '2026-10';
+    if (norm.includes('/cell') && (options.method === 'PUT' || options.method === 'POST')) {
+      const body = options.json as any;
+      return saveFallbackAttendanceCell(
+        ym,
+        body?.empId || '',
+        Number(body?.dayIndex) || 0,
+        String(body?.value ?? ''),
+        body?.defaultShift
+      ) as unknown as T;
+    }
+    if (norm.includes('/batch') && options.method === 'POST') {
+      return batchFallbackAttendance(ym, options.json) as unknown as T;
+    }
+    return getFallbackAttendance(ym) as unknown as T;
+  }
+  if (norm.includes('/payroll')) {
+    const parts = path.split('?')[0].split('/').filter(Boolean);
+    let ym = parts.find((p) => /^\d{4}-\d{2}$/.test(p));
+    if (!ym) {
+      const urlParams = new URLSearchParams(path.split('?')[1] || '');
+      ym = urlParams.get('month') || '2026-10';
+    }
+    return getFallbackPayroll(ym) as unknown as T;
+  }
+  if (norm.includes('/config')) {
+    if (options.method === 'PUT' || options.method === 'POST') {
+      return { success: true, config: options.json || {} } as unknown as T;
+    }
+    return { config: { AUTH_MODE: 'PIN_ONLY' } } as unknown as T;
+  }
+  if (norm.includes('/sync/outbox')) {
+    return { items: [] } as unknown as T;
+  }
   if (norm.includes('/schedules/daily-dates')) {
     return {
       success: true,
@@ -193,6 +241,36 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   if (norm.includes('/schedules/daily')) {
     return { success: true, rows: [] } as unknown as T;
   }
+  if (norm.includes('/schedules')) {
+    if (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE') {
+      return { success: true } as unknown as T;
+    }
+    return { schedules: [], loads: [] } as unknown as T;
+  }
+  if (norm.includes('/orders')) {
+    if (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE') {
+      return { success: true } as unknown as T;
+    }
+    return { items: FALLBACK_ORDERS } as unknown as T;
+  }
+  if (norm.includes('/master/workers')) {
+    if (norm.includes('toggle-active')) {
+      return { success: true, isActive: 1, message: 'Thao tác thành công', workers: FALLBACK_WORKERS } as unknown as T;
+    }
+    if (norm.includes('reset-pin')) {
+      return { success: true, message: 'Đã đặt lại mã PIN về mặc định (1234)', workers: FALLBACK_WORKERS } as unknown as T;
+    }
+    return { success: true, message: 'Thao tác thành công', workers: FALLBACK_WORKERS } as unknown as T;
+  }
+  if (norm.includes('/auth/logout')) {
+    return { success: true } as unknown as T;
+  }
+  if (norm.includes('/auth/telegram-link')) {
+    return { success: true, message: 'Đã liên kết Telegram thành công' } as unknown as T;
+  }
+  if (norm.includes('/admin/reset-production-data')) {
+    return { success: true, message: 'Đã làm mới trắng dữ liệu' } as unknown as T;
+  }
   if (norm.includes('/andon/live')) {
     return getFallbackAndonLive() as unknown as T;
   }
@@ -204,9 +282,6 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       return { success: true } as unknown as T;
     }
     return { items: getAllFallbackLogs() } as unknown as T;
-  }
-  if (norm.includes('/qc/inspections')) {
-    return [] as unknown as T;
   }
   if (norm.includes('/traveler')) {
     const parts = path.split('/').filter(Boolean);

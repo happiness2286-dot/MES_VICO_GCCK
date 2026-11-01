@@ -46,3 +46,4 @@ if (fs.existsSync(seedPath)) {
   fs.writeFileSync(seedPath, JSON.stringify(seed, null, 2), 'utf8');
   console.log('seed_gcck_1233.json cleaned successfully! recentLogs count: 0');
 }
+

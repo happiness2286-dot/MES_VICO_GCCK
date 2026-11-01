@@ -2,14 +2,17 @@ import type {
   AndonLivePayload,
   MachineStatus,
   AppRole,
+  AttendanceRow,
   AuthSessionResponse,
   AuthSessionUser,
   BootstrapPayload,
   CuttingTool,
+  EmployeeAttSummary,
   HandoverSlipRow,
   JobTravelerDto,
   MachineInfo,
   OperationMeta,
+  Payroll3PRow,
   ProductMeta,
   PurchaseOrderInfo,
   QuickSwitchProfile,
@@ -18,7 +21,15 @@ import type {
   WeeklyProposalItem,
   WeeklyReportData,
   WorkerDto,
+  WorkerMonthlyLogAgg,
 } from '@shared/types';
+import {
+  computeMonthDows,
+  computeEmployeeMonthlyStats,
+  computeMonthly3PPayroll,
+  DEFAULT_MEAL_CONFIG,
+  getDefShiftCode,
+} from '@shared/attendanceParser';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 
@@ -32,7 +43,7 @@ if (typeof window !== 'undefined') {
   try {
     localStorage.removeItem('GCCK_LOCAL_CLIENT_LOGS_V1');
     localStorage.removeItem('GCCK_OUTBOX_V1');
-  } catch {}
+  } catch { }
 }
 
 export const FALLBACK_PRODUCTS: ProductMeta[] = (seedData.costingList || []).map((c: any) => ({
@@ -1022,5 +1033,247 @@ export function getFallbackAndonLive(): AndonLivePayload {
     urgentOrders,
     workerLeaderboard,
     alertsTicker,
+  };
+}
+
+export function getFallbackAttendance(ym: string) {
+  const [yStr, mStr] = ym.split('-');
+  const year = Number(yStr) || 2026;
+  const month = Number(mStr) || 10;
+  const key = `GCCK_ATTENDANCE_V2_${ym}`;
+
+  let rawList: AttendanceRow[] = [];
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        rawList = JSON.parse(stored);
+      }
+    } catch { }
+  }
+
+  if (!rawList || rawList.length === 0) {
+    if (ym === '2026-10') {
+      rawList = (seedData.attendanceList || []).map((e: any) => ({
+        empId: String(e.empId),
+        name: String(e.name),
+        workType: String(e.workType || 'Công'),
+        defaultShift: String(e.defaultShift || 'Ca 1'),
+        yearDaysHist: Array.isArray(e.yearDaysHist) ? [...e.yearDaysHist] : new Array(12).fill(0),
+        days: Array.isArray(e.days) ? [...e.days] : new Array(31).fill(''),
+      }));
+    } else {
+      rawList = FALLBACK_WORKERS.filter((w) => w.isActive !== 0).map((w) => {
+        const defShift = String(w.salaryMode || '').includes('Hành chính') ? 'Hành chính' : 'Ca 1';
+        return {
+          empId: w.id,
+          name: w.name,
+          workType: 'Công',
+          defaultShift: defShift,
+          yearDaysHist: new Array(12).fill(0),
+          days: new Array(31).fill(''),
+        };
+      });
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(key, JSON.stringify(rawList));
+      } catch { }
+    }
+  }
+
+  const dows = computeMonthDows(year, month);
+  const employees: EmployeeAttSummary[] = rawList.map((emp) =>
+    computeEmployeeMonthlyStats(emp, year, month, DEFAULT_MEAL_CONFIG)
+  );
+
+  return {
+    yearMonth: ym,
+    year,
+    month,
+    dows,
+    mealConfig: DEFAULT_MEAL_CONFIG,
+    employees,
+  };
+}
+
+export function saveFallbackAttendanceCell(
+  ym: string,
+  empId: string,
+  dayIndex: number,
+  value: string,
+  defaultShift?: string
+) {
+  const [yStr, mStr] = ym.split('-');
+  const year = Number(yStr) || 2026;
+  const month = Number(mStr) || 10;
+  const key = `GCCK_ATTENDANCE_V2_${ym}`;
+
+  getFallbackAttendance(ym); // Ensure populated
+  let rawList: AttendanceRow[] = [];
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) rawList = JSON.parse(stored);
+  } catch { }
+
+  const targetIdx = rawList.findIndex((r) => r.empId === empId);
+  let updatedRow: AttendanceRow;
+  if (targetIdx >= 0) {
+    const r = rawList[targetIdx];
+    const days = [...(r.days || [])];
+    while (days.length < 31) days.push('');
+    if (dayIndex >= 0 && dayIndex < 31) {
+      days[dayIndex] = value;
+    }
+    if (defaultShift) {
+      r.defaultShift = defaultShift;
+    }
+    r.days = days;
+    rawList[targetIdx] = r;
+    updatedRow = r;
+  } else {
+    const days = new Array(31).fill('');
+    if (dayIndex >= 0 && dayIndex < 31) days[dayIndex] = value;
+    updatedRow = {
+      empId,
+      name: empId,
+      workType: 'Công',
+      defaultShift: defaultShift || 'Ca 1',
+      yearDaysHist: new Array(12).fill(0),
+      days,
+    };
+    rawList.push(updatedRow);
+  }
+
+  try {
+    localStorage.setItem(key, JSON.stringify(rawList));
+  } catch { }
+
+  const summary = computeEmployeeMonthlyStats(updatedRow, year, month, DEFAULT_MEAL_CONFIG);
+  return { success: true, employee: summary };
+}
+
+export function batchFallbackAttendance(ym: string, payload: any) {
+  const [yStr, mStr] = ym.split('-');
+  const year = Number(yStr) || 2026;
+  const month = Number(mStr) || 10;
+  const dows = computeMonthDows(year, month);
+  const key = `GCCK_ATTENDANCE_V2_${ym}`;
+
+  const mode = String(payload?.mode || 'DEFAULT_SHIFT');
+  const fromDay = Math.max(1, Math.min(31, Number(payload?.fromDay) || 1));
+  const toDay = Math.max(fromDay, Math.min(31, Number(payload?.toDay) || 25));
+  const rawVal = String(payload?.value ?? '').toUpperCase();
+  const selectedDows: string[] = Array.isArray(payload?.selectedDows)
+    ? payload.selectedDows
+    : ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const empIds: string[] = Array.isArray(payload?.empIds) ? payload.empIds : [];
+  const fillEmptyWithDef = Boolean(payload?.fillEmptyWithDef ?? true);
+  const overwrite = Boolean(payload?.overwrite ?? false);
+
+  getFallbackAttendance(ym); // Ensure loaded
+  let rawList: AttendanceRow[] = [];
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored) rawList = JSON.parse(stored);
+  } catch { }
+
+  let changedCells = 0;
+  for (const emp of rawList) {
+    if (empIds.length > 0 && !empIds.includes(emp.empId)) continue;
+    const defCode = getDefShiftCode(emp.defaultShift);
+    const days = [...(emp.days || [])];
+    while (days.length < 31) days.push('');
+
+    for (let d = fromDay; d <= toDay; d++) {
+      const dow = dows[d - 1];
+      if (dow === '-' || !selectedDows.includes(dow)) continue;
+      const cur = String(days[d - 1] || '').trim().toUpperCase();
+
+      if (mode === 'OT_FIXED') {
+        if (cur === 'P' || cur === 'KP' || cur === 'O' || cur === '0') continue;
+        const otPart = rawVal.startsWith('+') ? rawVal : `+${rawVal || '2'}`;
+        if (!cur) {
+          if (fillEmptyWithDef) {
+            days[d - 1] = `${defCode}${otPart}`;
+            changedCells++;
+          }
+        } else {
+          const mLate = cur.match(/-\s*\d+(?:\.\d+)?/);
+          const baseOnly =
+            cur.split('+')[0].replace(/-\s*\d+(?:\.\d+)?/g, '').trim() || defCode;
+          days[d - 1] = `${baseOnly}${otPart}${mLate ? mLate[0].replace(/\s+/g, '') : ''}`;
+          changedCells++;
+        }
+      } else if (mode === 'DEFAULT_SHIFT') {
+        if (!cur || overwrite) {
+          days[d - 1] = defCode;
+          changedCells++;
+        }
+      } else if (mode === 'LONG_LEAVE') {
+        if (!cur || overwrite) {
+          days[d - 1] = rawVal || 'P';
+          changedCells++;
+        }
+      } else if (mode === 'RESIGN') {
+        days[d - 1] = '';
+        changedCells++;
+      }
+    }
+    emp.days = days;
+  }
+
+  try {
+    localStorage.setItem(key, JSON.stringify(rawList));
+  } catch { }
+
+  const refreshed = rawList.map((e) =>
+    computeEmployeeMonthlyStats(e, year, month, DEFAULT_MEAL_CONFIG)
+  );
+
+  return { success: true, changedCells, employees: refreshed };
+}
+
+export function getFallbackPayroll(ym: string) {
+  const attRes = getFallbackAttendance(ym);
+  const allLogs = getAllFallbackLogs();
+
+  const logMap = new Map<string, WorkerMonthlyLogAgg>();
+  for (const l of allLogs) {
+    if (l.isVoided) continue;
+    if (l.workDate && !l.workDate.startsWith(ym)) continue;
+    const wId = l.workerId || '';
+    if (!wId) continue;
+    let agg = logMap.get(wId);
+    if (!agg) {
+      agg = {
+        workerId: wId,
+        logCount: 0,
+        earnedStdSeconds: 0,
+        directPieceIncome: 0,
+        waitWageTotal: 0,
+        otBonusTotal: 0,
+        logMealTotal: 0,
+        scrapPenaltyTotal: 0,
+      };
+      logMap.set(wId, agg);
+    }
+    agg.logCount++;
+    agg.earnedStdSeconds += (Number(l.okQty) || 0) * (Number(l.stdSeconds) || 1800);
+    agg.directPieceIncome += Number(l.directPieceIncome) || 0;
+    agg.waitWageTotal += Number(l.waitWage) || 0;
+    agg.otBonusTotal += Number(l.otBonusWage) || 0;
+    agg.logMealTotal += Number(l.mealAllowance) || 0;
+    agg.scrapPenaltyTotal += Number(l.scrapPenalty) || 0;
+  }
+
+  const logAggs = Array.from(logMap.values());
+  const rows = computeMonthly3PPayroll(FALLBACK_WORKERS, attRes.employees, logAggs);
+  const totalNetPay = rows.reduce((acc, r) => acc + (r.netPay || 0), 0);
+
+  return {
+    yearMonth: ym,
+    rows,
+    totalNetPay,
   };
 }
