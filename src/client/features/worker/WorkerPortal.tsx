@@ -958,6 +958,8 @@ export function WorkerPortal() {
     stopMinutes,
     stopReason,
     user?.workerId,
+    selectedCustomerFilter,
+    customerStats,
     handleSelectPo,
     applyOperationSelection,
     quickSwitch,

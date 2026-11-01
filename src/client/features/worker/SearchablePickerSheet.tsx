@@ -54,16 +54,22 @@ export function SearchablePickerSheet({
 }: SearchablePickerSheetProps) {
   const [query, setQuery] = useState('');
   const [showAll, setShowAll] = useState(false);
-  const [internalCategory, setInternalCategory] = useState<string>('ALL');
+  const [internalCategory, setInternalCategory] = useState<string>(activeCategory || 'ALL');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const currentCategory = activeCategory !== undefined ? activeCategory : internalCategory;
+  useEffect(() => {
+    if (activeCategory !== undefined) {
+      setInternalCategory(activeCategory);
+    }
+  }, [activeCategory, open]);
+
+  const currentCategory = internalCategory;
 
   const handleSelectCategory = (val: string) => {
+    const nextVal = internalCategory.toLowerCase() === val.toLowerCase() ? 'ALL' : val;
+    setInternalCategory(nextVal);
     if (onCategoryChange) {
-      onCategoryChange(val);
-    } else {
-      setInternalCategory(val);
+      onCategoryChange(nextVal);
     }
     setShowAll(false);
   };
@@ -91,10 +97,16 @@ export function SearchablePickerSheet({
   const filtered = useMemo(() => {
     let list = options;
     if (currentCategory && currentCategory !== 'ALL') {
+      const targetCat = currentCategory.trim().toLowerCase();
       list = list.filter((item) => {
-        if (item.category) return item.category.toLowerCase() === currentCategory.toLowerCase();
+        if (item.category) {
+          const itemCat = item.category.trim().toLowerCase();
+          if (itemCat === targetCat || itemCat.includes(targetCat) || targetCat.includes(itemCat)) {
+            return true;
+          }
+        }
         const hay = `${item.secondaryText || ''} ${item.searchKeywords || ''}`.toLowerCase();
-        return hay.includes(currentCategory.toLowerCase());
+        return hay.includes(targetCat);
       });
     }
 
