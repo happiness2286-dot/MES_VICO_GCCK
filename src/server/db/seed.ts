@@ -7,60 +7,8 @@ import { hashPin } from '../auth/security';
 import { normalizeVn, removeVietnameseTones } from '../../shared/vnSearch';
 import { getVietnamDateString } from '../../shared/payrollEngine';
 
-export function canonicalizeCustomerName(rawCust: string): { customer: string; contractRef: string } {
-  const clean = normalizeVn(rawCust);
-  if (!clean) return { customer: 'Vico - Nội bộ / Khách lẻ', contractRef: '' };
-
-  const ascii = removeVietnameseTones(clean).toLowerCase();
-
-  // Extract contract/PO tag if separated by hyphen
-  const extractSuffix = (prefixRegex: RegExp, canonical: string) => {
-    const rest = clean.replace(prefixRegex, '').trim();
-    return { customer: canonical, contractRef: rest };
-  };
-
-  if (ascii === 'win win' || ascii.startsWith('win-win')) {
-    return extractSuffix(/^win[-\s]*win\s*[-\s]*/i, 'Win-Win');
-  }
-  if (ascii.startsWith('tfg')) {
-    return extractSuffix(/^tfg\s*[-\s]*/i, 'TFG');
-  }
-  if (ascii.startsWith('taniguchi')) {
-    return extractSuffix(/^taniguchi\s*[-\s]*/i, 'Taniguchi');
-  }
-  if (ascii.startsWith('molycop')) {
-    return extractSuffix(/^molycop(?:\s*\/\s*bi\s*nghiền)?\s*[-\s]*/i, 'Molycop / Bi nghiền');
-  }
-  if (ascii.startsWith('vautid')) {
-    return extractSuffix(/^vautid\s*[-\s]*/i, 'Vautid');
-  }
-  if (ascii.startsWith('thyssen')) {
-    return extractSuffix(/^thyssen(?:krupp)?\s*[-\s]*/i, 'Thyssenkrupp');
-  }
-  if (ascii.startsWith('ucc')) {
-    return extractSuffix(/^ucc\s*[-\s]*/i, 'UCC');
-  }
-  if (ascii.startsWith('hung hd')) {
-    return { customer: 'Hùng HD - XM Hoàng Thạch', contractRef: '' };
-  }
-  if (ascii.startsWith('hai-') || ascii.startsWith('hai -') || ascii.includes('vinh quang ninh')) {
-    return { customer: 'Hải-Vinh Quảng Ninh', contractRef: '' };
-  }
-  if (ascii.startsWith('boz industrial')) {
-    return { customer: 'BOZ Industrial', contractRef: '' };
-  }
-  if (ascii.startsWith('ha song hai') || ascii.includes('hong ha')) {
-    return { customer: 'Hà Song Hải / Hồng Hà', contractRef: clean !== 'Hà Song Hải / Hồng Hà' ? clean : '' };
-  }
-  if (ascii.startsWith('vico') || ascii.startsWith('noi bo')) {
-    return {
-      customer: 'Vico - Nội bộ / Khách lẻ',
-      contractRef: clean !== 'Vico - Nội bộ / Khách lẻ' ? clean : '',
-    };
-  }
-
-  return { customer: clean, contractRef: '' };
-}
+import { canonicalizeCustomerName, type CanonicalCustomerResult } from '../../shared/customerNormalization';
+export { canonicalizeCustomerName, type CanonicalCustomerResult };
 
 export function derivePoStatus(
   qtyPo: number,

@@ -11596,6 +11596,90 @@
       "stdLaborCost": 32083,
       "stdMachCost": 17917,
       "stdToolCost": 0
+    },
+    {
+      "ncId": "NC628",
+      "spId": "SP335",
+      "customer": "UCC",
+      "productName": "210658-2",
+      "opName": "G/c Tiện CNC thô NC1",
+      "stdSeconds": 7200,
+      "stage": "1",
+      "stepOrder": 1,
+      "isFinalOp": 0,
+      "defaultMachine": "Máy tiện OKUMA",
+      "matName": "Gang Cr (Cr26-28, Ni-hard 4, Vautid, DH)",
+      "cuttingRec": "Vc=110-140m/p | f=0.2mm/v",
+      "toolCode": "T01",
+      "toolName": "Mảnh tiện thô CNMG 120408",
+      "costPerEdge": 27500,
+      "stdEdgesPerPcs": 2.5,
+      "stdLaborCost": 96250,
+      "stdMachCost": 78750,
+      "stdToolCost": 0
+    },
+    {
+      "ncId": "NC629",
+      "spId": "SP335",
+      "customer": "UCC",
+      "productName": "210658-2",
+      "opName": "G/c Tiện CNC tinh hoàn thiện NC2",
+      "stdSeconds": 7200,
+      "stage": "End",
+      "stepOrder": 2,
+      "isFinalOp": 1,
+      "defaultMachine": "Máy tiện FUJI",
+      "matName": "Gang Cr (Cr26-28, Ni-hard 4, Vautid, DH)",
+      "cuttingRec": "Vc=120-150m/p | f=0.15mm/v",
+      "toolCode": "T03",
+      "toolName": "Chíp tiện TNMG 160408-PM XP2125",
+      "costPerEdge": 20833.33,
+      "stdEdgesPerPcs": 2,
+      "stdLaborCost": 96250,
+      "stdMachCost": 78750,
+      "stdToolCost": 0
+    },
+    {
+      "ncId": "NC630",
+      "spId": "SP336",
+      "customer": "UCC",
+      "productName": "493623-1",
+      "opName": "G/c Tiện CNC thô NC1",
+      "stdSeconds": 14400,
+      "stage": "1",
+      "stepOrder": 1,
+      "isFinalOp": 0,
+      "defaultMachine": "Máy tiện T630",
+      "matName": "Gang Cr (Cr26-28, Ni-hard 4, Vautid, DH)",
+      "cuttingRec": "Vc=110-140m/p | f=0.2mm/v",
+      "toolCode": "T01",
+      "toolName": "Mảnh tiện thô CNMG 120408",
+      "costPerEdge": 27500,
+      "stdEdgesPerPcs": 3.5,
+      "stdLaborCost": 192500,
+      "stdMachCost": 157500,
+      "stdToolCost": 0
+    },
+    {
+      "ncId": "NC631",
+      "spId": "SP336",
+      "customer": "UCC",
+      "productName": "493623-1",
+      "opName": "G/c Tiện CNC tinh hoàn thiện NC2",
+      "stdSeconds": 14400,
+      "stage": "End",
+      "stepOrder": 2,
+      "isFinalOp": 1,
+      "defaultMachine": "Máy tiện FUJI",
+      "matName": "Gang Cr (Cr26-28, Ni-hard 4, Vautid, DH)",
+      "cuttingRec": "Vc=120-150m/p | f=0.15mm/v",
+      "toolCode": "T03",
+      "toolName": "Chíp tiện TNMG 160408-PM XP2125",
+      "costPerEdge": 20833.33,
+      "stdEdgesPerPcs": 3,
+      "stdLaborCost": 192500,
+      "stdMachCost": 157500,
+      "stdToolCost": 0
     }
   ],
   "toolsList": [
@@ -12547,7 +12631,7 @@
   "ordersList": [
     {
       "poId": "PO475-01",
-      "customer": "Win-Win - PO475",
+      "customer": "Win-Win",
       "contractRef": "PO475",
       "spId": null,
       "productName": "ISHIZUE 267.4-700",
@@ -12565,7 +12649,7 @@
     },
     {
       "poId": "PO475-02",
-      "customer": "Win-Win - PO475",
+      "customer": "Win-Win",
       "contractRef": "PO475",
       "spId": null,
       "productName": "ISHIZUE 267.4-800",
@@ -12583,7 +12667,7 @@
     },
     {
       "poId": "PO475-03",
-      "customer": "Win-Win - PO475",
+      "customer": "Win-Win",
       "contractRef": "PO475",
       "spId": null,
       "productName": "ISHIZUEOMEGA S216.3-550",
@@ -12601,7 +12685,7 @@
     },
     {
       "poId": "PO475-04",
-      "customer": "Win-Win - PO475",
+      "customer": "Win-Win",
       "contractRef": "PO475",
       "spId": null,
       "productName": "ISHIZUEOMEGA S216.3-650",
@@ -12619,7 +12703,7 @@
     },
     {
       "poId": "PO475-05",
-      "customer": "Win-Win - PO475",
+      "customer": "Win-Win",
       "contractRef": "PO475",
       "spId": null,
       "productName": "ISHIZUEOMEGA S267.4-700",
@@ -12637,7 +12721,7 @@
     },
     {
       "poId": "PO471-1",
-      "customer": "Win-Win - PO471",
+      "customer": "Win-Win",
       "contractRef": "PO471",
       "spId": null,
       "productName": "SFP216",
@@ -12655,7 +12739,7 @@
     },
     {
       "poId": "PO483-01",
-      "customer": "Win-Win - PO483",
+      "customer": "Win-Win",
       "contractRef": "PO483",
       "spId": null,
       "productName": "ISHIZUEOMEGA T267.4-950",
@@ -12673,9 +12757,9 @@
     },
     {
       "poId": "PO487-01",
-      "customer": "Win-Win - PO487",
+      "customer": "Win-Win",
       "contractRef": "PO487",
-      "spId": null,
+      "spId": "SP041",
       "productName": "ALKTOP II 1130H",
       "qtyPo": 105,
       "dueDate": "2026-11-10",
@@ -12691,9 +12775,9 @@
     },
     {
       "poId": "PO487-02",
-      "customer": "Win-Win - PO487",
+      "customer": "Win-Win",
       "contractRef": "PO487",
-      "spId": null,
+      "spId": "SP057",
       "productName": "ALKTOP II 1335M",
       "qtyPo": 100,
       "dueDate": "2026-11-10",
@@ -12709,9 +12793,9 @@
     },
     {
       "poId": "PO487-03",
-      "customer": "Win-Win - PO487",
+      "customer": "Win-Win",
       "contractRef": "PO487",
-      "spId": null,
+      "spId": "SP061",
       "productName": "ALKTOP II 1950H",
       "qtyPo": 112,
       "dueDate": "2026-11-10",
@@ -12727,9 +12811,9 @@
     },
     {
       "poId": "PO487-04",
-      "customer": "Win-Win - PO487",
+      "customer": "Win-Win",
       "contractRef": "PO487",
-      "spId": null,
+      "spId": "SP064",
       "productName": "ALKTOP II 2660H",
       "qtyPo": 16,
       "dueDate": "2026-11-10",
@@ -12745,9 +12829,9 @@
     },
     {
       "poId": "PO487-05",
-      "customer": "Win-Win - PO487",
+      "customer": "Win-Win",
       "contractRef": "PO487",
-      "spId": null,
+      "spId": "SP023",
       "productName": "ALKTOP II 2681H",
       "qtyPo": 21,
       "dueDate": "2026-11-10",
@@ -12763,9 +12847,9 @@
     },
     {
       "poId": "PO488-01",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP041",
       "productName": "ALKTOP II 1130H",
       "qtyPo": 315,
       "dueDate": "2026-11-11",
@@ -12781,9 +12865,9 @@
     },
     {
       "poId": "PO488-02",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP056",
       "productName": "ALKTOP II 1135M",
       "qtyPo": 72,
       "dueDate": "2026-11-11",
@@ -12799,9 +12883,9 @@
     },
     {
       "poId": "PO488-03",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP058",
       "productName": "ALKTOP II 1342M",
       "qtyPo": 135,
       "dueDate": "2026-11-11",
@@ -12817,9 +12901,9 @@
     },
     {
       "poId": "PO488-04",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP040",
       "productName": "ALKTOP II 1342H",
       "qtyPo": 135,
       "dueDate": "2026-11-11",
@@ -12835,9 +12919,9 @@
     },
     {
       "poId": "PO488-05",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP060",
       "productName": "ALKTOP II 1645H",
       "qtyPo": 40,
       "dueDate": "2026-11-11",
@@ -12853,9 +12937,9 @@
     },
     {
       "poId": "PO488-06",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP062",
       "productName": "ALKTOP II 2155H",
       "qtyPo": 14,
       "dueDate": "2026-11-11",
@@ -12871,9 +12955,9 @@
     },
     {
       "poId": "PO488-07",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP064",
       "productName": "ALKTOP II 2660H",
       "qtyPo": 8,
       "dueDate": "2026-11-11",
@@ -12889,9 +12973,9 @@
     },
     {
       "poId": "PO488-08",
-      "customer": "Win-Win - PO488",
+      "customer": "Win-Win",
       "contractRef": "PO488",
-      "spId": null,
+      "spId": "SP023",
       "productName": "ALKTOP II 2681H",
       "qtyPo": 12,
       "dueDate": "2026-11-11",
@@ -12907,7 +12991,7 @@
     },
     {
       "poId": "PO497-01",
-      "customer": "Win-Win - PO497",
+      "customer": "Win-Win",
       "contractRef": "PO497",
       "spId": null,
       "productName": "ISHIZUE OMEGA T406.4-1130",
@@ -12925,7 +13009,7 @@
     },
     {
       "poId": "PO482-01",
-      "customer": "Win-Win - PO482",
+      "customer": "Win-Win",
       "contractRef": "PO482",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-1000",
@@ -12943,7 +13027,7 @@
     },
     {
       "poId": "PO482-02",
-      "customer": "Win-Win - PO482",
+      "customer": "Win-Win",
       "contractRef": "PO482",
       "spId": null,
       "productName": "ISHIZUE OMEGA T406.4-1130",
@@ -12961,7 +13045,7 @@
     },
     {
       "poId": "PO490-01",
-      "customer": "Win-Win - PO490",
+      "customer": "Win-Win",
       "contractRef": "PO490",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-850",
@@ -12979,7 +13063,7 @@
     },
     {
       "poId": "PO490-02",
-      "customer": "Win-Win - PO490",
+      "customer": "Win-Win",
       "contractRef": "PO490",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-1000",
@@ -12997,7 +13081,7 @@
     },
     {
       "poId": "PO491-01",
-      "customer": "Win-Win - PO491",
+      "customer": "Win-Win",
       "contractRef": "PO491",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-750",
@@ -13015,7 +13099,7 @@
     },
     {
       "poId": "PO491-02",
-      "customer": "Win-Win - PO491",
+      "customer": "Win-Win",
       "contractRef": "PO491",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-900",
@@ -13033,7 +13117,7 @@
     },
     {
       "poId": "PO489-01",
-      "customer": "Win-Win - PO489",
+      "customer": "Win-Win",
       "contractRef": "PO489",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-850",
@@ -13051,7 +13135,7 @@
     },
     {
       "poId": "PO498-01",
-      "customer": "Win-Win - PO498",
+      "customer": "Win-Win",
       "contractRef": "PO498",
       "spId": null,
       "productName": "ISHIZUE OMEGA T406.4-1130",
@@ -13069,7 +13153,7 @@
     },
     {
       "poId": "PO471-2",
-      "customer": "Win-Win - PO471",
+      "customer": "Win-Win",
       "contractRef": "PO471",
       "spId": null,
       "productName": "SFP216",
@@ -13087,7 +13171,7 @@
     },
     {
       "poId": "PO493-01",
-      "customer": "Win-Win - PO493",
+      "customer": "Win-Win",
       "contractRef": "PO493",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-1000",
@@ -13105,7 +13189,7 @@
     },
     {
       "poId": "PO495-01",
-      "customer": "Win-Win - PO495",
+      "customer": "Win-Win",
       "contractRef": "PO495",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-900",
@@ -13123,9 +13207,9 @@
     },
     {
       "poId": "PO-ALKTOP-01",
-      "customer": "Win-Win - PO",
+      "customer": "Win-Win",
       "contractRef": "PO",
-      "spId": null,
+      "spId": "SP031",
       "productName": "ALKTOP II 2670H",
       "qtyPo": 36,
       "dueDate": "2026-11-25",
@@ -13141,9 +13225,9 @@
     },
     {
       "poId": "PO-ALKTOP-02",
-      "customer": "Win-Win - PO",
+      "customer": "Win-Win",
       "contractRef": "PO",
-      "spId": null,
+      "spId": "SP023",
       "productName": "ALKTOP II 2681H",
       "qtyPo": 54,
       "dueDate": "2026-11-25",
@@ -13159,7 +13243,7 @@
     },
     {
       "poId": "PO492-01",
-      "customer": "Win-Win - PO492",
+      "customer": "Win-Win",
       "contractRef": "PO492",
       "spId": null,
       "productName": "ISHIZUEOMEGA S165.2-500",
@@ -13177,7 +13261,7 @@
     },
     {
       "poId": "PO492-02",
-      "customer": "Win-Win - PO492",
+      "customer": "Win-Win",
       "contractRef": "PO492",
       "spId": null,
       "productName": "ISHIZUEOMEGA S190.7-550",
@@ -13195,7 +13279,7 @@
     },
     {
       "poId": "PO492-03",
-      "customer": "Win-Win - PO492",
+      "customer": "Win-Win",
       "contractRef": "PO492",
       "spId": null,
       "productName": "ISHIZUEOMEGA S216.3-650",
@@ -13213,7 +13297,7 @@
     },
     {
       "poId": "PO492-04",
-      "customer": "Win-Win - PO492",
+      "customer": "Win-Win",
       "contractRef": "PO492",
       "spId": null,
       "productName": "ISHIZUEOMEGA S267.4-700",
@@ -13231,7 +13315,7 @@
     },
     {
       "poId": "PO492-05",
-      "customer": "Win-Win - PO492",
+      "customer": "Win-Win",
       "contractRef": "PO492",
       "spId": null,
       "productName": "ISHIZUEOMEGA S267.4-800",
@@ -13249,7 +13333,7 @@
     },
     {
       "poId": "PO494-01",
-      "customer": "Win-Win - PO494",
+      "customer": "Win-Win",
       "contractRef": "PO494",
       "spId": null,
       "productName": "ISHIZUEOMEGA S318.5-800",
@@ -13267,7 +13351,7 @@
     },
     {
       "poId": "PO494-02",
-      "customer": "Win-Win - PO494",
+      "customer": "Win-Win",
       "contractRef": "PO494",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-900",
@@ -13285,7 +13369,7 @@
     },
     {
       "poId": "PO466-01",
-      "customer": "Win-Win - PO466",
+      "customer": "Win-Win",
       "contractRef": "PO466",
       "spId": null,
       "productName": "ISHIZUEOMEGA S267.4-800",
@@ -13303,7 +13387,7 @@
     },
     {
       "poId": "PO467-01",
-      "customer": "Win-Win - PO467",
+      "customer": "Win-Win",
       "contractRef": "PO467",
       "spId": null,
       "productName": "ISHIZUEOMEGA S318.5-650",
@@ -13321,7 +13405,7 @@
     },
     {
       "poId": "PO467-02",
-      "customer": "Win-Win - PO467",
+      "customer": "Win-Win",
       "contractRef": "PO467",
       "spId": null,
       "productName": "ISHIZUEOMEGA S318.5-800",
@@ -13339,7 +13423,7 @@
     },
     {
       "poId": "PO467-03",
-      "customer": "Win-Win - PO467",
+      "customer": "Win-Win",
       "contractRef": "PO467",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-750",
@@ -13357,7 +13441,7 @@
     },
     {
       "poId": "PO413-01",
-      "customer": "Win-Win - PO413",
+      "customer": "Win-Win",
       "contractRef": "PO413",
       "spId": null,
       "productName": "ISHIZUE OMEGA T406.4-1130",
@@ -13375,7 +13459,7 @@
     },
     {
       "poId": "PO464-01",
-      "customer": "Win-Win - PO464",
+      "customer": "Win-Win",
       "contractRef": "PO464",
       "spId": null,
       "productName": "ISHIZUEOMEGA S114.3-300",
@@ -13393,7 +13477,7 @@
     },
     {
       "poId": "PO464-02",
-      "customer": "Win-Win - PO464",
+      "customer": "Win-Win",
       "contractRef": "PO464",
       "spId": null,
       "productName": "ISHIZUEOMEGA S139.8-350",
@@ -13411,7 +13495,7 @@
     },
     {
       "poId": "PO464-03",
-      "customer": "Win-Win - PO464",
+      "customer": "Win-Win",
       "contractRef": "PO464",
       "spId": null,
       "productName": "ISHIZUEOMEGA S165.2-500",
@@ -13429,7 +13513,7 @@
     },
     {
       "poId": "PO464-04",
-      "customer": "Win-Win - PO464",
+      "customer": "Win-Win",
       "contractRef": "PO464",
       "spId": null,
       "productName": "ISHIZUEOMEGA S190.7-550",
@@ -13447,7 +13531,7 @@
     },
     {
       "poId": "PO464-05",
-      "customer": "Win-Win - PO464",
+      "customer": "Win-Win",
       "contractRef": "PO464",
       "spId": null,
       "productName": "ISHIZUEOMEGA S216.3-550",
@@ -13465,7 +13549,7 @@
     },
     {
       "poId": "PO464-06",
-      "customer": "Win-Win - PO464",
+      "customer": "Win-Win",
       "contractRef": "PO464",
       "spId": null,
       "productName": "ISHIZUEOMEGA S216.3-650",
@@ -13483,7 +13567,7 @@
     },
     {
       "poId": "PO366-25",
-      "customer": "Win-Win - PO366",
+      "customer": "Win-Win",
       "contractRef": "PO366",
       "spId": null,
       "productName": "ISHIZUE OMEGA T267.4-700",
@@ -13501,7 +13585,7 @@
     },
     {
       "poId": "PO366-27",
-      "customer": "Win-Win - PO366",
+      "customer": "Win-Win",
       "contractRef": "PO366",
       "spId": null,
       "productName": "ISHIZUE OMEGA T267.4-700",
@@ -13519,7 +13603,7 @@
     },
     {
       "poId": "PO439-01",
-      "customer": "Win-Win - PO439",
+      "customer": "Win-Win",
       "contractRef": "PO439",
       "spId": null,
       "productName": "ISHIZUEOMEGA T318.5-1010",
@@ -13537,7 +13621,7 @@
     },
     {
       "poId": "PO468-01",
-      "customer": "Win-Win - PO468",
+      "customer": "Win-Win",
       "contractRef": "PO468",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-900",
@@ -13555,7 +13639,7 @@
     },
     {
       "poId": "PO468-02",
-      "customer": "Win-Win - PO468",
+      "customer": "Win-Win",
       "contractRef": "PO468",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-850",
@@ -13573,7 +13657,7 @@
     },
     {
       "poId": "PO403-01",
-      "customer": "Win-Win - PO403",
+      "customer": "Win-Win",
       "contractRef": "PO403",
       "spId": null,
       "productName": "ISHIZUE 457.2-1150",
@@ -13591,7 +13675,7 @@
     },
     {
       "poId": "PO463-01",
-      "customer": "Win-Win - PO463",
+      "customer": "Win-Win",
       "contractRef": "PO463",
       "spId": null,
       "productName": "ISHIZUEOMEGA T267.4-950",
@@ -13609,7 +13693,7 @@
     },
     {
       "poId": "PO469-01",
-      "customer": "Win-Win - PO469",
+      "customer": "Win-Win",
       "contractRef": "PO469",
       "spId": null,
       "productName": "ISHIZUEOMEGA S406.4-1000",
@@ -13627,7 +13711,7 @@
     },
     {
       "poId": "PO469-02",
-      "customer": "Win-Win - PO469",
+      "customer": "Win-Win",
       "contractRef": "PO469",
       "spId": null,
       "productName": "ISHIZUEOMEGA S457.2-950",
@@ -13645,7 +13729,7 @@
     },
     {
       "poId": "PO470-01",
-      "customer": "Win-Win - PO470",
+      "customer": "Win-Win",
       "contractRef": "PO470",
       "spId": null,
       "productName": "ISHIZUEOMEGA S457.2-1150",
@@ -13663,7 +13747,7 @@
     },
     {
       "poId": "PO496-01",
-      "customer": "Win-Win - PO496",
+      "customer": "Win-Win",
       "contractRef": "PO496",
       "spId": null,
       "productName": "ISHIZUEOMEGA S355.6-900",
@@ -13681,7 +13765,7 @@
     },
     {
       "poId": "PO-MAU-VF",
-      "customer": "Nội bộ - Thử cơ tính",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Mẫu Thử",
       "qtyPo": 120,
       "dueDate": "2026-10-28",
@@ -13690,11 +13774,13 @@
       "deliveredQty": 0,
       "stockQty": 42,
       "remainQty": 42,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Nội bộ - Thử cơ tính",
+      "note": "Nội bộ - Thử cơ tính"
     },
     {
       "poId": "DH-051",
-      "customer": "Vautid- PO24024111",
+      "customer": "Vautid",
       "productName": "Mix scoop inner left, Code: 120948, Ref C",
       "qtyPo": 200,
       "dueDate": "2025-11-21",
@@ -13703,11 +13789,13 @@
       "deliveredQty": 0,
       "stockQty": 200,
       "remainQty": 200,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "PO24024111",
+      "note": "PO24024111"
     },
     {
       "poId": "DH-052",
-      "customer": "Vautid- PO24024311",
+      "customer": "Vautid",
       "productName": "Wear floor segment code: 122058 Ref A",
       "qtyPo": 24,
       "dueDate": "2026-01-02",
@@ -13716,11 +13804,13 @@
       "deliveredQty": 0,
       "stockQty": 24,
       "remainQty": 24,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "PO24024311",
+      "note": "PO24024311"
     },
     {
       "poId": "DH-053",
-      "customer": "Vautid- PO24024311",
+      "customer": "Vautid",
       "productName": "Wear floor segment outlet code: 122059 Ref A",
       "qtyPo": 2,
       "dueDate": "2026-01-02",
@@ -13729,7 +13819,9 @@
       "deliveredQty": 0,
       "stockQty": 2,
       "remainQty": 2,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "PO24024311",
+      "note": "PO24024311"
     },
     {
       "poId": "DH-054",
@@ -13785,7 +13877,7 @@
     },
     {
       "poId": "DH-058",
-      "customer": "Hà Song Hải- XM Hạ Long",
+      "customer": "Hà Song Hải / Hồng Hà",
       "productName": "Thanh đập đá vôi (2220x510x145)",
       "qtyPo": 12,
       "dueDate": "2026-01-31",
@@ -13794,11 +13886,13 @@
       "deliveredQty": 0,
       "stockQty": 12,
       "remainQty": 12,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Hà Song Hải- XM Hạ Long",
+      "note": "Hà Song Hải- XM Hạ Long"
     },
     {
       "poId": "DH-059",
-      "customer": "Hà Song Hải- XM Hạ Long",
+      "customer": "Hà Song Hải / Hồng Hà",
       "productName": "Thanh ghi máy đập đá vôi (745x105x97)",
       "qtyPo": 27,
       "dueDate": "2025-08-08",
@@ -13807,11 +13901,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Hà Song Hải- XM Hạ Long",
+      "note": "Hà Song Hải- XM Hạ Long"
     },
     {
       "poId": "DH-060",
-      "customer": "CK Đúc Hồng Hà",
+      "customer": "Hà Song Hải / Hồng Hà",
       "productName": "Thanh đập đá vôi HM111CR01",
       "qtyPo": 4,
       "dueDate": "2026-01-28",
@@ -13820,7 +13916,9 @@
       "deliveredQty": 0,
       "stockQty": 4,
       "remainQty": 4,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "CK Đúc Hồng Hà",
+      "note": "CK Đúc Hồng Hà"
     },
     {
       "poId": "DH-061",
@@ -13863,7 +13961,7 @@
     },
     {
       "poId": "DH-064",
-      "customer": "Molycop- HKHC0484",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 25",
       "qtyPo": 156,
       "dueDate": "2025-12-28",
@@ -13872,11 +13970,13 @@
       "deliveredQty": 0,
       "stockQty": 156,
       "remainQty": 156,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0484",
+      "note": "HKHC0484"
     },
     {
       "poId": "DH-065",
-      "customer": "Molycop- HKHC0485",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 40",
       "qtyPo": 208,
       "dueDate": "2026-01-02",
@@ -13885,11 +13985,13 @@
       "deliveredQty": 0,
       "stockQty": 208,
       "remainQty": 208,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0485",
+      "note": "HKHC0485"
     },
     {
       "poId": "DH-066",
-      "customer": "Molycop- HKHC0486",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 90",
       "qtyPo": 26,
       "dueDate": "2026-01-10",
@@ -13898,11 +14000,13 @@
       "deliveredQty": 0,
       "stockQty": 26,
       "remainQty": 26,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0486",
+      "note": "HKHC0486"
     },
     {
       "poId": "DH-067",
-      "customer": "Molycop- HKHC0487",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 40",
       "qtyPo": 156,
       "dueDate": "2026-01-10",
@@ -13911,11 +14015,13 @@
       "deliveredQty": 0,
       "stockQty": 156,
       "remainQty": 156,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0487",
+      "note": "HKHC0487"
     },
     {
       "poId": "DH-068",
-      "customer": "Molycop- HKHC0488",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 40",
       "qtyPo": 156,
       "dueDate": "2026-01-15",
@@ -13924,11 +14030,13 @@
       "deliveredQty": 0,
       "stockQty": 156,
       "remainQty": 156,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0488",
+      "note": "HKHC0488"
     },
     {
       "poId": "DH-069",
-      "customer": "Taniguchi- PO Vico/2025-606",
+      "customer": "Taniguchi",
       "productName": "Máng gang Mold FA31B16 ZT-9107-001Δ4",
       "qtyPo": 5,
       "dueDate": "2026-02-26",
@@ -13937,11 +14045,13 @@
       "deliveredQty": 0,
       "stockQty": 5,
       "remainQty": 5,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "PO Vico/2025-606",
+      "note": "PO Vico/2025-606"
     },
     {
       "poId": "DH-070",
-      "customer": "Thyssen- HĐ số 33725805/456",
+      "customer": "Thyssenkrupp",
       "productName": "Sealing strip, below",
       "qtyPo": 3,
       "dueDate": "2026-02-22",
@@ -13950,11 +14060,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HĐ số 33725805/456",
+      "note": "HĐ số 33725805/456"
     },
     {
       "poId": "DH-071",
-      "customer": "Thyssen- HĐ số 33725805/456",
+      "customer": "Thyssenkrupp",
       "productName": "Sealing strip, above",
       "qtyPo": 3,
       "dueDate": "2026-02-22",
@@ -13963,11 +14075,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HĐ số 33725805/456",
+      "note": "HĐ số 33725805/456"
     },
     {
       "poId": "DH-084",
-      "customer": "TFG-25TFG003-009R2",
+      "customer": "TFG",
       "productName": "Concave M số hiệu E3P05115-1 theo bản vẽ HAKA12666",
       "qtyPo": 1,
       "dueDate": "2025-12-30",
@@ -13976,11 +14090,13 @@
       "deliveredQty": 0,
       "stockQty": 1,
       "remainQty": 1,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "25TFG003-009R2",
+      "note": "25TFG003-009R2"
     },
     {
       "poId": "DH-085",
-      "customer": "TFG-25TFG003-009R2",
+      "customer": "TFG",
       "productName": "Concave M số hiệu E3P05115-2 theo bản vẽ HAKA12666",
       "qtyPo": 1,
       "dueDate": "2025-12-30",
@@ -13989,11 +14105,13 @@
       "deliveredQty": 0,
       "stockQty": 1,
       "remainQty": 1,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "25TFG003-009R2",
+      "note": "25TFG003-009R2"
     },
     {
       "poId": "DH-135",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Tấm chắn bi máy Q3710",
       "qtyPo": 5,
       "dueDate": "2025-11-28",
@@ -14002,11 +14120,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-136",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Tấm chắn bi máy Q3710- Tấm đối",
       "qtyPo": 5,
       "dueDate": "2025-11-28",
@@ -14015,11 +14135,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-137",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Đầu bơm chân không 110 kw",
       "qtyPo": 4,
       "dueDate": "2026-01-30",
@@ -14028,11 +14150,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-138",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Mặt bích 1 bơm chân không (Φ895 dày 26.3)",
       "qtyPo": 2,
       "dueDate": "2026-01-30",
@@ -14041,11 +14165,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-139",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Mặt bích 2 bơm chân không (Φ895 dày 26)",
       "qtyPo": 2,
       "dueDate": "2026-01-30",
@@ -14054,11 +14180,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-140",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Vỏ bơm chân không (Φ960/830 dài 723)",
       "qtyPo": 2,
       "dueDate": "2026-01-30",
@@ -14067,11 +14195,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-141",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Cánh bơm chân không (Φ710/175 dài 709)",
       "qtyPo": 2,
       "dueDate": "2026-01-30",
@@ -14080,7 +14210,9 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-159",
@@ -14110,7 +14242,7 @@
     },
     {
       "poId": "DH-171",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Đầu đùn bậc thềm",
       "qtyPo": 1,
       "dueDate": "2025-12-29",
@@ -14123,7 +14255,7 @@
     },
     {
       "poId": "DH-172",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bạc chặn 2 nửa buồng dao cuốn D174x428- nửa trên",
       "qtyPo": 4,
       "dueDate": "2025-12-29",
@@ -14136,7 +14268,7 @@
     },
     {
       "poId": "DH-173",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bạc chặn 2 nửa buồng dao cuốn D174x428- nửa dưới",
       "qtyPo": 4,
       "dueDate": "2025-12-29",
@@ -14149,7 +14281,7 @@
     },
     {
       "poId": "DH-174",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bạc trục 2 nửa máy nhào D170x60 (2 nửa ghép nhau)",
       "qtyPo": 6,
       "dueDate": "2025-12-29",
@@ -14214,7 +14346,7 @@
     },
     {
       "poId": "DH-200",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Cánh văng MBB Q3710: 115x76.5x46 (150T+150P)",
       "qtyPo": 300,
       "dueDate": "2026-02-12",
@@ -14223,11 +14355,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-230",
-      "customer": "BOZ INDUSTRIAL",
+      "customer": "BOZ Industrial",
       "productName": "CI-AU-Pan Dead Plate",
       "qtyPo": 24,
       "dueDate": "2026-03-30",
@@ -14240,7 +14374,7 @@
     },
     {
       "poId": "DH-232",
-      "customer": "BOZ INDUSTRIAL",
+      "customer": "BOZ Industrial",
       "productName": "CI-AU-Tuyere liner",
       "qtyPo": 16,
       "dueDate": "2026-03-30",
@@ -14253,7 +14387,7 @@
     },
     {
       "poId": "DH-234",
-      "customer": "Taniguchi- Vico/2026-067",
+      "customer": "Taniguchi",
       "productName": "Búa thép HC-G-2017",
       "qtyPo": 240,
       "dueDate": "2026-05-22",
@@ -14262,11 +14396,13 @@
       "deliveredQty": 0,
       "stockQty": 240,
       "remainQty": 240,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-067",
+      "note": "Vico/2026-067"
     },
     {
       "poId": "DH-235",
-      "customer": "Taniguchi- Vico/2026-067",
+      "customer": "Taniguchi",
       "productName": "Búa thép HC-G-1515",
       "qtyPo": 66,
       "dueDate": "2026-05-22",
@@ -14275,11 +14411,13 @@
       "deliveredQty": 0,
       "stockQty": 66,
       "remainQty": 66,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-067",
+      "note": "Vico/2026-067"
     },
     {
       "poId": "DH-236",
-      "customer": "Taniguchi- Vico/2026-067",
+      "customer": "Taniguchi",
       "productName": "Búa thép KHG-1515",
       "qtyPo": 24,
       "dueDate": "2026-05-22",
@@ -14288,11 +14426,13 @@
       "deliveredQty": 0,
       "stockQty": 24,
       "remainQty": 24,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-067",
+      "note": "Vico/2026-067"
     },
     {
       "poId": "DH-237",
-      "customer": "TFG- 25TFG003-014-R1",
+      "customer": "TFG",
       "productName": "Mantle số hiệu F3P0084 theo bv 2CG00207-01",
       "qtyPo": 2,
       "dueDate": "2026-04-30",
@@ -14301,11 +14441,13 @@
       "deliveredQty": 0,
       "stockQty": 2,
       "remainQty": 2,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "25TFG003-014-R1",
+      "note": "25TFG003-014-R1"
     },
     {
       "poId": "DH-238",
-      "customer": "TFG- 25TFG003-014-R1",
+      "customer": "TFG",
       "productName": "Conecave M số hiệu F3P0085 theo bv 2CG00208-01",
       "qtyPo": 1,
       "dueDate": "2026-04-30",
@@ -14314,11 +14456,13 @@
       "deliveredQty": 0,
       "stockQty": 1,
       "remainQty": 1,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "25TFG003-014-R1",
+      "note": "25TFG003-014-R1"
     },
     {
       "poId": "DH-239",
-      "customer": "TFG- 25TFG003-014-R1",
+      "customer": "TFG",
       "productName": "Mantle số hiệu F3P0086 theo bv Haka13588-01",
       "qtyPo": 1,
       "dueDate": "2026-04-30",
@@ -14327,11 +14471,13 @@
       "deliveredQty": 0,
       "stockQty": 1,
       "remainQty": 1,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "25TFG003-014-R1",
+      "note": "25TFG003-014-R1"
     },
     {
       "poId": "DH-240",
-      "customer": "TFG- 25TFG003-014-R1",
+      "customer": "TFG",
       "productName": "Conecave M số hiệu F3P0087 theo bv 2CG00465-01",
       "qtyPo": 2,
       "dueDate": "2026-04-30",
@@ -14340,11 +14486,13 @@
       "deliveredQty": 0,
       "stockQty": 2,
       "remainQty": 2,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "25TFG003-014-R1",
+      "note": "25TFG003-014-R1"
     },
     {
       "poId": "DH-265",
-      "customer": "Thyssenkrupp- 33725827/456",
+      "customer": "Thyssenkrupp",
       "productName": "Sealing strip, below",
       "qtyPo": 1324,
       "dueDate": "2026-07-03",
@@ -14353,11 +14501,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "33725827/456",
+      "note": "33725827/456"
     },
     {
       "poId": "DH-266",
-      "customer": "Thyssenkrupp- 33725827/456",
+      "customer": "Thyssenkrupp",
       "productName": "Sealing strip, above",
       "qtyPo": 1350,
       "dueDate": "2026-07-03",
@@ -14366,7 +14516,9 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "33725827/456",
+      "note": "33725827/456"
     },
     {
       "poId": "DH-282",
@@ -14409,7 +14561,7 @@
     },
     {
       "poId": "DH-289",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bộ rulo máy nghiền sơ cấp: Thân rô to (φ820x890)",
       "qtyPo": 1,
       "dueDate": "2026-05-13",
@@ -14422,7 +14574,7 @@
     },
     {
       "poId": "DH-290",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bộ rulo máy nghiền sơ cấp: Bích rulo (φ500x110) 1T+1P",
       "qtyPo": 2,
       "dueDate": "2026-05-13",
@@ -14435,7 +14587,7 @@
     },
     {
       "poId": "DH-294",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bộ rulo máy nghiền thứ cấp: Thân rô to (φ820x700)",
       "qtyPo": 1,
       "dueDate": "2026-05-13",
@@ -14448,7 +14600,7 @@
     },
     {
       "poId": "DH-295",
-      "customer": "Hải- Vinh Quảng Ninh",
+      "customer": "Hải-Vinh Quảng Ninh",
       "productName": "Bộ rulo máy nghiền thứ cấp: Bích rulo (φ500x100) 1T+1P",
       "qtyPo": 2,
       "dueDate": "2026-05-13",
@@ -14461,7 +14613,7 @@
     },
     {
       "poId": "DH-330",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Tấm kẹp AMC Disa 10137297",
       "qtyPo": 36,
       "dueDate": "2026-06-27",
@@ -14470,11 +14622,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-333",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Quả đập bi đôi trong máy sóc",
       "qtyPo": 100,
       "dueDate": "2026-09-21",
@@ -14483,11 +14637,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-334",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Bánh xe cẩu trục (Φ340 dày 120)",
       "qtyPo": 24,
       "dueDate": "2026-06-02",
@@ -14496,7 +14652,9 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-343",
@@ -14513,7 +14671,7 @@
     },
     {
       "poId": "DH-359",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Conecave số hiệu E3P05197-1 theo bv 2CG00465",
       "qtyPo": 1,
       "dueDate": "2026-09-30",
@@ -14522,11 +14680,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-360",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Conecave số hiệu E3P05197-2 theo bv 2CG00465",
       "qtyPo": 1,
       "dueDate": "2026-09-30",
@@ -14535,11 +14695,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-365",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Mantle số hiệu A3G03266-1 theo bv HAKA12756-01",
       "qtyPo": 1,
       "dueDate": "2026-09-30",
@@ -14548,11 +14710,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-366",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Mantle số hiệu A3G03266-2 theo bv HAKA12756-01",
       "qtyPo": 1,
       "dueDate": "2026-09-30",
@@ -14561,11 +14725,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-367",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Mantle số hiệu A3G03266-3 theo bv HAKA12756-01",
       "qtyPo": 1,
       "dueDate": "2026-09-30",
@@ -14574,11 +14740,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-368",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Mantle số hiệu A3G03266-4 theo bv HAKA12756-01",
       "qtyPo": 1,
       "dueDate": "2026-09-30",
@@ -14587,11 +14755,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-369",
-      "customer": "TFG-26TFG003-004-R6",
+      "customer": "TFG",
       "productName": "Shell liner số hiệu A3D15857-1 theo bv NUU42003-01",
       "qtyPo": 72,
       "dueDate": "2026-09-30",
@@ -14600,11 +14770,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-004-R6",
+      "note": "26TFG003-004-R6"
     },
     {
       "poId": "DH-375",
-      "customer": "Hùng HD-XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XP (XX) 248A",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14617,7 +14789,7 @@
     },
     {
       "poId": "DH-376",
-      "customer": "Hùng HD-XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XP (XX) 250A",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14630,7 +14802,7 @@
     },
     {
       "poId": "DH-377",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 278A",
       "qtyPo": 32,
       "dueDate": "2026-08-25",
@@ -14643,7 +14815,7 @@
     },
     {
       "poId": "DH-378",
-      "customer": "Hùng HD-XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XL (XX) 368A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14656,7 +14828,7 @@
     },
     {
       "poId": "DH-379",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XP 265A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14669,7 +14841,7 @@
     },
     {
       "poId": "DH-380",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 284A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14682,7 +14854,7 @@
     },
     {
       "poId": "DH-381",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 283A (Alphaset)",
       "qtyPo": 27,
       "dueDate": "2026-08-25",
@@ -14695,7 +14867,7 @@
     },
     {
       "poId": "DH-384",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 292",
       "qtyPo": 54,
       "dueDate": "2026-08-25",
@@ -14708,7 +14880,7 @@
     },
     {
       "poId": "DH-385",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XL 105A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14721,7 +14893,7 @@
     },
     {
       "poId": "DH-386",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XP 160A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14734,7 +14906,7 @@
     },
     {
       "poId": "DH-387",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XL 92A",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14747,7 +14919,7 @@
     },
     {
       "poId": "DH-388",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XL 93A",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14760,7 +14932,7 @@
     },
     {
       "poId": "DH-389",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 8A",
       "qtyPo": 32,
       "dueDate": "2026-08-25",
@@ -14773,7 +14945,7 @@
     },
     {
       "poId": "DH-390",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL ZB 18A (Alphaset)",
       "qtyPo": 18,
       "dueDate": "2026-08-25",
@@ -14786,7 +14958,7 @@
     },
     {
       "poId": "DH-391",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 28A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14799,7 +14971,7 @@
     },
     {
       "poId": "DH-392",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 27A (Alphaset)",
       "qtyPo": 24,
       "dueDate": "2026-08-25",
@@ -14812,7 +14984,7 @@
     },
     {
       "poId": "DH-393",
-      "customer": "Hùng HD- XM Hoàng Thạch",
+      "customer": "Hùng HD - XM Hoàng Thạch",
       "productName": "TL XX 5A",
       "qtyPo": 52,
       "dueDate": "2026-08-25",
@@ -14825,7 +14997,7 @@
     },
     {
       "poId": "DH-396",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập VHC-11, máy nghiền đứng (Đã có khuôn mẫu)",
       "qtyPo": 45,
       "dueDate": "2026-09-15",
@@ -14834,11 +15006,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-397",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập VHC-11, máy nghiền đứng (Loại rãnh sâu)",
       "qtyPo": 45,
       "dueDate": "2026-09-15",
@@ -14847,11 +15021,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-398",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập VHC-12, máy nghiền đứng",
       "qtyPo": 45,
       "dueDate": "2026-09-15",
@@ -14860,11 +15036,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-399",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập VHC-14, máy nghiền đứng",
       "qtyPo": 45,
       "dueDate": "2026-09-15",
@@ -14873,11 +15051,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-400",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập VHC-15H, máy nghiền đứng (Đã có khuôn mẫu)",
       "qtyPo": 45,
       "dueDate": "2026-09-15",
@@ -14886,11 +15066,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-401",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập VHC-15D, máy nghiền đứng (Loại rãnh sâu)",
       "qtyPo": 45,
       "dueDate": "2026-09-15",
@@ -14899,11 +15081,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-402",
-      "customer": "Taniguchi- Vico/2026-375R",
+      "customer": "Taniguchi",
       "productName": "Búa đập KHG-1515- Máy nghiền quay (Đã có mẫu)",
       "qtyPo": 24,
       "dueDate": "2026-09-15",
@@ -14912,11 +15096,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico/2026-375R",
+      "note": "Vico/2026-375R"
     },
     {
       "poId": "DH-403",
-      "customer": "Hà Song Hải- XM Hạ Long",
+      "customer": "Hà Song Hải / Hồng Hà",
       "productName": "Thanh đập đá vôi (2220x510x145)",
       "qtyPo": 18,
       "dueDate": "2026-10-26",
@@ -14925,11 +15111,13 @@
       "deliveredQty": 0,
       "stockQty": 6,
       "remainQty": 12,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Hà Song Hải- XM Hạ Long",
+      "note": "Hà Song Hải- XM Hạ Long"
     },
     {
       "poId": "DH-410",
-      "customer": "TFG-26TFG003-005-R3-1",
+      "customer": "TFG",
       "productName": "Mantle số hiệu F3P05201-1 theo bv 2CG00207-01",
       "qtyPo": 1,
       "dueDate": "2026-10-30",
@@ -14938,11 +15126,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-005-R3-1",
+      "note": "26TFG003-005-R3-1"
     },
     {
       "poId": "DH-411",
-      "customer": "TFG-26TFG003-005-R3-1",
+      "customer": "TFG",
       "productName": "Mantle số hiệu F3P05201-2 theo bv 2CG00207-01",
       "qtyPo": 1,
       "dueDate": "2026-10-30",
@@ -14951,11 +15141,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-005-R3-1",
+      "note": "26TFG003-005-R3-1"
     },
     {
       "poId": "DH-412",
-      "customer": "TFG-26TFG003-005-R3-1",
+      "customer": "TFG",
       "productName": "Mantle số hiệu F3P05201-3 theo bv 2CG00207-01",
       "qtyPo": 1,
       "dueDate": "2026-10-30",
@@ -14964,11 +15156,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "26TFG003-005-R3-1",
+      "note": "26TFG003-005-R3-1"
     },
     {
       "poId": "DH-415",
-      "customer": "Molycop- HKHC0622",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 25",
       "qtyPo": 312,
       "dueDate": "2026-09-04",
@@ -14977,11 +15171,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0622",
+      "note": "HKHC0622"
     },
     {
       "poId": "DH-416",
-      "customer": "Molycop- HKHC0622",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 40",
       "qtyPo": 364,
       "dueDate": "2026-09-21",
@@ -14990,11 +15186,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0622",
+      "note": "HKHC0622"
     },
     {
       "poId": "DH-417",
-      "customer": "Molycop- HKHC0622",
+      "customer": "Molycop / Bi nghiền",
       "productName": "Bi 90",
       "qtyPo": 26,
       "dueDate": "2026-09-10",
@@ -15003,11 +15201,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "HKHC0622",
+      "note": "HKHC0622"
     },
     {
       "poId": "DH-419",
-      "customer": "UCC-US287291",
+      "customer": "UCC",
       "productName": "210658-2 Ref: A",
       "qtyPo": 15,
       "dueDate": "2026-10-15",
@@ -15016,11 +15216,14 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "US287291",
+      "note": "US287291",
+      "spId": "SP335"
     },
     {
       "poId": "DH-420",
-      "customer": "UCC-US287291",
+      "customer": "UCC",
       "productName": "210768 Ref: C",
       "qtyPo": 1,
       "dueDate": "2026-10-15",
@@ -15029,11 +15232,14 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "US287291",
+      "note": "US287291",
+      "spId": "SP081"
     },
     {
       "poId": "DH-421",
-      "customer": "UCC-US287291",
+      "customer": "UCC",
       "productName": "492537-1 Ref: F",
       "qtyPo": 15,
       "dueDate": "2026-10-15",
@@ -15042,11 +15248,14 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "US287291",
+      "note": "US287291",
+      "spId": "SP045"
     },
     {
       "poId": "DH-422",
-      "customer": "UCC-US287291",
+      "customer": "UCC",
       "productName": "493623-1 Ref: A",
       "qtyPo": 5,
       "dueDate": "2026-10-15",
@@ -15055,11 +15264,14 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "US287291",
+      "note": "US287291",
+      "spId": "SP336"
     },
     {
       "poId": "DH-430",
-      "customer": "UCC- US288796",
+      "customer": "UCC",
       "productName": "493623-1",
       "qtyPo": 10,
       "dueDate": "2026-12-30",
@@ -15068,7 +15280,10 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "US288796",
+      "note": "US288796",
+      "spId": "SP336"
     },
     {
       "poId": "DH-431",
@@ -15254,7 +15469,7 @@
     },
     {
       "poId": "DH-446",
-      "customer": "UCC- US289035",
+      "customer": "UCC",
       "productName": "210767 Ref: C",
       "qtyPo": 4,
       "dueDate": "2027-01-26",
@@ -15263,11 +15478,14 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "US289035",
+      "note": "US289035",
+      "spId": "SP080"
     },
     {
       "poId": "DH-447",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Gối bi hai nửa - nửa trên",
       "qtyPo": 1,
       "dueDate": "2026-11-22",
@@ -15276,11 +15494,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-448",
-      "customer": "Vico- QLTB",
+      "customer": "Vico - Nội bộ / Khách lẻ",
       "productName": "Gối bi hai nửa - nửa dưới",
       "qtyPo": 1,
       "dueDate": "2026-11-22",
@@ -15289,11 +15509,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "Vico- QLTB",
+      "note": "Vico- QLTB"
     },
     {
       "poId": "DH-449",
-      "customer": "Thyssenkrupp- 33725889/456",
+      "customer": "Thyssenkrupp",
       "productName": "Sealing strip, below",
       "qtyPo": 100,
       "dueDate": "2026-12-01",
@@ -15302,11 +15524,13 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "33725889/456",
+      "note": "33725889/456"
     },
     {
       "poId": "DH-450",
-      "customer": "Thyssenkrupp- 33725889/456",
+      "customer": "Thyssenkrupp",
       "productName": "Sealing strip, above",
       "qtyPo": 200,
       "dueDate": "2026-12-01",
@@ -15315,7 +15539,9 @@
       "deliveredQty": 0,
       "stockQty": 0,
       "remainQty": 0,
-      "status": "⏳ Đang chờ SX"
+      "status": "⏳ Đang chờ SX",
+      "contractRef": "33725889/456",
+      "note": "33725889/456"
     }
   ],
   "costingList": [
@@ -22666,6 +22892,54 @@
       "totalBatchProfit": 0,
       "marginPct": 0,
       "hasActual": false
+    },
+    {
+      "spId": "SP335",
+      "customer": "UCC",
+      "productName": "210658-2",
+      "opCount": 2,
+      "opsSummary": "G/c Tiện CNC thô NC1 → G/c Tiện CNC tinh hoàn thiện NC2",
+      "totalSec": 14400,
+      "totalHours": 4,
+      "stdLabor": 192500,
+      "stdMach": 157500,
+      "stdTool": 0,
+      "stdOverhead": 0,
+      "totalStdCost": 350000,
+      "quotedPrice": 350000,
+      "finishedQty": 0,
+      "actualBatchCost": 0,
+      "actualUnitCost": 350000,
+      "unitProfit": 0,
+      "totalBatchProfit": 0,
+      "marginPct": 0,
+      "hasActual": false,
+      "drawingUrl": "",
+      "techDocUrl": ""
+    },
+    {
+      "spId": "SP336",
+      "customer": "UCC",
+      "productName": "493623-1",
+      "opCount": 2,
+      "opsSummary": "G/c Tiện CNC thô NC1 → G/c Tiện CNC tinh hoàn thiện NC2",
+      "totalSec": 28800,
+      "totalHours": 8,
+      "stdLabor": 385000,
+      "stdMach": 315000,
+      "stdTool": 0,
+      "stdOverhead": 0,
+      "totalStdCost": 700000,
+      "quotedPrice": 700000,
+      "finishedQty": 0,
+      "actualBatchCost": 0,
+      "actualUnitCost": 700000,
+      "unitProfit": 0,
+      "totalBatchProfit": 0,
+      "marginPct": 0,
+      "hasActual": false,
+      "drawingUrl": "",
+      "techDocUrl": ""
     }
   ],
   "attendanceList": [

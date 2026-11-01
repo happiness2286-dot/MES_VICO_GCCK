@@ -118,6 +118,7 @@ export type FaiStatus = 'NOT_REQUIRED' | 'PENDING_FAI' | 'FAI_PASSED' | 'FAI_FAI
 export interface PurchaseOrderInfo {
   poId: string;
   customer: string;
+  contractRef?: string;
   spId: string | null;
   productName: string;
   qtyPo: number;

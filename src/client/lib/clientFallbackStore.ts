@@ -38,6 +38,7 @@ import {
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
 import { removeVietnameseTones } from '@shared/vnSearch';
+import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 
@@ -115,22 +116,34 @@ export const FALLBACK_MACHINES: MachineInfo[] = (seedData.machines || []).map((m
   updatedAt: m.updatedAt || null,
 }));
 
-export const FALLBACK_ORDERS: PurchaseOrderInfo[] = (seedData.ordersList || []).map((p: any) => ({
-  poId: String(p.poId),
-  spId: p.spId ? String(p.spId) : null,
-  customer: String(p.customer || 'Nội bộ'),
-  productName: String(p.productName),
-  qtyPo: Number(p.qtyPo || 0),
-  dueDate: String(p.dueDate || '2026-11-30'),
-  wipQty: 0,
-  finishedQty: 0,
-  deliveredQty: 0,
-  stockQty: 0,
-  remainQty: Number(p.qtyPo || 0),
-  status: String(p.status || '⏳ Đang chờ SX'),
-  materialLot: p.materialLot || 'LOT-2026-VC',
-  faiStatus: p.faiStatus || 'FAI_PASSED',
-}));
+export const FALLBACK_ORDERS: PurchaseOrderInfo[] = (seedData.ordersList || []).map((p: any) => {
+  const norm = canonicalizeCustomerName(p.customer || 'Nội bộ');
+  const qtyPo = Math.max(1, Number(p.qtyPo || 0));
+  const wipQty = Math.max(0, Number(p.wipQty || 0));
+  const finishedQty = Math.max(0, Number(p.finishedQty || 0));
+  const deliveredQty = Math.max(0, Number(p.deliveredQty || 0));
+  const stockQty = Math.max(0, Number(p.stockQty ?? (finishedQty - deliveredQty)));
+  const remainQty = Math.max(0, Number(p.remainQty ?? (qtyPo - deliveredQty)));
+
+  return {
+    poId: String(p.poId),
+    spId: p.spId ? String(p.spId) : null,
+    customer: norm.customer,
+    contractRef: p.contractRef || norm.contractRef || '',
+    productName: String(p.productName),
+    qtyPo,
+    dueDate: String(p.dueDate || '2026-11-30'),
+    wipQty,
+    finishedQty,
+    deliveredQty,
+    stockQty,
+    remainQty,
+    status: String(p.status || '⏳ Đang chờ SX'),
+    materialLot: p.materialLot || 'LOT-2026-VC',
+    faiStatus: p.faiStatus || 'FAI_PASSED',
+    note: p.note || norm.contractRef || '',
+  };
+});
 
 export const FALLBACK_WORKERS: WorkerDto[] = (seedData.workers || []).map((w: any) => {
   let appRole: AppRole = 'WORKER';

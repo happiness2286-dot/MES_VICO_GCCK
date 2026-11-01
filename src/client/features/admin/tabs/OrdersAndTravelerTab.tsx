@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { DeliveryLogDto, PurchaseOrderInfo } from '@shared/types';
 import { matchesSearch, normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
+import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import { apiClient } from '@client/lib/apiClient';
 import {
   downloadPurchaseOrdersTemplateExcel,
@@ -248,18 +249,23 @@ export function OrdersAndTravelerTab({
   const customersList = useMemo(() => {
     const set = new Set<string>();
     orders.forEach((o) => {
-      if (o.customer) set.add(o.customer);
+      const norm = canonicalizeCustomerName(o.customer || '');
+      if (norm.customer) set.add(norm.customer);
     });
     bootstrap.products.forEach((p) => {
-      if (p.customer) set.add(p.customer);
+      const norm = canonicalizeCustomerName(p.customer || '');
+      if (norm.customer) set.add(norm.customer);
     });
     return [...set].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [orders, bootstrap.products]);
 
   const productsForSelectedCustomer = useMemo(() => {
-    const filtered = bootstrap.products.filter(
-      (p) => !newCustomer || p.customer === newCustomer
-    );
+    if (!newCustomer.trim()) return bootstrap.products;
+    const target = canonicalizeCustomerName(newCustomer).customer.toLowerCase();
+    const filtered = bootstrap.products.filter((p) => {
+      const c = canonicalizeCustomerName(p.customer || '').customer.toLowerCase();
+      return c === target || c.includes(target) || target.includes(c);
+    });
     return filtered.length > 0 ? filtered : bootstrap.products;
   }, [bootstrap.products, newCustomer]);
 
@@ -304,7 +310,11 @@ export function OrdersAndTravelerTab({
 
   const filteredOrders = useMemo(() => {
     return orders.filter((po) => {
-      if (customerFilter !== 'ALL' && po.customer !== customerFilter) return false;
+      if (customerFilter !== 'ALL') {
+        const target = canonicalizeCustomerName(customerFilter).customer.toLowerCase();
+        const poCust = canonicalizeCustomerName(po.customer || '').customer.toLowerCase();
+        if (poCust !== target) return false;
+      }
       const c = classifyPoHelpers(po);
       if (filterMode === 'OVERDUE' && !c.isOverdue) return false;
       if (filterMode === 'IN_PROGRESS' && !c.isInProgress) return false;
@@ -691,7 +701,16 @@ export function OrdersAndTravelerTab({
                       </div>
                     </td>
 
-                    <td className="px-3 py-2.5 font-medium text-slate-700">{po.customer}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="font-bold text-slate-800">
+                        {canonicalizeCustomerName(po.customer).customer}
+                      </div>
+                      {(po.contractRef || canonicalizeCustomerName(po.customer).contractRef) && (
+                        <div className="text-[10px] font-mono-num font-semibold text-blue-600 truncate max-w-[130px]" title={po.contractRef || canonicalizeCustomerName(po.customer).contractRef}>
+                          HĐ/PO: {po.contractRef || canonicalizeCustomerName(po.customer).contractRef}
+                        </div>
+                      )}
+                    </td>
 
                     <td className="px-3 py-2.5">
                       <div className="font-bold text-slate-900">{po.productName}</div>
@@ -887,14 +906,15 @@ export function OrdersAndTravelerTab({
                 <label className="mb-1 block font-bold uppercase text-slate-700">
                   Khách Hàng (*)
                 </label>
-                <input
-                  type="text"
-                  list="gcck-po-customers"
-                  value={newCustomer}
+                <select
+                  value={canonicalizeCustomerName(newCustomer).customer}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    setNewCustomer(val);
-                    const matchProds = bootstrap.products.filter((p) => p.customer === val);
+                    const chosen = e.target.value;
+                    const canonical = canonicalizeCustomerName(chosen).customer;
+                    setNewCustomer(canonical);
+                    const matchProds = bootstrap.products.filter(
+                      (p) => canonicalizeCustomerName(p.customer).customer === canonical
+                    );
                     if (matchProds.length > 0) {
                       setLineItems((prev) =>
                         prev.map((it, idx) => ({
@@ -905,13 +925,15 @@ export function OrdersAndTravelerTab({
                       );
                     }
                   }}
-                  className={modalInputCls}
-                />
-                <datalist id="gcck-po-customers">
+                  className={`${modalInputCls} font-bold text-slate-900`}
+                >
+                  <option value="">-- Chọn Khách Hàng ({customersList.length}) --</option>
                   {customersList.map((c) => (
-                    <option key={c} value={c} />
+                    <option key={c} value={c}>
+                      🏢 {c}
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </div>
 
               <div>
@@ -1081,21 +1103,49 @@ export function OrdersAndTravelerTab({
                         </td>
 
                         <td className="px-2.5 py-2">
-                          <input
-                            type="text"
-                            list={`gcck-line-prod-${idx}`}
-                            value={item.productName}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              const matched = bootstrap.products.find((p) => p.productName === val);
-                              handleUpdateLineItem(item.id, {
-                                productName: val,
-                                spId: matched?.spId || null,
-                              });
-                            }}
-                            placeholder="Chọn hoặc gõ tên sản phẩm..."
-                            className="h-8 w-full rounded border border-slate-300 px-2 text-xs font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
-                          />
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              list={`gcck-line-prod-${idx}`}
+                              value={item.productName}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const matched = bootstrap.products.find(
+                                  (p) =>
+                                    p.productName.toLowerCase() === val.toLowerCase() ||
+                                    p.spId.toLowerCase() === val.toLowerCase()
+                                );
+                                handleUpdateLineItem(item.id, {
+                                  productName: matched ? matched.productName : val,
+                                  spId: matched?.spId || null,
+                                });
+                              }}
+                              placeholder="Chọn hoặc gõ tên sản phẩm..."
+                              className="h-8 flex-1 rounded border border-slate-300 px-2 text-xs font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
+                            />
+                            <select
+                              value={item.spId || ''}
+                              onChange={(e) => {
+                                const spId = e.target.value;
+                                const matched = bootstrap.products.find((p) => p.spId === spId);
+                                if (matched) {
+                                  handleUpdateLineItem(item.id, {
+                                    productName: matched.productName,
+                                    spId: matched.spId,
+                                  });
+                                }
+                              }}
+                              title="Bấm để chọn nhanh sản phẩm từ danh mục khách hàng"
+                              className="h-8 max-w-[130px] rounded border border-blue-300 bg-blue-50/70 px-1.5 text-[11px] font-bold text-blue-800 hover:bg-blue-100 focus:outline-none"
+                            >
+                              <option value="">▼ DS ({productsForSelectedCustomer.length} SP)</option>
+                              {productsForSelectedCustomer.map((p) => (
+                                <option key={p.spId} value={p.spId}>
+                                  [{p.spId}] {p.productName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                           <datalist id={`gcck-line-prod-${idx}`}>
                             {productsForSelectedCustomer.map((p) => (
                               <option key={p.spId} value={p.productName}>
@@ -1103,6 +1153,21 @@ export function OrdersAndTravelerTab({
                               </option>
                             ))}
                           </datalist>
+                          <div className="mt-0.5 flex items-center gap-1 text-[10px]">
+                            {item.spId ? (
+                              <span className="font-bold text-emerald-700">
+                                ✓ Mã SP: {item.spId}
+                              </span>
+                            ) : item.productName ? (
+                              <span className="text-amber-700 italic">
+                                (Tên tự do / Chưa gán mã)
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">
+                                (Chưa chọn sản phẩm)
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="px-2.5 py-2">
