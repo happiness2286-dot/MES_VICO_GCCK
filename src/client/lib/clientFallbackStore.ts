@@ -33,6 +33,7 @@ import {
   getDefShiftCode,
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
+import { removeVietnameseTones } from '@shared/vnSearch';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 
@@ -150,32 +151,16 @@ export const FALLBACK_WORKERS: WorkerDto[] = (seedData.workers || []).map((w: an
   };
 });
 
-export const FALLBACK_PROFILES: QuickSwitchProfile[] = [
-  {
-    workerId: 'NV00214',
-    name: 'Trần Văn Quỳnh',
-    role: 'CN',
-    appRole: 'WORKER',
-    title: 'Công nhân đứng máy CNC',
-    salaryMode: 'KHOAN',
-  },
-  {
-    workerId: 'NV00266',
-    name: 'Trần Văn Dũng',
-    role: 'TC',
-    appRole: 'SHIFT_LEADER',
-    title: 'Trưởng ca / Kiểm soát QC',
-    salaryMode: 'LUONG_NGAY',
-  },
-  {
-    workerId: 'NV00053',
-    name: 'Hoàng Ngọc Hà',
-    role: 'QĐ',
-    appRole: 'ADMIN',
-    title: 'Quản đốc xưởng',
-    salaryMode: 'LUONG_NGAY',
-  },
-];
+export const FALLBACK_PROFILES: QuickSwitchProfile[] = FALLBACK_WORKERS.filter(
+  (w) => w.isActive !== 0
+).map((w) => ({
+  workerId: w.id,
+  name: w.name,
+  role: w.role,
+  appRole: w.appRole,
+  title: w.title,
+  salaryMode: w.salaryMode,
+}));
 
 const CUSTOM_PINS_KEY = 'GCCK_WORKER_CUSTOM_PINS_V1';
 
@@ -203,11 +188,37 @@ export function setCustomPin(workerId: string, newPin: string): void {
   }
 }
 
+export function findFallbackWorker(query?: string | null): WorkerDto | undefined {
+  if (!query) return undefined;
+  const raw = query.trim();
+  if (!raw) return undefined;
+  const lower = raw.toLowerCase();
+
+  // 1. Exact ID case-insensitive (e.g. NV00215, nv00215)
+  let found = FALLBACK_WORKERS.find((w) => w.id.toLowerCase() === lower);
+  if (found) return found;
+
+  // 2. Exact username case-insensitive (e.g. vantrang, congthang)
+  found = FALLBACK_WORKERS.find((w) => w.username && w.username.toLowerCase() === lower);
+  if (found) return found;
+
+  // 3. Name match case-insensitive
+  found = FALLBACK_WORKERS.find((w) => w.name.toLowerCase() === lower);
+  if (found) return found;
+
+  // 4. Name match without Vietnamese tones
+  const normSearch = removeVietnameseTones(lower);
+  found = FALLBACK_WORKERS.find((w) => {
+    const wNorm = removeVietnameseTones(w.name.toLowerCase());
+    return wNorm === normSearch || wNorm.includes(normSearch) || normSearch.includes(wNorm);
+  });
+  if (found) return found;
+
+  return undefined;
+}
+
 export function verifyFallbackPin(workerIdOrUsername: string, pin: string): boolean {
-  const norm = workerIdOrUsername.trim().toLowerCase();
-  const worker = FALLBACK_WORKERS.find(
-    (w) => w.id.toLowerCase() === norm || (w.username && w.username.toLowerCase() === norm)
-  );
+  const worker = findFallbackWorker(workerIdOrUsername);
   if (!worker) return false;
 
   const custom = getCustomPin(worker.id);
@@ -221,8 +232,18 @@ export function verifyFallbackPin(workerIdOrUsername: string, pin: string): bool
   return pin === '1234';
 }
 
-export function getFallbackUser(workerId: string = 'NV00214'): AuthSessionUser {
-  const w = FALLBACK_WORKERS.find((x) => x.id === workerId) || FALLBACK_WORKERS[0];
+export function getFallbackUser(workerIdOrUsername?: string): AuthSessionUser {
+  let worker: WorkerDto | undefined;
+  if (workerIdOrUsername) {
+    worker = findFallbackWorker(workerIdOrUsername);
+  }
+  if (!worker && typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('GCCK_ACTIVE_WORKER_ID');
+      if (stored) worker = findFallbackWorker(stored);
+    } catch { }
+  }
+  const w = worker || FALLBACK_WORKERS[0];
   return {
     workerId: w.id,
     name: w.name,
@@ -426,9 +447,17 @@ export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): Boot
 }
 
 export function getFallbackSession(): AuthSessionResponse {
+  let rememberedId: string | null = null;
+  if (typeof window !== 'undefined') {
+    try {
+      rememberedId = localStorage.getItem('GCCK_ACTIVE_WORKER_ID');
+    } catch { }
+  }
+  const worker = rememberedId ? findFallbackWorker(rememberedId) : null;
+  const user = worker ? getFallbackUser(worker.id) : null;
   return {
-    authenticated: true,
-    user: getFallbackUser('NV00214'),
+    authenticated: Boolean(user),
+    user: user,
     authMode: 'DEMO_QUICK',
     quickSwitchProfiles: FALLBACK_PROFILES,
   };

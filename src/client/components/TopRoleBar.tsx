@@ -82,8 +82,8 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
         );
       }
 
-      // 3. Seamlessly switch role only if manager or unauthenticated
-      if (!isWorker && targetWorkerId && user?.workerId !== targetWorkerId) {
+      // 3. Seamlessly switch role only if completely unauthenticated
+      if (!user && targetWorkerId) {
         try {
           await quickSwitch({ workerId: targetWorkerId });
         } catch (swErr) {
@@ -143,7 +143,7 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
             onClick={() =>
               void handleRoleNav(
                 '/worker',
-                user?.appRole === 'WORKER' ? user.workerId : 'NV00214',
+                user?.workerId || undefined,
                 '📱 Cổng Công Nhân'
               )
             }
@@ -254,20 +254,19 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
 
           {user ? (
             <>
-              <Badge
-                variant={
-                  user.appRole === 'ADMIN' || user.appRole === 'DIRECTOR'
-                    ? 'info'
-                    : user.appRole === 'QC' || user.appRole === 'SHIFT_LEADER'
-                      ? 'warning'
-                      : 'success'
-                }
-                className="max-w-[200px] truncate py-1"
+              <button
+                type="button"
+                onClick={() => openPinModal(user.workerId)}
+                title="Chạm để chuyển sang tài khoản người khác"
+                className="inline-flex min-h-[32px] max-w-[240px] items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 shadow-2xs transition-all hover:border-emerald-400 hover:bg-emerald-100 active:scale-95"
               >
                 <span className="truncate">
                   {user.name} ({user.workerId})
                 </span>
-              </Badge>
+                <span className="shrink-0 text-[10px] font-semibold text-emerald-600 underline">
+                  Đổi người
+                </span>
+              </button>
 
               <button
                 type="button"

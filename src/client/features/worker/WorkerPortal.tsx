@@ -599,7 +599,7 @@ export function WorkerPortal() {
   const localPayroll = useMemo(() => {
     return calculateTurnPayroll(
       {
-        workerId: user?.workerId || 'NV00214',
+        workerId: user?.workerId || '',
         salaryMode: user?.salaryMode || 'Khoán 1 + 0.33 máy',
         costPerSec: Number(user?.costPerSec ?? 13.37),
         workDate,

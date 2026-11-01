@@ -16,6 +16,7 @@ import {
   setCustomPin,
   submitDirectToGoogleAppsScript,
   verifyFallbackPin,
+  findFallbackWorker,
   FALLBACK_PRODUCTS,
   FALLBACK_ORDERS,
   FALLBACK_WORKERS,
@@ -149,22 +150,34 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   }
   if (norm.includes('/auth/quick-switch')) {
     const body = options.json as any;
-    const workerId = body?.workerId || 'NV00266';
-    const user = getFallbackUser(workerId);
+    const rawId = body?.workerId || 'NV00214';
+    const worker = findFallbackWorker(rawId);
+    const user = getFallbackUser(worker ? worker.id : rawId);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('GCCK_ACTIVE_WORKER_ID', user.workerId);
+      } catch { }
+    }
     return {
-      token: `client-demo-token-${workerId}`,
+      token: `client-demo-token-${user.workerId}`,
       user,
       authMode: 'DEMO_QUICK',
     } as unknown as T;
   }
   if (norm.includes('/auth/login')) {
     const body = options.json as any;
-    const rawId = body?.workerId || body?.workerIdOrUsername || 'NV00214';
-    const pin = body?.pin || '';
-    if (!verifyFallbackPin(rawId, pin)) {
+    const rawId = body?.workerId || body?.workerIdOrUsername || '';
+    const pin = String(body?.pin ?? '').trim();
+    const worker = findFallbackWorker(rawId);
+    if (!worker || !verifyFallbackPin(rawId, pin)) {
       throw new ApiError('Mã nhân viên hoặc mã PIN không chính xác.', 401);
     }
-    const user = getFallbackUser(rawId);
+    const user = getFallbackUser(worker.id);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('GCCK_ACTIVE_WORKER_ID', user.workerId);
+      } catch { }
+    }
     return {
       token: `client-demo-token-${user.workerId}`,
       user,
@@ -264,6 +277,11 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return { success: true, message: 'Thao tác thành công', workers: FALLBACK_WORKERS } as unknown as T;
   }
   if (norm.includes('/auth/logout')) {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('GCCK_ACTIVE_WORKER_ID');
+      } catch { }
+    }
     return { success: true } as unknown as T;
   }
   if (norm.includes('/auth/telegram-link')) {

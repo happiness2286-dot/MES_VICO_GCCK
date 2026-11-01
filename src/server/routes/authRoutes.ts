@@ -87,9 +87,9 @@ export function createAuthRoutes(db: DatabaseSync): Router {
     const row = db
       .prepare(
         `SELECT id, pin_hash, is_active FROM workers
-         WHERE (UPPER(id) = UPPER(?) OR LOWER(username) = LOWER(?)) AND is_active = 1`
+         WHERE (UPPER(id) = UPPER(?) OR LOWER(username) = LOWER(?) OR LOWER(name) = LOWER(?)) AND is_active = 1`
       )
-      .get(rawId, rawId) as { id: string; pin_hash: string; is_active: number } | undefined;
+      .get(rawId, rawId, rawId) as { id: string; pin_hash: string; is_active: number } | undefined;
 
     if (!row || !verifyPin(pin, String(row.pin_hash))) {
       const prev = loginFailures.get(rateKey);
@@ -184,9 +184,9 @@ export function createAuthRoutes(db: DatabaseSync): Router {
     const row = db
       .prepare(
         `SELECT id, pin_hash, is_active FROM workers
-         WHERE (UPPER(id) = UPPER(?) OR LOWER(username) = LOWER(?)) AND is_active = 1`
+         WHERE (UPPER(id) = UPPER(?) OR LOWER(username) = LOWER(?) OR LOWER(name) = LOWER(?)) AND is_active = 1`
       )
-      .get(rawId, rawId) as { id: string; pin_hash: string; is_active: number } | undefined;
+      .get(rawId, rawId, rawId) as { id: string; pin_hash: string; is_active: number } | undefined;
 
     if (!row || !verifyPin(currentPin, String(row.pin_hash))) {
       res.status(401).json({ error: 'Mật khẩu hiện tại không chính xác.' });

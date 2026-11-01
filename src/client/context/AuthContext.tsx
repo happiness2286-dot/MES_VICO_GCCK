@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (remembered) {
           const fallbackUser = getFallbackUser(remembered);
           setUser(fallbackUser);
-        } else if (sess.authMode === 'DEMO_QUICK') {
+        } else {
           const path =
             typeof window !== 'undefined'
               ? window.location.hash && window.location.hash.startsWith('#/')
@@ -96,11 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (path.startsWith('/admin')) {
             const targetId = path.includes('logs_qc') ? 'NV00266' : 'NV00053';
             await quickSwitch({ workerId: targetId });
-          } else if (!path.startsWith('/andon') && !path.startsWith('/print')) {
-            await quickSwitch({ workerId: 'NV00214' });
+          } else {
+            setUser(null);
           }
-        } else {
-          setUser(null);
         }
       }
     } catch {
@@ -121,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const targetId = path.includes('logs_qc') ? 'NV00266' : 'NV00053';
           await quickSwitch({ workerId: targetId });
         } else {
-          await quickSwitch({ workerId: 'NV00214' });
+          setUser(null);
         }
       }
     } finally {
@@ -228,6 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         onClose={closePinModal}
         initialWorkerId={preselectedId}
         onSubmit={loginWithPin}
+        profiles={quickSwitchProfiles}
       />
       <ChangePinModal
         open={changePinModalOpen}
@@ -253,6 +252,7 @@ interface PinLoginModalProps {
   onClose: () => void;
   initialWorkerId: string;
   onSubmit: (workerId: string, pin: string) => Promise<AuthSessionUser>;
+  profiles?: QuickSwitchProfile[];
 }
 
 export function PinLoginModal({
@@ -260,6 +260,7 @@ export function PinLoginModal({
   onClose,
   initialWorkerId,
   onSubmit,
+  profiles,
 }: PinLoginModalProps) {
   const [workerId, setWorkerId] = useState(initialWorkerId || '');
   const [pin, setPin] = useState('');
@@ -282,7 +283,7 @@ export function PinLoginModal({
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!workerId.trim() || !pin.trim()) {
-      setErrMsg('Vui lòng nhập Mã nhân viên / Tên đăng nhập và Mật khẩu.');
+      setErrMsg('Vui lòng chọn hoặc nhập Mã nhân viên / Tên đăng nhập và Mật khẩu.');
       return;
     }
     setSubmitting(true);
@@ -320,14 +321,47 @@ export function PinLoginModal({
                 setErrMsg('');
                 setWorkerId(e.target.value);
               }}
-              placeholder="VD: NV00214 hoặc vanquynh, NV00053..."
+              placeholder="VD: NV00215, vantrang, hoặc chạm tên bên dưới..."
               autoCapitalize="none"
               autoCorrect="off"
               className="min-h-[48px] w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm font-bold text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/15"
             />
           </div>
+
+          {/* Quick 1-touch worker selector chips for factory floor! */}
+          {profiles && profiles.length > 0 && (
+            <div className="mt-2 space-y-1">
+              <span className="text-[11px] font-bold text-blue-700">
+                Chạm nhanh tên của bạn trong xưởng:
+              </span>
+              <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-0.5 rounded-lg border border-slate-200 bg-slate-50/70 p-1.5">
+                {profiles.map((p) => {
+                  const isSelected =
+                    workerId.trim().toUpperCase() === p.workerId.toUpperCase() ||
+                    workerId.trim().toLowerCase() === p.name.toLowerCase();
+                  return (
+                    <button
+                      key={p.workerId}
+                      type="button"
+                      onClick={() => {
+                        setWorkerId(p.workerId);
+                        setErrMsg('');
+                      }}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                        isSelected
+                          ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-300'
+                          : 'border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50'
+                      }`}
+                    >
+                      {p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <p className="mt-1 text-[11px] text-slate-500">
-            Nhập mã thẻ cá nhân (NV00xxx) hoặc tên tài khoản được xưởng cấp.
+            Chạm tên của bạn ở trên hoặc gõ mã thẻ cá nhân (NV00xxx) / tên tài khoản.
           </p>
         </div>
 
