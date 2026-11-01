@@ -25,7 +25,15 @@ import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';
 
-const LOCAL_LOGS_KEY = 'GCCK_LOCAL_CLIENT_LOGS_V1';
+const LOCAL_LOGS_KEY = 'GCCK_LOCAL_CLIENT_LOGS_V2_NOV2026';
+
+// One-time automatic purge of pre-November test logs across devices
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem('GCCK_LOCAL_CLIENT_LOGS_V1');
+    localStorage.removeItem('GCCK_OUTBOX_V1');
+  } catch {}
+}
 
 export const FALLBACK_PRODUCTS: ProductMeta[] = (seedData.costingList || []).map((c: any) => ({
   spId: String(c.spId || ''),
@@ -94,12 +102,12 @@ export const FALLBACK_ORDERS: PurchaseOrderInfo[] = (seedData.ordersList || []).
   customer: String(p.customer || 'Nội bộ'),
   productName: String(p.productName),
   qtyPo: Number(p.qtyPo || 0),
-  dueDate: String(p.dueDate || '2026-10-30'),
-  wipQty: Number(p.wipQty || 0),
-  finishedQty: Number(p.finishedQty || 0),
-  deliveredQty: Number(p.deliveredQty || 0),
-  stockQty: Number(p.stockQty || 0),
-  remainQty: Number(p.remainQty || 0),
+  dueDate: String(p.dueDate || '2026-11-30'),
+  wipQty: 0,
+  finishedQty: 0,
+  deliveredQty: 0,
+  stockQty: 0,
+  remainQty: Number(p.qtyPo || 0),
   status: String(p.status || '⏳ Đang chờ SX'),
   materialLot: p.materialLot || 'LOT-2026-VC',
   faiStatus: p.faiStatus || 'PASSED_FAI',
@@ -223,6 +231,19 @@ export function getClientStoredLogs(): any[] {
   }
 }
 
+export function clearAllClientStoredLogs(): void {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(LOCAL_LOGS_KEY);
+      localStorage.removeItem('GCCK_LOCAL_CLIENT_LOGS_V1');
+      localStorage.removeItem('GCCK_OUTBOX_V1');
+      localStorage.removeItem('GCCK_HANDOVERS_V1');
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function saveClientStoredLog(log: any): void {
   try {
     const existing = getClientStoredLogs();
@@ -235,18 +256,10 @@ export function saveClientStoredLog(log: any): void {
 
 export function getAllFallbackLogs(): any[] {
   const stored = getClientStoredLogs();
-  const seed = (seedData.recentLogs || []) as any[];
   const seen = new Set<string>();
   const list: any[] = [];
   for (const l of stored) {
     const key = String(l.recordUid || l.id);
-    if (!seen.has(key)) {
-      seen.add(key);
-      list.push(l);
-    }
-  }
-  for (const l of seed) {
-    const key = String(l.recordUid || l.id || l.rowNum);
     if (!seen.has(key)) {
       seen.add(key);
       list.push(l);
@@ -372,17 +385,17 @@ export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): Boot
     machineLoads: [],
     qcInspections: [],
     recentLogs: combinedLogs,
-    todayAccumulated: (seedData.todayAccumulated as Record<string, number>) || {},
-    opDoneMap: (seedData.opDoneMap as Record<string, number>) || {},
+    todayAccumulated: {},
+    opDoneMap: {},
     kpiSummary: {
-      totalOk: (seedData.kpiSummary as any)?.totalOk ?? 4390,
-      totalRework: (seedData.kpiSummary as any)?.totalRework ?? 15,
-      totalScrap: (seedData.kpiSummary as any)?.totalScrap ?? 8,
-      totalStopMinutes: (seedData.kpiSummary as any)?.totalStopMinutes ?? 35,
-      runningMachines: 18,
-      bottleneckMachines: 2,
-      openOrders: 189,
-      overdueOrders: 4,
+      totalOk: 0,
+      totalRework: 0,
+      totalScrap: 0,
+      totalStopMinutes: 0,
+      runningMachines: 0,
+      bottleneckMachines: 0,
+      openOrders: FALLBACK_ORDERS.length,
+      overdueOrders: 0,
     },
     shiftHandoverAlerts: [],
     config: {

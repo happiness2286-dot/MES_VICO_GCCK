@@ -15,6 +15,7 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Truck,
   XCircle,
 } from 'lucide-react';
@@ -27,9 +28,9 @@ import type {
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
+import { clearAllClientStoredLogs, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
-import { fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
+import { deleteAllLogsFromSupabase, fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import {
   formatDateVn,
   formatVnd,
@@ -65,7 +66,45 @@ export function LogsQcTraceTab({
   const bootstrap = rawBootstrap || getFallbackBootstrap();
   const toast = useToast();
   const { user } = useAuth();
+  const isAdmin = user?.appRole === 'ADMIN' || user?.appRole === 'DIRECTOR';
   const canEditLogs = user?.appRole === 'ADMIN' || user?.appRole === 'SHIFT_LEADER';
+  const [resettingData, setResettingData] = useState(false);
+
+  const handleResetProductionLogs = async () => {
+    const confirmReset = window.confirm(
+      '⚠️ XÁC NHẬN LÀM MỚI TOÀN BỘ:\n\nBạn có chắc chắn muốn xóa toàn bộ dữ liệu nhật ký ca cũ để bắt đầu nhập mới từ Tháng 11 không?\n\n(Hành động này sẽ làm sạch dữ liệu cả trên máy chủ, Supabase Cloud và bộ nhớ tạm trình duyệt)'
+    );
+    if (!confirmReset) return;
+
+    setResettingData(true);
+    try {
+      // 1. Clear Supabase Cloud logs
+      await deleteAllLogsFromSupabase();
+
+      // 2. Clear backend SQLite database (if server running)
+      try {
+        await apiClient.post('/admin/reset-production-data', {});
+      } catch (e) {
+        console.warn('Backend reset call:', e);
+      }
+
+      // 3. Clear local browser storage
+      clearAllClientStoredLogs();
+
+      // 4. Reset local component state
+      setLogs([]);
+
+      if (onRefreshBootstrap) {
+        await onRefreshBootstrap();
+      }
+
+      toast.success('✨ Đã làm mới toàn bộ dữ liệu nhật ký sản xuất về 0 cho Tháng 11!');
+    } catch (err: any) {
+      toast.error(err?.message || 'Có lỗi khi làm mới dữ liệu.');
+    } finally {
+      setResettingData(false);
+    }
+  };
 
   const [subView, setSubView] = useState<SubViewMode>(deepLink?.logsSubView || 'LOGS');
 
@@ -687,6 +726,18 @@ export function LogsQcTraceTab({
               <Download className="h-4 w-4" />
               📥 Xuất Excel Báo Cáo Ngày (17 cột)
             </Button>
+            {isAdmin && (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={resettingData}
+                onClick={() => void handleResetProductionLogs()}
+                title="Xóa toàn bộ nhật ký sản xuất cũ để công nhân bắt đầu nhập mới từ Tháng 11"
+              >
+                <Trash2 className="h-4 w-4" />
+                🧹 Về Mới Tinh Cho T11
+              </Button>
+            )}
           </div>
         )}
 

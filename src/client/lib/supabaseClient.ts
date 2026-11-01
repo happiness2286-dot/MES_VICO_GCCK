@@ -263,6 +263,22 @@ export async function fetchLogsFromSupabase(): Promise<ProductionLogDto[] | null
   }
 }
 
+export async function deleteAllLogsFromSupabase(): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  try {
+    const { error } = await sb.from('production_logs').delete().gt('id', 0);
+    if (error) {
+      console.warn('Failed to clear Supabase logs:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Failed to delete logs from Supabase:', err);
+    return false;
+  }
+}
+
 /**
  * Subscribes to real-time additions on `production_logs`.
  */

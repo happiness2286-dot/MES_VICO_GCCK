@@ -1698,6 +1698,21 @@ export function createAdminRoutes(db: DatabaseSync): Router {
     }
   });
 
+  router.post('/admin/reset-production-data', requireRoles('ADMIN'), (_req, res) => {
+    db.exec('DELETE FROM production_logs;');
+    db.exec('DELETE FROM qc_inspections;');
+    db.exec('DELETE FROM delivery_logs;');
+    db.exec('DELETE FROM tool_swaps;');
+    db.exec('DELETE FROM sync_outbox;');
+    db.exec('DELETE FROM handover_slips;');
+    db.exec("UPDATE purchase_orders SET finished_qty = 0, status = 'PENDING';");
+    db.exec("UPDATE machines SET status = 'IDLE', current_worker_name = NULL, current_po_id = NULL, current_nc_id = NULL, stop_reason = NULL;");
+    res.json({
+      success: true,
+      message: 'Đã xóa sạch dữ liệu nhật ký sản xuất về mới tinh cho Tháng 11.',
+    });
+  });
+
   // ==================== SYSTEM CONFIG & OUTBOX SYNC ====================
   router.get('/config', requireRoles('ADMIN'), (_req, res) => {
     const cfg = getConfigMap(db);
