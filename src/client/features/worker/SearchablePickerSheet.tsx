@@ -198,7 +198,7 @@ export function SearchablePickerSheet({
                   <span>{categoryTitle}</span>
                 </div>
               )}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              <div className="flex flex-wrap items-center gap-1.5 max-h-32 overflow-y-auto pr-1">
                 {categoryChips.map((chip) => {
                   const isSelected =
                     currentCategory.toLowerCase() === chip.value.toLowerCase() ||

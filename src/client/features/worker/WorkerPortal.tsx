@@ -166,6 +166,7 @@ export function WorkerPortal() {
   const [activePicker, setActivePicker] = useState<PickerKind>(null);
   const [guideModalOpen, setGuideModalOpen] = useState(false);
   const [selectedCustomerFilter, setSelectedCustomerFilter] = useState<string>('ALL');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
 
   // Bootstrap & Network State
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
@@ -1400,53 +1401,124 @@ export function WorkerPortal() {
                 </span>
               </button>
 
-              {/* Quick Customer Filter Bar (One-touch customer filtering for workers!) */}
-              <div className="rounded-xl border border-blue-200/90 bg-blue-50/60 p-2.5">
-                <div className="flex items-center justify-between gap-2 pb-1.5">
-                  <div className="flex items-center gap-1.5 text-xs font-black uppercase text-blue-900">
-                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
-                    <span>🏢 Chọn Khách Hàng Nhanh (Chạm để xem SP):</span>
-                  </div>
+              {/* Quick Customer Dropdown Bar (Tap to unfold downwards, zero horizontal scrollbar!) */}
+              <div className="rounded-xl border-2 border-blue-200/90 bg-blue-50/70 p-2.5 shadow-sm transition-all">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomerDropdownOpen((prev) => !prev)}
+                    className="flex min-h-[46px] flex-1 items-center justify-between gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-left shadow-xs transition-all hover:border-blue-400 hover:bg-blue-50/50 active:scale-[0.99]"
+                    aria-expanded={isCustomerDropdownOpen}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-xs">
+                        <Building2 className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-black uppercase tracking-wider text-blue-700">
+                          Khách hàng sản xuất (Chạm để mở menu chọn):
+                        </div>
+                        <div className="truncate text-xs sm:text-sm font-extrabold text-slate-900">
+                          {selectedCustomerFilter === 'ALL' ? (
+                            <span className="text-slate-800">Tất cả khách hàng ({productsList.length} SP)</span>
+                          ) : (
+                            <span className="text-blue-900">
+                              🏢 {selectedCustomerFilter} (
+                              {customerStats.find((c) => c.customer === selectedCustomerFilter)?.count ?? 0} SP)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700 border border-blue-200/80">
+                      <span>{isCustomerDropdownOpen ? 'Thu gọn' : 'Chọn KH'}</span>
+                      <ChevronDown
+                        className={`h-4 w-4 text-blue-600 transition-transform duration-200 ${
+                          isCustomerDropdownOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
                   {selectedCustomerFilter !== 'ALL' && (
                     <button
                       type="button"
                       onClick={() => setSelectedCustomerFilter('ALL')}
-                      className="text-[11px] font-bold text-blue-600 underline hover:text-blue-800"
+                      className="flex min-h-[46px] shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      title="Bỏ lọc khách hàng"
                     >
                       Bỏ lọc
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCustomerFilter('ALL');
-                      setActivePicker('PRODUCT');
-                    }}
-                    className={`min-h-[36px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                      selectedCustomerFilter === 'ALL'
-                        ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-300'
-                        : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    Tất cả ({productsList.length} SP)
-                  </button>
-                  {customerStats.map(({ customer, count }) => (
-                    <button
-                      key={customer}
-                      type="button"
-                      onClick={() => handleQuickCustomerSelect(customer)}
-                      className={`min-h-[36px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                        selectedCustomerFilter === customer
-                          ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
-                          : 'border border-blue-200 bg-white text-blue-900 hover:bg-blue-100/70'
-                      }`}
-                    >
-                      🏢 {customer} ({count})
-                    </button>
-                  ))}
-                </div>
+
+                {/* Downward Unfolded Customer Grid ("Tự trải xuống", big finger-friendly touch targets) */}
+                {isCustomerDropdownOpen && (
+                  <div className="mt-2.5 space-y-2 border-t border-blue-200/80 pt-2.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-blue-900">
+                      <span>Chọn khách hàng ({customerStats.length} đơn vị):</span>
+                      <span className="text-slate-500 font-normal">Chạm để chọn &amp; nạp bản vẽ</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 max-h-[320px] overflow-y-auto pr-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomerFilter('ALL');
+                          setIsCustomerDropdownOpen(false);
+                          setActivePicker('PRODUCT');
+                        }}
+                        className={`flex min-h-[44px] items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all text-left ${
+                          selectedCustomerFilter === 'ALL'
+                            ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
+                            : 'border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Building2 className="h-3.5 w-3.5" />
+                          <span>Tất cả khách hàng</span>
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-mono-num text-[11px] ${
+                            selectedCustomerFilter === 'ALL'
+                              ? 'bg-blue-800 text-white'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {productsList.length} SP
+                        </span>
+                      </button>
+                      {customerStats.map(({ customer, count }) => {
+                        const isSelected = selectedCustomerFilter === customer;
+                        return (
+                          <button
+                            key={customer}
+                            type="button"
+                            onClick={() => {
+                              handleQuickCustomerSelect(customer);
+                              setIsCustomerDropdownOpen(false);
+                            }}
+                            className={`flex min-h-[44px] items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all text-left ${
+                              isSelected
+                                ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
+                                : 'border border-blue-200 bg-white text-blue-950 hover:border-blue-400 hover:bg-blue-100/70'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5 truncate pr-2">
+                              <span className="shrink-0 text-sm">🏢</span>
+                              <span className="truncate">{customer}</span>
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 font-mono-num text-[11px] font-black ${
+                                isSelected ? 'bg-blue-800 text-white' : 'bg-blue-100 text-blue-800'
+                              }`}
+                            >
+                              {count} SP
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </Card>
 
