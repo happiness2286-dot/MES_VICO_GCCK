@@ -244,6 +244,7 @@ export function seedIfEmpty(db: DatabaseSync, customSeedJsonPath?: string): bool
 
     const prodByCustAndName = new Map<string, { spId: string; customer: string; productName: string }>();
     const prodByCompactName = new Map<string, { spId: string; customer: string; productName: string }>();
+    const prodBySpId = new Map<string, { spId: string; customer: string; productName: string }>();
 
     // Group raw operations by customer||productName first so we know matName for product
     const rawOpsGrouped = new Map<string, any[]>();
@@ -268,6 +269,7 @@ export function seedIfEmpty(db: DatabaseSync, customSeedJsonPath?: string): bool
 
       const meta = { spId, customer: cust, productName: pName };
       prodByCustAndName.set(key, meta);
+      prodBySpId.set(spId, meta);
       const compact = pName.replace(/\s+/g, '').toUpperCase();
       if (!prodByCompactName.has(compact)) {
         prodByCompactName.set(compact, meta);
@@ -397,12 +399,14 @@ export function seedIfEmpty(db: DatabaseSync, customSeedJsonPath?: string): bool
       const compactProd = rawProdName.replace(/\s+/g, '').toUpperCase();
 
       const matchedProd =
+        (p.spId && prodBySpId.get(normalizeVn(p.spId))) ||
         prodByCustAndName.get(`${customer}||${rawProdName}`) ||
         prodByCompactName.get(compactProd) ||
+        prodByCompactName.get(compactProd.replace(/^ALKTOP(?:II|2)/i, 'ALKTOP')) ||
         null;
 
       const canonicalProdName = matchedProd ? matchedProd.productName : rawProdName;
-      const spId = matchedProd ? matchedProd.spId : null;
+      const spId = matchedProd ? matchedProd.spId : (p.spId ? normalizeVn(p.spId) : null);
 
       const qtyPo = Math.max(1, Math.round(Number(p.qtyPo) || 1));
       const rawWip = Math.max(0, Math.round(Number(p.wipQty) || 0));

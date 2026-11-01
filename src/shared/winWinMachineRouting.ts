@@ -238,3 +238,4 @@ export function getWinWinPreferredMachines(productName: string | undefined | nul
 
   return [];
 }
+

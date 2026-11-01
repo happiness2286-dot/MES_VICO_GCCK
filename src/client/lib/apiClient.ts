@@ -286,7 +286,37 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       }
       return { success: true } as unknown as T;
     }
-    if (options.method === 'PATCH' || options.method === 'DELETE') {
+    if (options.method === 'PATCH') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const poId = decodeURIComponent(parts[parts.length - 1] || '');
+      const body = options.json as any;
+      const po = FALLBACK_ORDERS.find(
+        (o) => o.poId.toLowerCase() === poId.toLowerCase()
+      );
+      if (po && body) {
+        if (body.qtyPo !== undefined) po.qtyPo = Math.max(1, Number(body.qtyPo) || 1);
+        if (body.dueDate !== undefined) po.dueDate = String(body.dueDate);
+        if (body.materialLot !== undefined) po.materialLot = String(body.materialLot);
+        if (body.supplierName !== undefined) po.supplierName = String(body.supplierName);
+        if (body.note !== undefined) po.note = String(body.note);
+        if (body.finishedQty !== undefined) po.finishedQty = Math.max(0, Number(body.finishedQty) || 0);
+        if (body.wipQty !== undefined) po.wipQty = Math.max(0, Number(body.wipQty) || 0);
+        if (body.deliveredQty !== undefined) po.deliveredQty = Math.max(0, Number(body.deliveredQty) || 0);
+        po.stockQty = Math.max(0, po.finishedQty - po.deliveredQty);
+        po.remainQty = Math.max(0, po.qtyPo - po.deliveredQty);
+        if (po.deliveredQty >= po.qtyPo) {
+          po.status = '✅ Đã giao đủ';
+        } else if (po.finishedQty >= po.qtyPo) {
+          po.status = '📦 Xong CK - Chờ giao';
+        } else if (po.wipQty > 0 || po.finishedQty > 0) {
+          po.status = '⚙️ Đang gia công';
+        } else {
+          po.status = '⏳ Đang chờ SX';
+        }
+      }
+      return { success: true, item: po } as unknown as T;
+    }
+    if (options.method === 'DELETE') {
       return { success: true } as unknown as T;
     }
     return { items: FALLBACK_ORDERS } as unknown as T;

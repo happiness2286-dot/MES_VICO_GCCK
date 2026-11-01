@@ -231,9 +231,19 @@ export function createAdminRoutes(db: DatabaseSync): Router {
       req.body?.priority !== undefined ? Number(req.body.priority) : Number(existing.priority);
     const note = req.body?.note !== undefined ? normalizeVn(req.body.note) : String(existing.note);
 
-    const fin = Number(existing.finished_qty);
-    const del = Number(existing.delivered_qty);
-    const wip = Number(existing.wip_qty);
+    const fin =
+      req.body?.finishedQty !== undefined
+        ? Math.max(0, Number(req.body.finishedQty) || 0)
+        : Number(existing.finished_qty);
+    const del =
+      req.body?.deliveredQty !== undefined
+        ? Math.max(0, Number(req.body.deliveredQty) || 0)
+        : Number(existing.delivered_qty);
+    const wip =
+      req.body?.wipQty !== undefined
+        ? Math.max(0, Number(req.body.wipQty) || 0)
+        : Number(existing.wip_qty);
+
     const stock = Math.max(0, fin - del);
     const remain = Math.max(0, qtyPo - del);
     const status = derivePoStatus(qtyPo, wip, fin, del);
@@ -241,9 +251,9 @@ export function createAdminRoutes(db: DatabaseSync): Router {
     db.prepare(
       `UPDATE purchase_orders
        SET qty_po = ?, due_date = ?, material_lot = ?, supplier_name = ?, priority = ?, note = ?,
-           stock_qty = ?, remain_qty = ?, status = ?
+           finished_qty = ?, wip_qty = ?, delivered_qty = ?, stock_qty = ?, remain_qty = ?, status = ?
        WHERE po_id = ?`
-    ).run(qtyPo, dueDate, materialLot, supplierName, priority, note, stock, remain, status, poId);
+    ).run(qtyPo, dueDate, materialLot, supplierName, priority, note, fin, wip, del, stock, remain, status, poId);
 
     const updated = queryPurchaseOrders(db).find((p) => p.poId === poId);
     res.json({ success: true, item: updated });

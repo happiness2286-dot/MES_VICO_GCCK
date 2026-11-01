@@ -96,9 +96,10 @@ describe('SQLite WAL Seeder, RBAC Security & Atomic MES REST API', () => {
       expect(cnt).toBe(1);
     }
 
-    // 13 ALKTOP POs linked & all POs have clean status + 0 <= remainQty <= qtyPo
-    const dh001 = boot.body.ordersList.find((p: any) => p.poId === 'DH-001');
-    expect(dh001.spId).toBe('SP041');
+    // ALKTOP POs linked & all POs have clean status + 0 <= remainQty <= qtyPo
+    const alktopPo = boot.body.ordersList.find((p: any) => p.productName && p.productName.includes('1130'));
+    expect(alktopPo).toBeDefined();
+    expect(alktopPo.spId).toBe('SP041');
     for (const po of boot.body.ordersList) {
       expect(po.remainQty).toBeGreaterThanOrEqual(0);
       expect(po.remainQty).toBeLessThanOrEqual(po.qtyPo);

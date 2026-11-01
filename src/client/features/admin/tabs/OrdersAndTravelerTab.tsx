@@ -194,6 +194,9 @@ export function OrdersAndTravelerTab({
   const [editSupplierName, setEditSupplierName] = useState('');
   const [editPriority, setEditPriority] = useState(2);
   const [editNote, setEditNote] = useState('');
+  const [editFinishedQty, setEditFinishedQty] = useState(0);
+  const [editWipQty, setEditWipQty] = useState(0);
+  const [editDeliveredQty, setEditDeliveredQty] = useState(0);
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
@@ -459,6 +462,9 @@ export function OrdersAndTravelerTab({
     setEditSupplierName(po.supplierName || '');
     setEditPriority(po.priority ?? 2);
     setEditNote(po.note || '');
+    setEditFinishedQty(po.finishedQty || 0);
+    setEditWipQty(po.wipQty || 0);
+    setEditDeliveredQty(po.deliveredQty || 0);
   };
 
   const handleSaveEditPo = async (e: React.FormEvent) => {
@@ -473,8 +479,13 @@ export function OrdersAndTravelerTab({
         supplierName: editSupplierName,
         priority: editPriority,
         note: editNote,
+        finishedQty: editFinishedQty,
+        wipQty: editWipQty,
+        deliveredQty: editDeliveredQty,
       });
-      toast.success(`Đã cập nhật thông tin Lệnh SX ${editTargetPo.poId}.`);
+      toast.success(
+        `Đã cập nhật Lệnh SX ${editTargetPo.poId} (Xong CK: ${editFinishedQty}/${editQtyPo} SP).`
+      );
       setEditTargetPo(null);
       await loadOrdersAndDeliveries();
       await onRefreshBootstrap();
@@ -1388,7 +1399,81 @@ export function OrdersAndTravelerTab({
         subtitle={editTargetPo?.productName}
         maxWidthClass="max-w-lg"
       >
-        <form noValidate onSubmit={handleSaveEditPo} className="space-y-3 text-xs">
+        <form noValidate onSubmit={handleSaveEditPo} className="space-y-3.5 text-xs">
+          {/* Card: Bổ sung sản lượng đã gia công hoàn thành trước đó */}
+          <div className="rounded-xl border border-emerald-300 bg-emerald-50/70 p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black uppercase text-emerald-900 flex items-center gap-1.5">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <span>Bổ Sung Tiến Độ &amp; SL Đã Gia Công Xong Trước Đó</span>
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                Bổ sung nhanh
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block font-bold uppercase text-emerald-800 text-[10px]">
+                  Đã Xong Trước Đó (Xong CK)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={editFinishedQty}
+                  onChange={(e) => setEditFinishedQty(Math.max(0, Number(e.target.value) || 0))}
+                  className={`${modalInputCls} font-mono-num font-black text-emerald-700`}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold uppercase text-amber-800 text-[10px]">
+                  Đang Dở Dang (WIP)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={editWipQty}
+                  onChange={(e) => setEditWipQty(Math.max(0, Number(e.target.value) || 0))}
+                  className={`${modalInputCls} font-mono-num font-bold text-amber-800`}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold uppercase text-blue-800 text-[10px]">
+                  Đã Xuất Giao Kho
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={editDeliveredQty}
+                  onChange={(e) => setEditDeliveredQty(Math.max(0, Number(e.target.value) || 0))}
+                  className={`${modalInputCls} font-mono-num font-bold text-blue-800`}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-semibold text-slate-700 border-t border-emerald-200/80 pt-2">
+              <div>
+                Tiến độ: <strong className="font-mono-num text-emerald-800">{editFinishedQty}</strong> / {editQtyPo} SP ({Math.min(100, Math.round((editFinishedQty / editQtyPo) * 100))}%)
+              </div>
+              <div>
+                Còn nợ giao:{' '}
+                <strong className="font-mono-num text-amber-800">
+                  {Math.max(0, editQtyPo - editDeliveredQty)} SP
+                </strong>
+                {editFinishedQty >= editQtyPo && (
+                  <span className="ml-2 inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.2 text-[10px] font-black text-white">
+                    ✓ Đủ SL đặt
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block font-bold uppercase text-slate-700">SL Đặt PO</label>
