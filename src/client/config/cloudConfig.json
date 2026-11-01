@@ -1,5 +1,4 @@
 {
-  "supabaseUrl": "",
-  "supabaseAnonKey": ""
+  "supabaseUrl": "https://klpzesgqedroooievamq.supabase.co",
+  "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtscHplc2dxZWRyb29vaWV2YW1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMzMzk5NTMsImV4cCI6MjEwODkxNTk1M30.MM50_Uv7Jz58EFZC4DLZu7Krb3n2tLK25PHbbXVj2_c"
 }
-
