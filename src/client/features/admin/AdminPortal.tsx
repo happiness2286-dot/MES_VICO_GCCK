@@ -145,6 +145,13 @@ export function AdminPortal() {
   useEffect(() => {
     if (!authLoading) {
       void fetchBootstrap(Boolean(bootstrap));
+
+      // Periodic 15s background polling so admin dashboard stays synchronized with mobile worker inputs
+      const pollTimer = setInterval(() => {
+        void fetchBootstrap(true);
+      }, 15000);
+
+      return () => clearInterval(pollTimer);
     }
   }, [authLoading, user?.workerId, user?.appRole]);
 

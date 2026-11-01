@@ -1,6 +1,7 @@
 import type { ReportSubmitPayload, ReportSubmitResponse } from '@shared/types';
 import { apiFetch, ApiError } from './apiClient';
 import { submitDirectToGoogleAppsScript } from './clientFallbackStore';
+import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 
 const OUTBOX_STORAGE_KEY = 'GCCK_OFFLINE_OUTBOX_V1';
 const OUTBOX_EVENT_NAME = 'gcck:outbox-changed';
@@ -138,6 +139,12 @@ export async function submitReportWithOfflineFallback(
       method: 'POST',
       json: finalPayload,
     });
+    // If Supabase Cloud is configured, also push log for remote / GitHub Pages viewers
+    if (response?.log && isSupabaseConnected()) {
+      void pushLogToSupabase(response.log).catch((err) =>
+        console.warn('Background Supabase sync notice:', err)
+      );
+    }
     return { queuedOffline: false, response };
   } catch {
     // If backend 404 (GitHub Pages) or offline, submit directly to Google Apps Script

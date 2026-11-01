@@ -11,6 +11,7 @@ import {
   PackageCheck,
   Plus,
   Printer,
+  RefreshCw,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -26,9 +27,7 @@ import type {
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
-import { VicoLogo } from '@client/components/VicoLogo';
-import { getFallbackBootstrap } from '@client/lib/clientFallbackStore';
+import { getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
 import { fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import {
@@ -137,21 +136,83 @@ export function LogsQcTraceTab({
 
   const reloadLogs = async () => {
     try {
-      const sbLogs = await fetchLogsFromSupabase();
-      if (sbLogs && sbLogs.length > 0) {
-        setLogs(sbLogs);
-        return;
+      // 1. Authoritative backend API (SQLite server)
+      let serverLogs: ProductionLogDto[] = [];
+      try {
+        const res = await apiClient.get<{ items: ProductionLogDto[] }>('/logs?includeVoided=1');
+        if (res?.items && Array.isArray(res.items)) {
+          serverLogs = res.items;
+        }
+      } catch (apiErr) {
+        console.warn('API /logs fetch error (falling back to cloud/local):', apiErr);
       }
-      const res = await apiClient.get<{ items: ProductionLogDto[] }>('/logs?includeVoided=1');
-      setLogs(res.items || []);
+
+      // 2. Supabase cloud logs (if configured)
+      let sbLogs: ProductionLogDto[] | null = null;
+      try {
+        sbLogs = await fetchLogsFromSupabase();
+      } catch {
+        sbLogs = null;
+      }
+
+      // 3. Fallback client stored logs (from offline/phone storage)
+      const localFallbackLogs = getAllFallbackLogs();
+
+      // 4. Merge all sources, deduplicating by recordUid or id, newest first
+      const mergedMap = new Map<string, ProductionLogDto>();
+
+      if (bootstrap?.recentLogs) {
+        for (const l of bootstrap.recentLogs) {
+          mergedMap.set(l.recordUid || String(l.id), l);
+        }
+      }
+
+      for (const l of localFallbackLogs) {
+        const key = l.recordUid || String(l.id);
+        if (!mergedMap.has(key)) {
+          mergedMap.set(key, l);
+        }
+      }
+
+      if (sbLogs && sbLogs.length > 0) {
+        for (const l of sbLogs) {
+          mergedMap.set(l.recordUid || String(l.id), l);
+        }
+      }
+
+      for (const l of serverLogs) {
+        mergedMap.set(l.recordUid || String(l.id), l);
+      }
+
+      const finalList = Array.from(mergedMap.values()).sort((a, b) => {
+        const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+        const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+        return tB - tA;
+      });
+
+      setLogs(finalList.length > 0 ? finalList : (bootstrap.recentLogs || []));
     } catch {
       setLogs(bootstrap.recentLogs || []);
     }
   };
 
   useEffect(() => {
-    if (bootstrap?.recentLogs) {
-      setLogs(bootstrap.recentLogs);
+    if (bootstrap?.recentLogs && bootstrap.recentLogs.length > 0) {
+      setLogs((current) => {
+        if (current.length === 0) return bootstrap.recentLogs;
+        const map = new Map<string, ProductionLogDto>();
+        for (const l of bootstrap.recentLogs) {
+          map.set(l.recordUid || String(l.id), l);
+        }
+        for (const l of current) {
+          map.set(l.recordUid || String(l.id), l);
+        }
+        return Array.from(map.values()).sort((a, b) => {
+          const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+          const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+          return tB - tA;
+        });
+      });
     }
   }, [bootstrap?.recentLogs]);
 
@@ -318,7 +379,14 @@ export function LogsQcTraceTab({
       if (onRefreshBootstrap) void onRefreshBootstrap();
     });
 
+    // Auto-polling interval every 10 seconds for cross-device realtime synchronization
+    const pollTimer = setInterval(() => {
+      void reloadLogs();
+      void reloadQc();
+    }, 10000);
+
     return () => {
+      clearInterval(pollTimer);
       window.removeEventListener('gcck:report-submitted', handleRealtimeUpdate);
       window.removeEventListener('storage', handleRealtimeUpdate);
       if (unsubSupabase) unsubSupabase();
@@ -596,15 +664,30 @@ export function LogsQcTraceTab({
         </div>
 
         {subView === 'LOGS' && (
-          <Button
-            variant="success"
-            size="sm"
-            disabled={exportingLogs}
-            onClick={() => void handleExportLogsExcel()}
-          >
-            <Download className="h-4 w-4" />
-            📥 Xuất Excel Báo Cáo Ngày (17 cột)
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                await reloadLogs();
+                if (onRefreshBootstrap) await onRefreshBootstrap();
+                toast.success(`Đã làm mới dữ liệu (${logs.length} bản ghi)!`);
+              }}
+              title="Cập nhật ngay báo cáo mới nhất từ điện thoại công nhân"
+            >
+              <RefreshCw className="h-4 w-4 text-blue-600" />
+              Làm mới ({logs.length})
+            </Button>
+            <Button
+              variant="success"
+              size="sm"
+              disabled={exportingLogs}
+              onClick={() => void handleExportLogsExcel()}
+            >
+              <Download className="h-4 w-4" />
+              📥 Xuất Excel Báo Cáo Ngày (17 cột)
+            </Button>
+          </div>
         )}
 
         {subView === 'QC' && (
