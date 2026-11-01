@@ -234,17 +234,30 @@ export function OrdersAndTravelerTab({
     const byProd = new Map<string, number>();
     for (const op of bootstrap.operations) {
       if (op.spId) bySp.set(op.spId, (bySp.get(op.spId) || 0) + 1);
-      const compact = normalizeVn(op.productName).replace(/\s+/g, '').toUpperCase();
+      const compact = normalizeVn(op.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
       if (compact) byProd.set(compact, (byProd.get(compact) || 0) + 1);
+    }
+    const prodSpMap = new Map<string, string>();
+    for (const p of bootstrap.products) {
+      const compact = normalizeVn(p.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (compact) prodSpMap.set(compact, p.spId);
     }
     return {
       getCount: (po: PurchaseOrderInfo) => {
         if (po.spId && bySp.has(po.spId)) return bySp.get(po.spId)!;
-        const compact = normalizeVn(po.productName).replace(/\s+/g, '').toUpperCase();
-        return byProd.get(compact) || 0;
+        const compact = normalizeVn(po.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        if (prodSpMap.has(compact)) {
+          const spId = prodSpMap.get(compact)!;
+          if (bySp.has(spId)) return bySp.get(spId)!;
+        }
+        if (byProd.has(compact)) return byProd.get(compact)!;
+        for (const [c, count] of byProd.entries()) {
+          if (c === compact || c.includes(compact) || compact.includes(c)) return count;
+        }
+        return 0;
       },
     };
-  }, [bootstrap.operations]);
+  }, [bootstrap.operations, bootstrap.products]);
 
   const customersList = useMemo(() => {
     const set = new Set<string>();

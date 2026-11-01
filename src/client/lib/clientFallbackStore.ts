@@ -37,7 +37,7 @@ import {
   getDefShiftCode,
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
-import { removeVietnameseTones } from '@shared/vnSearch';
+import { normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
@@ -709,8 +709,14 @@ export async function submitDirectToGoogleAppsScript(
 
 export function getFallbackTraveler(poId: string): JobTravelerDto {
   const cleanPoId = poId.replace(/\/traveler$/, '').trim();
+  const cleanUpper = cleanPoId.toUpperCase();
   const po =
-    FALLBACK_ORDERS.find((o) => o.poId === cleanPoId) ||
+    FALLBACK_ORDERS.find((o) => o.poId.toUpperCase() === cleanUpper) ||
+    FALLBACK_ORDERS.find(
+      (o) =>
+        o.poId.toUpperCase().replace(/^P0/, 'PO') ===
+        cleanUpper.replace(/^P0/, 'PO')
+    ) ||
     FALLBACK_ORDERS[0] || {
       poId: cleanPoId || 'PO485-01',
       customer: 'Vico - Nội bộ / Khách lẻ',
@@ -724,15 +730,21 @@ export function getFallbackTraveler(poId: string): JobTravelerDto {
       faiStatus: 'FAI_PASSED',
     };
 
+  const normPoProd = normalizeVn(po.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
   const product =
-    FALLBACK_PRODUCTS.find((p) => p.productName === po.productName) || {
-      spId: 'SP-01',
+    (po.spId ? FALLBACK_PRODUCTS.find((p) => p.spId === po.spId) : null) ||
+    FALLBACK_PRODUCTS.find(
+      (p) =>
+        normalizeVn(p.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase() === normPoProd
+    ) ||
+    FALLBACK_PRODUCTS.find((p) => p.productName.toUpperCase() === po.productName.toUpperCase()) || {
+      spId: po.spId || 'SP-01',
       customer: po.customer,
       productName: po.productName,
       matName: 'Thép C45',
       setupMinutesStd: 15,
-      opCount: 3,
-      totalStdSeconds: 5400,
+      opCount: 1,
+      totalStdSeconds: 3600,
       drawingUrl: '',
       techDocUrl: '',
       quotedPrice: 120000,
@@ -740,11 +752,49 @@ export function getFallbackTraveler(poId: string): JobTravelerDto {
       outsourceCost: 0,
     };
 
-  const ops = FALLBACK_OPERATIONS.filter(
-    (o) => o.productName === po.productName
-  ).sort((a, b) => a.stepOrder - b.stepOrder);
+  const targetSpId = po.spId || product.spId;
+  let ops: OperationMeta[] = [];
+  if (targetSpId) {
+    ops = FALLBACK_OPERATIONS.filter((o) => o.spId === targetSpId).sort((a, b) => a.stepOrder - b.stepOrder);
+  }
+  if (ops.length === 0) {
+    ops = FALLBACK_OPERATIONS.filter(
+      (o) =>
+        normalizeVn(o.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase() === normPoProd
+    ).sort((a, b) => a.stepOrder - b.stepOrder);
+  }
+  if (ops.length === 0) {
+    ops = FALLBACK_OPERATIONS.filter((o) => {
+      const normOp = normalizeVn(o.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      return normOp === normPoProd || normOp.includes(normPoProd) || normPoProd.includes(normOp);
+    }).sort((a, b) => a.stepOrder - b.stepOrder);
+  }
 
-  const finalOpsList = ops.length > 0 ? ops : FALLBACK_OPERATIONS.slice(0, 3);
+  // Fallback ONLY to a dedicated single-step operation for this exact PO/product, NEVER slice(0, 3) from another customer!
+  const finalOpsList: OperationMeta[] = ops.length > 0 ? ops : [
+    {
+      ncId: `NC-${po.poId}-01`,
+      spId: targetSpId || 'SP-UNKNOWN',
+      customer: po.customer,
+      productName: po.productName,
+      opName: 'Gia công tiện hoàn thiện CNC',
+      stdSeconds: product.totalStdSeconds || 3600,
+      stage: 'End',
+      stepOrder: 1,
+      isFinalOp: 1,
+      defaultMachine: 'Máy Tiện CNC 1',
+      matName: product.matName || 'Thép cơ khí C45',
+      cuttingRec: 'Tiện CNC tiêu chuẩn',
+      toolCode: 'T01',
+      toolName: 'Mảnh tiện CNC hợp kim',
+      costPerEdge: 25000,
+      stdEdgesPerPcs: 0.1,
+      stdLaborCost: 48000,
+      stdMachCost: 39000,
+      stdToolCost: 5000,
+    },
+  ];
+
   const mappedOps = finalOpsList.map((op, idx) => ({
     ...op,
     stepOrder: idx + 1,
@@ -766,7 +816,7 @@ export function getFallbackTraveler(poId: string): JobTravelerDto {
         ncId: mappedOps[0]?.ncId || 'NC098',
         productName: po.productName,
         opName: mappedOps[0]?.opName || 'Gia công',
-        machineName: 'Máy Tiện CNC 1',
+        machineName: mappedOps[0]?.defaultMachine || 'Máy Tiện CNC 1',
         operatorId: 'NV00214',
         inspectorId: 'NV00266',
         inspectorName: 'Trần Văn Dũng (KCS)',
@@ -784,9 +834,14 @@ export function getFallbackTraveler(poId: string): JobTravelerDto {
 }
 
 export function getFallbackTraceability(poId: string): TraceabilityDto {
-  const cleanPoId = (poId || '').replace(/\/traceability$/, '').trim().toLowerCase();
+  const cleanPoId = (poId || '').replace(/\/traceability$/, '').trim().toUpperCase();
   const po =
-    FALLBACK_ORDERS.find((o) => o.poId.toLowerCase() === cleanPoId) ||
+    FALLBACK_ORDERS.find((o) => o.poId.toUpperCase() === cleanPoId) ||
+    FALLBACK_ORDERS.find(
+      (o) =>
+        o.poId.toUpperCase().replace(/^P0/, 'PO') ===
+        cleanPoId.replace(/^P0/, 'PO')
+    ) ||
     FALLBACK_ORDERS[0] || {
       poId: poId.trim() || 'PO485-01',
       customer: 'Win-Win - PO485',
@@ -803,11 +858,57 @@ export function getFallbackTraceability(poId: string): TraceabilityDto {
       faiStatus: 'FAI_PASSED',
     };
 
-  const ops = FALLBACK_OPERATIONS.filter(
-    (o) => (po.spId && o.spId === po.spId) || o.productName === po.productName
-  ).sort((a, b) => a.stepOrder - b.stepOrder);
+  const normPoProd = normalizeVn(po.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  const product =
+    (po.spId ? FALLBACK_PRODUCTS.find((p) => p.spId === po.spId) : null) ||
+    FALLBACK_PRODUCTS.find(
+      (p) =>
+        normalizeVn(p.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase() === normPoProd
+    ) ||
+    FALLBACK_PRODUCTS.find((p) => p.productName.toUpperCase() === po.productName.toUpperCase());
 
-  const finalOpsList = ops.length > 0 ? ops : FALLBACK_OPERATIONS.slice(0, 3);
+  const targetSpId = po.spId || product?.spId;
+  let ops: OperationMeta[] = [];
+  if (targetSpId) {
+    ops = FALLBACK_OPERATIONS.filter((o) => o.spId === targetSpId).sort((a, b) => a.stepOrder - b.stepOrder);
+  }
+  if (ops.length === 0) {
+    ops = FALLBACK_OPERATIONS.filter(
+      (o) =>
+        normalizeVn(o.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase() === normPoProd
+    ).sort((a, b) => a.stepOrder - b.stepOrder);
+  }
+  if (ops.length === 0) {
+    ops = FALLBACK_OPERATIONS.filter((o) => {
+      const normOp = normalizeVn(o.productName).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      return normOp === normPoProd || normOp.includes(normPoProd) || normPoProd.includes(normOp);
+    }).sort((a, b) => a.stepOrder - b.stepOrder);
+  }
+
+  const finalOpsList: OperationMeta[] = ops.length > 0 ? ops : [
+    {
+      ncId: `NC-${po.poId}-01`,
+      spId: targetSpId || 'SP-UNKNOWN',
+      customer: po.customer,
+      productName: po.productName,
+      opName: 'Gia công tiện hoàn thiện CNC',
+      stdSeconds: product?.totalStdSeconds || 3600,
+      stage: 'End',
+      stepOrder: 1,
+      isFinalOp: 1,
+      defaultMachine: 'Máy Tiện CNC 1',
+      matName: product?.matName || 'Thép cơ khí C45',
+      cuttingRec: 'Tiện CNC tiêu chuẩn',
+      toolCode: 'T01',
+      toolName: 'Mảnh tiện CNC hợp kim',
+      costPerEdge: 25000,
+      stdEdgesPerPcs: 0.1,
+      stdLaborCost: 48000,
+      stdMachCost: 39000,
+      stdToolCost: 5000,
+    },
+  ];
+
   const allLogs = getAllFallbackLogs().filter(
     (l) => !l.isVoided && String(l.poId).toLowerCase() === po.poId.toLowerCase()
   );
