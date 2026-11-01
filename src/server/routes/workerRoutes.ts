@@ -136,7 +136,7 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
             )
             .get(poId, stepOrder) as { total_ok: number };
 
-          if (Number(curDone.total_ok) + okQty > Number(prevDone.total_ok)) {
+          if (Number((Number(curDone.total_ok) + okQty).toFixed(4)) > Number(Number(prevDone.total_ok).toFixed(4))) {
             warnings.push(
               `Cảnh báo luồng WIP: Tổng SL bước ${stepOrder} (${Number(curDone.total_ok) + okQty}) vượt SL đã ghi nhận ở bước ${stepOrder - 1} (${prevDone.total_ok}).`
             );

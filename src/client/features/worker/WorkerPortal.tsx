@@ -427,6 +427,27 @@ export function WorkerPortal() {
     [toolsList, toolCode]
   );
 
+  // Multi-Worker & Multi-Shift Accumulation tracking for the selected Operation
+  const currentOpLogs = useMemo(() => {
+    const all = bootstrap?.recentLogs ?? [];
+    if (!selectedNcId || selectedNcId === 'NC_STOP') return [];
+    return all.filter((l) => {
+      if (l.isVoided) return false;
+      const matchOp = l.ncId === selectedNcId;
+      const matchPo = !selectedPoId || selectedPoId === 'PO-THEO-KH' || l.poId === selectedPoId;
+      return matchOp && matchPo;
+    });
+  }, [bootstrap?.recentLogs, selectedNcId, selectedPoId]);
+
+  const accumulatedOpOk = useMemo(() => {
+    return currentOpLogs.reduce((sum, l) => sum + (Number(l.okQty) || 0), 0);
+  }, [currentOpLogs]);
+
+  const targetOpQty = useMemo(() => {
+    if (selectedPo && selectedPo.qtyPo > 0) return selectedPo.qtyPo;
+    return 1.0;
+  }, [selectedPo]);
+
   // Sync auto tool edges when okQty changes ONLY if !isEdgesDirty
   useEffect(() => {
     const stdEdges = selectedOp?.stdEdgesPerPcs ?? 0;
@@ -1852,51 +1873,201 @@ export function WorkerPortal() {
                 )}
               </div>
 
-              {/* OK Quantity Row */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">
-                    ✅ Sản Lượng ĐẠT Chuẩn (OK)
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {[5, 10].map((inc) => (
+              {/* OK Quantity Row with Multi-Shift Fraction Support (0.25 ca, 0.5 ca, 0.75 ca, 1.0 NC) */}
+              <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50/70 p-3 shadow-xs">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      <span>Sản Lượng ĐẠT Chuẩn (OK)</span>
+                    </span>
+                    <p className="text-[11px] text-emerald-700">
+                      Hỗ trợ chia nhỏ theo ca (0.25, 0.5, 0.75...) hoặc số lượng nguyên
+                    </p>
+                  </div>
+
+                  {/* Quick Fraction Shortcuts for Machining Shifts */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] font-bold text-slate-500 mr-0.5">Đặt nhanh:</span>
+                    {[
+                      { label: '0.25 ca (¼)', val: 0.25 },
+                      { label: '0.5 ca (½)', val: 0.5 },
+                      { label: '0.75 ca (¾)', val: 0.75 },
+                      { label: '1.0 (Xong)', val: 1.0 },
+                    ].map((preset) => (
                       <button
-                        key={inc}
+                        key={preset.val}
                         type="button"
-                        onClick={() => setOkQty((q) => Math.max(0, q + inc))}
-                        className="min-h-[34px] rounded-lg border border-emerald-300 bg-white px-2.5 font-mono-num text-xs font-bold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100"
+                        onClick={() => setOkQty(preset.val)}
+                        className={`min-h-[30px] rounded-lg px-2 text-[11px] font-mono-num font-bold transition-all shadow-xs ${
+                          okQty === preset.val
+                            ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
+                            : 'border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100'
+                        }`}
+                        title={`Đặt sản lượng ca này = ${preset.val}`}
                       >
-                        +{inc}
+                        {preset.label}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    aria-label="Giảm SL Đạt"
-                    onClick={() => setOkQty((q) => Math.max(0, q - 1))}
-                    className="flex h-[52px] w-[56px] shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-800 shadow-sm transition-all hover:bg-slate-50 active:scale-95"
-                  >
-                    <Minus className="h-6 w-6" />
-                  </button>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    aria-label="Số lượng Đạt OK"
-                    value={okQty}
-                    onChange={(e) => setOkQty(Math.max(0, Math.round(Number(e.target.value) || 0)))}
-                    className="font-mono-num tabular-nums h-[52px] w-full min-w-0 rounded-xl border border-emerald-300 bg-white px-2 text-center text-2xl font-black text-emerald-700 shadow-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/15"
-                  />
-                  <button
-                    type="button"
-                    aria-label="Tăng SL Đạt"
-                    onClick={() => setOkQty((q) => q + 1)}
-                    className="flex h-[52px] w-[56px] shrink-0 items-center justify-center rounded-xl border border-emerald-600 bg-emerald-600 text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95"
-                  >
-                    <Plus className="h-6 w-6 stroke-[3]" />
-                  </button>
+
+                {/* Large Touch Stepper: [-] [ Input ] [+] and Quick +0.25, +0.5, +1, +5 */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      aria-label="Giảm SL Đạt"
+                      onClick={() => setOkQty((q) => Math.max(0, Number((q <= 1 ? q - 0.25 : q - 1).toFixed(2))))}
+                      className="flex h-[52px] w-[56px] shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-800 shadow-sm transition-all hover:bg-slate-50 active:scale-95"
+                    >
+                      <Minus className="h-6 w-6" />
+                    </button>
+
+                    <div className="relative flex-1">
+                      <input
+                        type="number"
+                        step="any"
+                        inputMode="decimal"
+                        min={0}
+                        aria-label="Số lượng Đạt OK"
+                        value={okQty === 0 ? '' : okQty}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (raw === '') {
+                            setOkQty(0);
+                            return;
+                          }
+                          const parsed = parseFloat(raw);
+                          setOkQty(Number.isNaN(parsed) ? 0 : Math.max(0, parsed));
+                        }}
+                        className="font-mono-num tabular-nums h-[52px] w-full min-w-0 rounded-xl border border-emerald-300 bg-white px-2 text-center text-2xl font-black text-emerald-700 shadow-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/15"
+                      />
+                      {okQty > 0 && okQty < 1 && (
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 font-mono-num text-[11px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          {Math.round(okQty * 100)}% NC
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      aria-label="Tăng SL Đạt"
+                      onClick={() => setOkQty((q) => Number((q < 1 ? q + 0.25 : q + 1).toFixed(2)))}
+                      className="flex h-[52px] w-[56px] shrink-0 items-center justify-center rounded-xl border border-emerald-600 bg-emerald-600 text-white shadow-sm transition-all hover:bg-emerald-700 active:scale-95"
+                    >
+                      <Plus className="h-6 w-6 stroke-[3]" />
+                    </button>
+                  </div>
+
+                  {/* Increment Pill Shortcuts */}
+                  <div className="flex flex-wrap items-center justify-end gap-1 pt-0.5">
+                    <span className="text-[10px] text-slate-500 font-bold mr-1">Cộng thêm:</span>
+                    {[
+                      { label: '+0.25', add: 0.25 },
+                      { label: '+0.5', add: 0.5 },
+                      { label: '+1', add: 1 },
+                      { label: '+5', add: 5 },
+                    ].map((item) => (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setOkQty((q) => Number((q + item.add).toFixed(2)))}
+                        className="min-h-[28px] rounded-lg border border-emerald-200 bg-white px-2 font-mono-num text-xs font-bold text-emerald-700 shadow-2xs hover:bg-emerald-100/80 active:scale-95"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ==================== CƠ CHẾ CÂN ĐO TIẾN ĐỘ NGUYÊN CÔNG (CỘNG DỒN NHIỀU CA & NHIỀU NGƯỜI) ==================== */}
+                <div className="mt-3 rounded-xl border border-blue-200 bg-white p-3 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+                    <span className="font-extrabold text-blue-900 flex items-center gap-1.5">
+                      <Layers className="h-4 w-4 text-blue-600 shrink-0" />
+                      <span>Cân đo tiến độ NC: <strong>{selectedOp?.opName || 'Gia công'}</strong></span>
+                    </span>
+                    <span className="font-mono-num font-black text-blue-800">
+                      Đã làm trước ca: <span className="text-blue-600">{Number(accumulatedOpOk.toFixed(2))}</span> / {targetOpQty} NC
+                    </span>
+                  </div>
+
+                  {/* Two-Tone Progress Bar */}
+                  <div className="mt-2 h-4 w-full rounded-full bg-slate-100 border border-slate-200 overflow-hidden relative shadow-inner">
+                    {/* Previously done by other workers / prior shifts */}
+                    <div
+                      className="h-full bg-blue-600 transition-all duration-300"
+                      style={{ width: `${Math.min(100, (accumulatedOpOk / targetOpQty) * 100)}%` }}
+                      title={`Đã hoàn thành trước ca: ${Number(accumulatedOpOk.toFixed(2))} SP`}
+                    />
+                    {/* Contribution of this shift */}
+                    {okQty > 0 && (
+                      <div
+                        className="h-full bg-emerald-500 opacity-90 absolute top-0 transition-all duration-300 animate-pulse"
+                        style={{
+                          left: `${Math.min(100, (accumulatedOpOk / targetOpQty) * 100)}%`,
+                          width: `${Math.min(
+                            100 - (accumulatedOpOk / targetOpQty) * 100,
+                            (okQty / targetOpQty) * 100
+                          )}%`,
+                        }}
+                        title={`Ca này bạn làm thêm: +${okQty} SP`}
+                      />
+                    )}
+                  </div>
+
+                  {/* Breakdown Summary After This Shift */}
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-1 text-[11px] font-semibold text-slate-700">
+                    <div>
+                      Sau ca này: <span className="font-mono-num font-black text-emerald-700">+{okQty}</span>
+                      {' ➔ '}
+                      Tổng đạt:{' '}
+                      <strong className="font-mono-num text-sm text-blue-950">
+                        {Number((accumulatedOpOk + okQty).toFixed(2))}
+                      </strong>
+                      {' / '}
+                      {targetOpQty} NC ({Math.min(100, Math.round(((accumulatedOpOk + okQty) / targetOpQty) * 100))}%)
+                    </div>
+                    <div>
+                      {accumulatedOpOk + okQty >= targetOpQty ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white shadow-2xs">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>🎉 ĐỦ TIẾN ĐỘ HOÀN THÀNH</span>
+                        </span>
+                      ) : (
+                        <span className="text-amber-800 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          ⏳ Còn thiếu {Number(Math.max(0, targetOpQty - (accumulatedOpOk + okQty)).toFixed(2))} NC
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Contributor List (Who did what so far) */}
+                  {currentOpLogs.length > 0 && (
+                    <div className="mt-2.5 border-t border-slate-100 pt-2 text-[11px]">
+                      <div className="text-[10px] font-bold uppercase text-slate-500 mb-1">
+                        Các ca &amp; anh em đã cùng gia công nguyên công này:
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                        {currentOpLogs.map((l, idx) => (
+                          <div
+                            key={l.id || idx}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px]"
+                          >
+                            <span className="font-bold text-slate-800">{l.workerName}</span>
+                            <span className="text-slate-500 text-[10px]">
+                              ({l.shiftType ? l.shiftType.split(' ')[0] : 'Ca'} - {l.workDate?.slice(5)})
+                            </span>
+                            <span className="font-mono-num font-black text-emerald-700">
+                              +{Number(l.okQty)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
