@@ -52,6 +52,7 @@ import {
   isVietnamSunday,
 } from '@shared/payrollEngine';
 import { matchesSearch } from '@shared/vnSearch';
+import { getWinWinPreferredMachines } from '@shared/winWinMachineRouting';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../lib/apiClient';
 import { compressImageToDataUrl } from '../../lib/imageCompressor';
@@ -443,6 +444,12 @@ export function WorkerPortal() {
     return currentOpLogs.reduce((sum, l) => sum + (Number(l.okQty) || 0), 0);
   }, [currentOpLogs]);
 
+  // Preferred machine(s) for the current product (especially Win-Win)
+  const preferredMachines = useMemo(() => {
+    const pName = selectedOp?.productName || selectedProduct?.productName || selectedPo?.productName;
+    return getWinWinPreferredMachines(pName);
+  }, [selectedOp?.productName, selectedProduct?.productName, selectedPo?.productName]);
+
   const targetOpQty = useMemo(() => {
     if (selectedPo && selectedPo.qtyPo > 0) return selectedPo.qtyPo;
     return 1.0;
@@ -479,7 +486,13 @@ export function WorkerPortal() {
         setSelectedPoId(matchingPo ? matchingPo.poId : 'PO-THEO-KH');
         if (matchingPo?.materialLot) setMaterialLot(matchingPo.materialLot);
       }
-      if (op.defaultMachine) setMachineName(op.defaultMachine);
+      const targetProdName = op.productName || selectedProduct?.productName || selectedPo?.productName;
+      const prefMachines = getWinWinPreferredMachines(targetProdName);
+      if (prefMachines.length > 0) {
+        setMachineName((cur) => (prefMachines.includes(cur) ? cur : prefMachines[0]));
+      } else if (op.defaultMachine) {
+        setMachineName(op.defaultMachine);
+      }
       if (op.toolCode) setToolCode(op.toolCode);
       setToolEdgesState(
         syncAutoToolEdges({ edgesUsed: 0, isEdgesDirty: false }, okQty, op.stdEdgesPerPcs, true)
@@ -497,6 +510,10 @@ export function WorkerPortal() {
       const po = ordersList.find((p) => p.poId === poId);
       if (!po) return;
       if (po.materialLot) setMaterialLot(po.materialLot);
+      const prefMachines = getWinWinPreferredMachines(po.productName);
+      if (prefMachines.length > 0) {
+        setMachineName((cur) => (prefMachines.includes(cur) ? cur : prefMachines[0]));
+      }
       const poOps = po.spId
         ? operationsList
             .filter((o) => o.spId === po.spId)
@@ -1602,22 +1619,51 @@ export function WorkerPortal() {
                   <ChevronRight className="h-5 w-5 shrink-0 text-slate-500" />
                 </button>
 
-                {/* Machine Trigger */}
-                <button
-                  type="button"
-                  onClick={() => setActivePicker('MACHINE')}
-                  className="flex min-h-[54px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-300 bg-slate-50 p-3 text-left text-slate-900 transition-colors hover:border-blue-400 hover:bg-blue-50/50"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-semibold uppercase text-slate-600">
-                      Máy gia công đứng vận hành
+                {/* Machine Trigger with 1-touch Preferred Chips */}
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setActivePicker('MACHINE')}
+                    className="flex min-h-[54px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-300 bg-slate-50 p-3 text-left text-slate-900 transition-colors hover:border-blue-400 hover:bg-blue-50/50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-semibold uppercase text-slate-600 flex items-center gap-1.5">
+                        <span>Máy gia công đứng vận hành</span>
+                        {preferredMachines.length > 0 && (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[10px] font-black text-emerald-800">
+                            ⭐ Ưu tiên SP
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 truncate text-sm font-extrabold text-emerald-700">
+                        {machineName}
+                      </div>
                     </div>
-                    <div className="mt-0.5 truncate text-sm font-extrabold text-emerald-700">
-                      {machineName}
+                    <ChevronRight className="h-5 w-5 shrink-0 text-slate-500" />
+                  </button>
+
+                  {/* 1-touch Quick Machine Switcher Chips */}
+                  {preferredMachines.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50/70 p-1.5">
+                      <span className="text-[10px] font-bold text-emerald-900 mr-0.5">Ưu tiên máy:</span>
+                      {preferredMachines.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setMachineName(m)}
+                          className={`min-h-[26px] rounded-md px-2 text-[11px] font-bold transition-all shadow-2xs ${
+                            machineName === m
+                              ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
+                              : 'border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100'
+                          }`}
+                          title={`Chạm chọn nhanh ${m}`}
+                        >
+                          {machineName === m ? '✓ ' : ''}{m}
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-slate-500" />
-                </button>
+                  )}
+                </div>
               </div>
 
               {/* Product Full Multi-line Trigger */}
