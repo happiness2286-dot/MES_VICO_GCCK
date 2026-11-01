@@ -104,6 +104,64 @@ export function createAdminRoutes(db: DatabaseSync): Router {
   });
 
   router.post('/orders', requireRoles('SHIFT_LEADER', 'DIRECTOR', 'ADMIN'), (req, res) => {
+    // 1. Multi-item batch or Excel import
+    const rawItems: any[] = Array.isArray(req.body?.items)
+      ? req.body.items
+      : Array.isArray(req.body?.excelRows)
+        ? req.body.excelRows
+        : null;
+
+    if (rawItems && rawItems.length > 0) {
+      const insStmt = db.prepare(
+        `INSERT OR REPLACE INTO purchase_orders (
+          po_id, customer, sp_id, product_name, qty_po, due_date,
+          wip_qty, finished_qty, delivered_qty, stock_qty, remain_qty,
+          status, material_lot, supplier_name, cast_date, priority, note
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, '⏳ Đang chờ SX', ?, ?, ?, 2, ?)`
+      );
+
+      const findSp = db.prepare(`SELECT sp_id FROM products WHERE product_name = ? LIMIT 1`);
+      const insertedList: any[] = [];
+
+      try {
+        db.exec('BEGIN TRANSACTION');
+        for (const item of rawItems) {
+          const poId = normalizeVn(item.poId || '');
+          if (!poId) continue;
+          const { customer } = canonicalizeCustomerName(item.customer || req.body?.customer || 'Nội bộ');
+          const productName = normalizeVn(item.productName || '');
+          if (!productName) continue;
+          const qtyPo = Math.max(1, Math.round(Number(item.qtyPo) || 1));
+          const dueDate = normalizeVn(item.dueDate || req.body?.dueDate || '2026-11-30');
+          const materialLot = normalizeVn(item.materialLot || req.body?.materialLot || `LOT-VICO-${Date.now().toString().slice(-4)}`);
+          const supplierName = normalizeVn(item.supplierName || req.body?.supplierName || 'Xưởng Đúc VICO Thắng Lợi');
+          const castDate = normalizeVn(item.castDate || req.body?.castDate || '2026-11-01');
+          const note = normalizeVn(item.note || req.body?.note || '');
+
+          let spId = normalizeVn(item.spId || '') || null;
+          if (!spId) {
+            const prodRow = findSp.get(productName) as { sp_id: string } | undefined;
+            spId = prodRow ? String(prodRow.sp_id) : null;
+          }
+
+          insStmt.run(poId, customer, spId, productName, qtyPo, dueDate, qtyPo, materialLot, supplierName, castDate, note);
+          insertedList.push({ poId, customer, productName, qtyPo });
+        }
+        db.exec('COMMIT');
+      } catch (txErr) {
+        db.exec('ROLLBACK');
+        throw txErr;
+      }
+
+      res.status(201).json({
+        success: true,
+        count: insertedList.length,
+        importedCount: insertedList.length,
+        message: `Đã nạp thành công ${insertedList.length} danh mục đơn hàng PO.`
+      });
+      return;
+    }
+
     const poId = normalizeVn(req.body?.poId || '');
     const { customer } = canonicalizeCustomerName(req.body?.customer || 'Win-Win');
     const productName = normalizeVn(req.body?.productName || '');

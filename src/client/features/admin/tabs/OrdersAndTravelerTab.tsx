@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   Edit3,
+  FileSpreadsheet,
+  Trash2,
   FileSearch,
   Package,
   Plus,
@@ -15,6 +18,12 @@ import {
 import type { DeliveryLogDto, PurchaseOrderInfo } from '@shared/types';
 import { matchesSearch, normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
+import {
+  downloadPurchaseOrdersTemplateExcel,
+  parsePurchaseOrdersWorkbookBuffer,
+  fileToUint8Array,
+  type MasterPurchaseOrderImportRow,
+} from '@client/lib/excelService';
 import { formatDateVn, formatNumber } from '@client/lib/formatters';
 import { navigateTo } from '@client/lib/navigation';
 import {
@@ -64,6 +73,112 @@ export function OrdersAndTravelerTab({
   const [newCastDate, setNewCastDate] = useState(bootstrap.vietnamToday);
   const [newNote, setNewNote] = useState('');
   const [creatingPo, setCreatingPo] = useState(false);
+
+  // Line Items for Multi-Item PO Creation
+  interface PoLineItem {
+    id: string;
+    suffix: string;
+    productName: string;
+    spId?: string | null;
+    qtyPo: number;
+    dueDate: string;
+    materialLot: string;
+    note: string;
+  }
+
+  const [lineItems, setLineItems] = useState<PoLineItem[]>([
+    {
+      id: 'item-1',
+      suffix: '-01',
+      productName: '',
+      spId: null,
+      qtyPo: 20,
+      dueDate: '2026-11-15',
+      materialLot: '',
+      note: '',
+    },
+  ]);
+
+  // Excel Import Preview Modal State
+  const xlsxInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [importPreviewOpen, setImportPreviewOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importRows, setImportRows] = useState<MasterPurchaseOrderImportRow[]>([]);
+  const [importingBusy, setImportingBusy] = useState(false);
+
+  const handleXlsxFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const buf = await fileToUint8Array(file);
+      const rows = await parsePurchaseOrdersWorkbookBuffer(buf);
+      if (rows.length === 0) {
+        toast.warning('File Excel không có dòng dữ liệu đơn hàng hợp lệ.');
+        return;
+      }
+      setImportFileName(file.name);
+      setImportRows(rows);
+      setImportPreviewOpen(true);
+    } catch (err: any) {
+      toast.error(err?.message || 'Không đọc được file Excel (.xlsx).');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (importRows.length === 0) return;
+    setImportingBusy(true);
+    try {
+      const res = await apiClient.post<{ importedCount?: number; message?: string }>('/orders', {
+        items: importRows,
+      });
+      toast.success(res.message || `Đã nạp ${res.importedCount || importRows.length} đơn hàng PO thành công.`);
+      setImportPreviewOpen(false);
+      setImportRows([]);
+      await loadOrdersAndDeliveries();
+      await onRefreshBootstrap();
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể nạp dữ liệu từ file Excel.');
+    } finally {
+      setImportingBusy(false);
+    }
+  };
+
+  const handleAddLineItem = (count = 1) => {
+    setLineItems((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < count; i++) {
+        const idx = next.length + 1;
+        const sfx = `-${String(idx).padStart(2, '0')}`;
+        next.push({
+          id: `item-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          suffix: sfx,
+          productName: productsForSelectedCustomer[0]?.productName || '',
+          spId: productsForSelectedCustomer[0]?.spId || null,
+          qtyPo: 20,
+          dueDate: newDueDate,
+          materialLot: newMaterialLot,
+          note: '',
+        });
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveLineItem = (id: string) => {
+    if (lineItems.length <= 1) {
+      toast.warning('Đơn hàng phải có ít nhất 1 danh mục chi tiết.');
+      return;
+    }
+    setLineItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleUpdateLineItem = (id: string, patch: Partial<PoLineItem>) => {
+    setLineItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    );
+  };
 
   // Delivery Modal State
   const [deliverTargetPo, setDeliverTargetPo] = useState<PurchaseOrderInfo | null>(null);
@@ -227,30 +342,67 @@ export function OrdersAndTravelerTab({
 
   const handleCreatePo = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPoId.trim() || !newProductName.trim()) {
-      toast.warning('Vui lòng nhập Mã PO và chọn hoặc nhập Tên Sản Phẩm.');
+    const basePo = newPoId.trim();
+    if (!basePo) {
+      toast.warning('Vui lòng nhập Mã đơn hàng / Lệnh PO chung.');
       return;
     }
+
+    if (lineItems.length === 0) {
+      toast.warning('Vui lòng thêm ít nhất 1 danh mục hàng / chi tiết.');
+      return;
+    }
+
+    // Validate all items
+    for (let i = 0; i < lineItems.length; i++) {
+      const it = lineItems[i];
+      if (!it.productName.trim()) {
+        toast.warning(`Dòng ${i + 1}: Vui lòng chọn hoặc nhập Tên sản phẩm / bản vẽ.`);
+        return;
+      }
+      if (it.qtyPo <= 0) {
+        toast.warning(`Dòng ${i + 1}: Số lượng đặt hàng phải lớn hơn 0.`);
+        return;
+      }
+    }
+
     setCreatingPo(true);
     try {
-      const matchedProd = bootstrap.products.find(
-        (p) => p.productName === newProductName && (!newCustomer || p.customer === newCustomer)
-      );
-      await apiClient.post('/orders', {
-        poId: newPoId.trim(),
-        customer: newCustomer,
-        spId: matchedProd?.spId || null,
-        productName: newProductName.trim(),
-        qtyPo: newQtyPo,
-        dueDate: newDueDate,
-        materialLot: newMaterialLot.trim(),
-        supplierName: newSupplierName.trim(),
-        castDate: newCastDate,
-        note: newNote.trim(),
+      const payloadItems = lineItems.map((it) => {
+        const fullPoId = lineItems.length === 1 && !it.suffix
+          ? basePo
+          : it.suffix.startsWith('-') || it.suffix.startsWith('_')
+            ? `${basePo}${it.suffix}`
+            : it.suffix
+              ? `${basePo}-${it.suffix}`
+              : basePo;
+
+        const matchedProd = bootstrap.products.find(
+          (p) => p.productName === it.productName && (!newCustomer || p.customer === newCustomer)
+        );
+
+        return {
+          poId: fullPoId,
+          customer: newCustomer,
+          spId: it.spId || matchedProd?.spId || null,
+          productName: it.productName.trim(),
+          qtyPo: it.qtyPo,
+          dueDate: it.dueDate || newDueDate,
+          materialLot: (it.materialLot || newMaterialLot).trim(),
+          supplierName: newSupplierName.trim(),
+          castDate: newCastDate,
+          note: (it.note || newNote).trim(),
+        };
       });
-      toast.success(`Đã tạo đơn hàng ${newPoId.trim()} thành công.`);
+
+      await apiClient.post('/orders', {
+        items: payloadItems,
+      });
+
+      toast.success(
+        `🎉 Đã tạo thành công đơn hàng ${basePo} với ${payloadItems.length} danh mục chi tiết!`
+      );
       setCreateOpen(false);
-      setNewNote('');
       await loadOrdersAndDeliveries();
       await onRefreshBootstrap();
     } catch (err: any) {
@@ -360,9 +512,37 @@ export function OrdersAndTravelerTab({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" size="md" onClick={openCreateModal}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void downloadPurchaseOrdersTemplateExcel()}
+              title="Tải biểu mẫu Excel (.xlsx) chuẩn để nhập nhanh đơn hàng nhiều danh mục"
+            >
+              <Download className="h-4 w-4 text-emerald-600" />
+              📥 Tải File Mẫu Excel Nhập PO
+            </Button>
+
+            <input
+              ref={xlsxInputRef}
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="hidden"
+              onChange={(e) => void handleXlsxFileChange(e)}
+            />
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => xlsxInputRef.current?.click()}
+              title="Nhập hàng loạt đơn hàng PO từ tệp Excel (.xlsx)"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-blue-600" />
+              📤 Nạp Từ Excel (.xlsx)
+            </Button>
+
+            <Button variant="primary" size="sm" onClick={openCreateModal}>
               <Plus className="h-4 w-4" />
-              Tạo Đơn Hàng / PO Mới
+              + Tạo Đơn Hàng / PO Mới
             </Button>
           </div>
         </div>
@@ -661,191 +841,407 @@ export function OrdersAndTravelerTab({
         />
       </Card>
 
-      {/* ==================== MODAL: CREATE NEW PO ==================== */}
+      {/* ==================== MODAL: CREATE NEW PO (MULTI-ITEM CAPABLE) ==================== */}
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="➕ Tạo Lệnh Sản Xuất / Đơn Hàng PO Mới"
-        subtitle="Khai báo đầy đủ Mã lô phôi & Nhà cung cấp phôi đầu vào phục vụ truy vết nguồn gốc 100%"
-        maxWidthClass="max-w-2xl"
+        title="➕ Tạo Lệnh Sản Xuất / Đơn Hàng PO Mới (Nhiều Danh Mục)"
+        subtitle="Hỗ trợ khai báo cùng lúc nhiều chi tiết cho 1 đơn hàng (hoặc nạp hàng loạt từ Excel .xlsx)"
+        maxWidthClass="max-w-4xl"
       >
-        <form noValidate onSubmit={handleCreatePo} className="space-y-3.5 text-xs">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block font-bold uppercase text-slate-700">
-                Mã Đơn Hàng / Lệnh PO (*)
-              </label>
-              <input
-                type="text"
-                required
-                value={newPoId}
-                onChange={(e) => setNewPoId(e.target.value)}
-                placeholder="VD: PO2610-190"
-                className={`${modalInputCls} font-mono-num font-bold text-blue-700`}
-              />
+        <form noValidate onSubmit={handleCreatePo} className="space-y-4 text-xs">
+          {/* Header Card: Base Order Information */}
+          <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-3.5 space-y-3">
+            <div className="text-[11px] font-black uppercase tracking-wider text-blue-900 flex items-center gap-1.5">
+              <Package className="h-4 w-4 text-blue-600" />
+              <span>1. Thông Tin Chung Của Đơn Hàng / Hợp Đồng Khách Hàng</span>
             </div>
 
-            <div>
-              <label className="mb-1 block font-bold uppercase text-slate-700">
-                Khách Hàng (*)
-              </label>
-              <input
-                type="text"
-                list="gcck-po-customers"
-                value={newCustomer}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setNewCustomer(val);
-                  if (!customProductMode) {
-                    const matchProd = bootstrap.products.find((p) => p.customer === val);
-                    if (matchProd) setNewProductName(matchProd.productName);
-                  }
-                }}
-                className={modalInputCls}
-              />
-              <datalist id="gcck-po-customers">
-                {customersList.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </div>
-          </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+              <div>
+                <label className="mb-1 block font-bold uppercase text-slate-700">
+                  Mã Đơn / PO Gốc (*)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPoId}
+                  onChange={(e) => setNewPoId(e.target.value)}
+                  placeholder="VD: PO2610-190"
+                  className={`${modalInputCls} font-mono-num font-extrabold text-blue-700`}
+                />
+              </div>
 
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <label className="font-bold uppercase text-slate-700">
-                Tên Sản Phẩm / Bản Vẽ (*)
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomProductMode((v) => !v);
-                  if (!customProductMode) setNewProductName('');
-                }}
-                className="text-[11px] font-bold text-blue-600 hover:underline"
-              >
-                {customProductMode
-                  ? '← Chọn từ danh mục 334+ SP có sẵn'
-                  : '+ Nhập tên sản phẩm đặt mới'}
-              </button>
-            </div>
-            {customProductMode ? (
-              <input
-                type="text"
-                required
-                value={newProductName}
-                onChange={(e) => setNewProductName(e.target.value)}
-                placeholder="Nhập tên sản phẩm / mã bản vẽ mới..."
-                className={modalInputCls}
-              />
-            ) : (
-              <select
-                value={newProductName}
-                onChange={(e) => setNewProductName(e.target.value)}
-                className={modalInputCls}
-              >
-                {productsForSelectedCustomer.map((p) => (
-                  <option key={p.spId} value={p.productName}>
-                    [{p.spId}] {p.productName} ({p.customer})
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
+              <div>
+                <label className="mb-1 block font-bold uppercase text-slate-700">
+                  Khách Hàng (*)
+                </label>
+                <input
+                  type="text"
+                  list="gcck-po-customers"
+                  value={newCustomer}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewCustomer(val);
+                    const matchProds = bootstrap.products.filter((p) => p.customer === val);
+                    if (matchProds.length > 0) {
+                      setLineItems((prev) =>
+                        prev.map((it, idx) => ({
+                          ...it,
+                          productName: matchProds[idx % matchProds.length]?.productName || it.productName,
+                          spId: matchProds[idx % matchProds.length]?.spId || it.spId,
+                        }))
+                      );
+                    }
+                  }}
+                  className={modalInputCls}
+                />
+                <datalist id="gcck-po-customers">
+                  {customersList.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block font-bold uppercase text-slate-700">
-                SL Đặt Hàng (*)
-              </label>
-              <input
-                type="number"
-                min={1}
-                step="any"
-                required
-                value={newQtyPo}
-                onChange={(e) => setNewQtyPo(Math.max(1, Number(e.target.value) || 1))}
-                className={`${modalInputCls} font-mono-num font-bold text-emerald-700`}
-              />
+              <div>
+                <label className="mb-1 block font-bold uppercase text-slate-700">
+                  Hạn Giao Chung (*)
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newDueDate}
+                  onChange={(e) => {
+                    setNewDueDate(e.target.value);
+                    setLineItems((prev) => prev.map((it) => ({ ...it, dueDate: e.target.value })));
+                  }}
+                  className={`${modalInputCls} font-mono-num`}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-bold uppercase text-slate-700">
+                  Ngày Nhập / Đúc Phôi
+                </label>
+                <input
+                  type="date"
+                  value={newCastDate}
+                  onChange={(e) => setNewCastDate(e.target.value)}
+                  className={`${modalInputCls} font-mono-num`}
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="mb-1 block font-bold uppercase text-slate-700">
-                Hạn Giao Hàng (*)
-              </label>
-              <input
-                type="date"
-                required
-                value={newDueDate}
-                onChange={(e) => setNewDueDate(e.target.value)}
-                className={`${modalInputCls} font-mono-num`}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block font-bold uppercase text-slate-700">
-                Ngày Nhập / Đúc Phôi
-              </label>
-              <input
-                type="date"
-                value={newCastDate}
-                onChange={(e) => setNewCastDate(e.target.value)}
-                className={`${modalInputCls} font-mono-num`}
-              />
-            </div>
-          </div>
-
-          {/* Traceability Material Lot & Supplier */}
-          <div className="grid grid-cols-1 gap-3 rounded-xl border border-blue-200 bg-blue-50/50 p-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block font-bold uppercase text-blue-800">
-                🧬 Mã Lô Phôi Đầu Vào (Heat / Lot No.)
-              </label>
-              <input
-                type="text"
-                value={newMaterialLot}
-                onChange={(e) => setNewMaterialLot(e.target.value)}
-                placeholder="VD: LOT-VICO-2610-088"
-                className="font-mono-num h-9 w-full rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block font-bold uppercase text-blue-800">
-                🏭 Nhà Cung Cấp Phôi / Xưởng Đúc
-              </label>
-              <input
-                type="text"
-                value={newSupplierName}
-                onChange={(e) => setNewSupplierName(e.target.value)}
-                placeholder="VD: Xưởng Đúc VICO Thắng Lợi"
-                className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none"
-              />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block font-bold uppercase text-blue-800">
+                  🧬 Mã Lô Phôi Đầu Vào
+                </label>
+                <input
+                  type="text"
+                  value={newMaterialLot}
+                  onChange={(e) => {
+                    setNewMaterialLot(e.target.value);
+                    setLineItems((prev) =>
+                      prev.map((it) => ({ ...it, materialLot: it.materialLot || e.target.value }))
+                    );
+                  }}
+                  placeholder="VD: LOT-VICO-2610-088"
+                  className="font-mono-num h-9 w-full rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-bold uppercase text-blue-800">
+                  🏭 Nhà Cung Cấp Phôi
+                </label>
+                <input
+                  type="text"
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  placeholder="VD: Xưởng Đúc VICO Thắng Lợi"
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block font-bold uppercase text-slate-700">
+                  Ghi Chú Đơn Hàng
+                </label>
+                <input
+                  type="text"
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Giao thành đợt, yêu cầu chứng chỉ..."
+                  className={modalInputCls}
+                />
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="mb-1 block font-bold uppercase text-slate-700">
-              Ghi Chú Đơn Hàng
-            </label>
-            <input
-              type="text"
-              value={newNote}
-              onChange={(e) => setNewNote(e.target.value)}
-              placeholder="Giao thành 2 đợt, yêu cầu chứng chỉ siêu âm mối đúc..."
-              className={modalInputCls}
-            />
+          {/* Line Items Section */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+              <div>
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+                  <Package className="h-4 w-4 text-emerald-600" />
+                  <span>2. Bảng Danh Mục Các Chi Tiết / Sản Phẩm Trong Đơn ({lineItems.length} Mục)</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Một đơn hàng có thể gồm 5–10 chi tiết; hệ thống tự sinh mã con (-01, -02...).
+                </p>
+              </div>
+
+              {/* Quick Add Buttons */}
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleAddLineItem(1)}
+                  className="text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 text-blue-600" />
+                  + Thêm 1 Chi Tiết
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleAddLineItem(5)}
+                  className="text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 text-emerald-600" />
+                  + Thêm 5 Dòng
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleAddLineItem(10)}
+                  className="text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5 text-purple-600" />
+                  + Thêm 10 Dòng
+                </Button>
+              </div>
+            </div>
+
+            {/* Line Items Table */}
+            <div className="max-h-[360px] overflow-auto border border-slate-200 rounded-lg">
+              <table className="w-full min-w-[760px] border-collapse text-left text-xs">
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  <tr>
+                    <th className="px-2.5 py-2 w-10 text-center">STT</th>
+                    <th className="px-2.5 py-2 w-36">Ký Hiệu / Mã Con</th>
+                    <th className="px-2.5 py-2">Chi Tiết / Sản Phẩm (*)</th>
+                    <th className="px-2.5 py-2 w-28 text-center">SL Đặt (*)</th>
+                    <th className="px-2.5 py-2 w-32">Hạn Giao</th>
+                    <th className="px-2.5 py-2 w-36">Lô Phôi Riêng</th>
+                    <th className="px-2.5 py-2 w-10 text-center">Xóa</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {lineItems.map((item, idx) => {
+                    const fullPo = lineItems.length === 1 && !item.suffix
+                      ? newPoId.trim()
+                      : item.suffix.startsWith('-') || item.suffix.startsWith('_')
+                        ? `${newPoId.trim()}${item.suffix}`
+                        : item.suffix
+                          ? `${newPoId.trim()}-${item.suffix}`
+                          : newPoId.trim();
+
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-2.5 py-2 text-center font-bold text-slate-400">
+                          {idx + 1}
+                        </td>
+
+                        <td className="px-2.5 py-2">
+                          <input
+                            type="text"
+                            value={item.suffix}
+                            onChange={(e) => handleUpdateLineItem(item.id, { suffix: e.target.value })}
+                            placeholder="-01"
+                            className="font-mono-num h-8 w-full rounded border border-slate-300 px-2 font-bold text-blue-700 text-xs focus:border-blue-500 focus:outline-none"
+                            title={`Mã đầy đủ sẽ là: ${fullPo}`}
+                          />
+                          <div className="text-[10px] font-mono-num text-slate-500 truncate" title={fullPo}>
+                            {fullPo || '...'}
+                          </div>
+                        </td>
+
+                        <td className="px-2.5 py-2">
+                          <input
+                            type="text"
+                            list={`gcck-line-prod-${idx}`}
+                            value={item.productName}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              const matched = bootstrap.products.find((p) => p.productName === val);
+                              handleUpdateLineItem(item.id, {
+                                productName: val,
+                                spId: matched?.spId || null,
+                              });
+                            }}
+                            placeholder="Chọn hoặc gõ tên sản phẩm..."
+                            className="h-8 w-full rounded border border-slate-300 px-2 text-xs font-semibold text-slate-900 focus:border-blue-500 focus:outline-none"
+                          />
+                          <datalist id={`gcck-line-prod-${idx}`}>
+                            {productsForSelectedCustomer.map((p) => (
+                              <option key={p.spId} value={p.productName}>
+                                [{p.spId}] {p.productName}
+                              </option>
+                            ))}
+                          </datalist>
+                        </td>
+
+                        <td className="px-2.5 py-2">
+                          <input
+                            type="number"
+                            min={1}
+                            step="any"
+                            value={item.qtyPo}
+                            onChange={(e) =>
+                              handleUpdateLineItem(item.id, {
+                                qtyPo: Math.max(1, Number(e.target.value) || 1),
+                              })
+                            }
+                            className="font-mono-num h-8 w-full rounded border border-slate-300 px-2 text-center font-bold text-emerald-700 text-xs focus:border-blue-500 focus:outline-none"
+                          />
+                        </td>
+
+                        <td className="px-2.5 py-2">
+                          <input
+                            type="date"
+                            value={item.dueDate || newDueDate}
+                            onChange={(e) => handleUpdateLineItem(item.id, { dueDate: e.target.value })}
+                            className="font-mono-num h-8 w-full rounded border border-slate-300 px-2 text-xs text-slate-800 focus:border-blue-500 focus:outline-none"
+                          />
+                        </td>
+
+                        <td className="px-2.5 py-2">
+                          <input
+                            type="text"
+                            value={item.materialLot || newMaterialLot}
+                            onChange={(e) => handleUpdateLineItem(item.id, { materialLot: e.target.value })}
+                            placeholder={newMaterialLot}
+                            className="font-mono-num h-8 w-full rounded border border-slate-300 px-2 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+                          />
+                        </td>
+
+                        <td className="px-2.5 py-2 text-center">
+                          <button
+                            type="button"
+                            disabled={lineItems.length <= 1}
+                            onClick={() => handleRemoveLineItem(item.id)}
+                            className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                            title="Xóa danh mục này"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Line Items Summary Footer */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 border border-slate-200">
+              <span className="text-slate-600 font-semibold">
+                Đơn hàng: <strong className="text-blue-700">{lineItems.length}</strong> danh mục chi tiết
+              </span>
+              <span className="font-mono-num font-extrabold text-slate-900">
+                Tổng SL Đặt:{' '}
+                <span className="text-emerald-700 text-sm">
+                  {formatNumber(lineItems.reduce((acc, it) => acc + (Number(it.qtyPo) || 0), 0))}
+                </span>{' '}
+                SP
+              </span>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>
               Hủy
             </Button>
             <Button type="submit" variant="primary" disabled={creatingPo}>
               <QrCode className="h-4 w-4" />
-              {creatingPo ? 'Đang lưu...' : 'Lưu Lệnh PO Mới'}
+              {creatingPo
+                ? 'Đang tạo các đơn hàng...'
+                : `Lưu Lệnh PO (${lineItems.length} Danh Mục)`}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ==================== MODAL: EXCEL IMPORT PREVIEW ==================== */}
+      <Modal
+        open={importPreviewOpen}
+        onClose={() => setImportPreviewOpen(false)}
+        title={`📥 Xem Trước Nạp Đơn Hàng PO Từ Excel (${importRows.length} Danh Mục)`}
+        subtitle={`Tệp nguồn: ${importFileName} — Kiểm tra lại trước khi ghi vào hệ thống`}
+        maxWidthClass="max-w-4xl"
+      >
+        <div className="space-y-4 text-xs">
+          <div className="max-h-[420px] overflow-auto border border-slate-200 rounded-lg">
+            <table className="w-full min-w-[800px] border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 w-10 text-center">STT</th>
+                  <th className="px-3 py-2">Mã PO / Lệnh SX</th>
+                  <th className="px-3 py-2">Khách Hàng</th>
+                  <th className="px-3 py-2">Sản Phẩm / Bản Vẽ</th>
+                  <th className="px-3 py-2 text-center">SL Đặt</th>
+                  <th className="px-3 py-2">Hạn Giao</th>
+                  <th className="px-3 py-2">Lô Phôi Đầu Vào</th>
+                  <th className="px-3 py-2">Ghi Chú</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {importRows.map((r, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-3 py-2 text-center font-bold text-slate-400">{idx + 1}</td>
+                    <td className="px-3 py-2 font-mono-num font-bold text-blue-700">{r.poId}</td>
+                    <td className="px-3 py-2 font-semibold text-slate-800">{r.customer}</td>
+                    <td className="px-3 py-2 font-bold text-slate-900">{r.productName}</td>
+                    <td className="px-3 py-2 font-mono-num font-extrabold text-emerald-700 text-center">
+                      {formatNumber(r.qtyPo)}
+                    </td>
+                    <td className="px-3 py-2 font-mono-num text-slate-600">{r.dueDate}</td>
+                    <td className="px-3 py-2 font-mono-num text-slate-600">{r.materialLot || '—'}</td>
+                    <td className="px-3 py-2 text-slate-500 truncate max-w-xs">{r.note || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3">
+            <div className="font-semibold text-slate-700">
+              Tổng số lượng đặt trong file Excel:{' '}
+              <strong className="text-emerald-700 font-mono-num text-sm">
+                {formatNumber(importRows.reduce((sum, r) => sum + (Number(r.qtyPo) || 0), 0))}
+              </strong>{' '}
+              sản phẩm
+            </div>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => setImportPreviewOpen(false)}>
+                Hủy
+              </Button>
+              <Button
+                variant="primary"
+                disabled={importingBusy}
+                onClick={() => void handleConfirmImport()}
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                {importingBusy
+                  ? 'Đang nạp vào hệ thống...'
+                  : `Xác Nhận Nạp ${importRows.length} Đơn Hàng PO`}
+              </Button>
+            </div>
+          </div>
+        </div>
       </Modal>
 
       {/* ==================== MODAL: DELIVERY & SHIPMENT HISTORY ==================== */}

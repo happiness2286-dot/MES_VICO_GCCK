@@ -10,6 +10,8 @@ import {
   getFallbackHandovers,
   getFallbackSession,
   getFallbackTraveler,
+  getFallbackTraceability,
+  saveFallbackOrdersBatch,
   getFallbackUser,
   getFallbackWeeklyReport,
   saveFallbackHandover,
@@ -261,8 +263,30 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     }
     return { schedules: [], loads: [] } as unknown as T;
   }
+  if (norm.includes('/traceability')) {
+    const parts = path.split('?')[0].split('/').filter(Boolean);
+    const traceIdx = parts.findIndex((p) => p.toLowerCase() === 'traceability');
+    const poId = traceIdx > 0 ? decodeURIComponent(parts[traceIdx - 1]) : 'PO485-01';
+    return getFallbackTraceability(poId) as unknown as T;
+  }
   if (norm.includes('/orders')) {
-    if (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE') {
+    if (options.method === 'POST') {
+      const body = options.json as any;
+      if (norm.includes('/import-xlsx') && body?.excelRows) {
+        const saved = saveFallbackOrdersBatch(body.excelRows);
+        return { success: true, importedCount: saved.length, message: `Đã nạp thành công ${saved.length} đơn hàng PO.` } as unknown as T;
+      }
+      if (body?.items && Array.isArray(body.items)) {
+        const saved = saveFallbackOrdersBatch(body.items);
+        return { success: true, count: saved.length, items: saved } as unknown as T;
+      }
+      if (body?.poId) {
+        const saved = saveFallbackOrdersBatch([body]);
+        return { success: true, item: saved[0] } as unknown as T;
+      }
+      return { success: true } as unknown as T;
+    }
+    if (options.method === 'PATCH' || options.method === 'DELETE') {
       return { success: true } as unknown as T;
     }
     return { items: FALLBACK_ORDERS } as unknown as T;

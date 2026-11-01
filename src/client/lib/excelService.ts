@@ -15,6 +15,18 @@ async function createExcelWorkbook(): Promise<ExcelJS.Workbook> {
   return new Lib.Workbook();
 }
 
+export interface MasterPurchaseOrderImportRow {
+  poId: string;
+  customer: string;
+  productName: string;
+  qtyPo: number;
+  dueDate: string;
+  materialLot?: string;
+  supplierName?: string;
+  castDate?: string;
+  note?: string;
+}
+
 export interface MasterOperationImportRow {
   customer: string;
   productName: string;
@@ -764,6 +776,203 @@ export async function downloadDailyScheduleExcel(
     bytes,
     `GCCK_ThangLoi_KeHoach_Ngay_${workDate}_VICO_BM01.xlsx`
   );
+}
+
+
+export async function buildPurchaseOrdersTemplateWorkbook(): Promise<Uint8Array> {
+  const wb = await createExcelWorkbook();
+  wb.creator = 'GCCK Thắng Lợi Lean MES';
+  const ws = wb.addWorksheet('DON_HANG_PO_MAU', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+  });
+
+  appendSafeRow(
+    ws,
+    [
+      'Mã Đơn Hàng / Lệnh PO (*)',
+      'Khách Hàng (*)',
+      'Tên Sản Phẩm / Chi Tiết Bản Vẽ (*)',
+      'Số Lượng Đặt Hàng (*)',
+      'Hạn Giao Hàng (dd/mm/yyyy)',
+      'Mã Lô Phôi Đầu Vào',
+      'Nhà Cung Cấp Phôi',
+      'Ngày Nhập / Đúc Phôi',
+      'Ghi Chú Đơn Hàng',
+    ],
+    { isHeader: true }
+  );
+
+  // Sample data demonstrating multiple line items in 1 PO
+  const sampleItems = [
+    ['P02610-190-01', 'BOZ Industrial', 'CI-AU-Pan Dead Plate', 20, '15/11/2026', 'LOT-VICO-261101-190', 'Xưởng Đúc VICO Thắng Lợi', '01/11/2026', 'Mặt đáy mài bóng Ra 1.6'],
+    ['P02610-190-02', 'BOZ Industrial', 'CI-AU-Side Guide Plate', 15, '15/11/2026', 'LOT-VICO-261101-190', 'Xưởng Đúc VICO Thắng Lợi', '01/11/2026', 'Phay tinh 4 cạnh'],
+    ['P02610-190-03', 'BOZ Industrial', 'CI-AU-Roller Bushing', 40, '20/11/2026', 'LOT-VICO-261101-190', 'Xưởng Đúc VICO Thắng Lợi', '01/11/2026', 'Tiện tinh lỗ H7'],
+    ['PO485-01', 'Win-Win - PO485', 'ALKTOP 1342 M', 90, '25/11/2026', 'LOT-2026-VC', 'Xưởng Đúc VICO Thắng Lợi', '10/10/2026', 'Đơn hàng định kỳ tháng 11'],
+    ['PO485-02', 'Win-Win - PO485', 'ALKTOP 2155 H', 28, '25/11/2026', 'LOT-2026-VC', 'Xưởng Đúc VICO Thắng Lợi', '10/10/2026', 'Kiểm tra FAI 100%'],
+  ];
+
+  for (const item of sampleItems) {
+    appendSafeRow(ws, item);
+  }
+
+  autoFitColumns(ws, 16, 42);
+  return workbookToBytes(wb);
+}
+
+export async function downloadPurchaseOrdersTemplateExcel(): Promise<void> {
+  const bytes = await buildPurchaseOrdersTemplateWorkbook();
+  downloadWorkbookBytes(bytes, 'Mau_Nhap_Don_Hang_PO_GCCK.xlsx');
+}
+
+export async function parsePurchaseOrdersWorkbookBuffer(
+  buffer: ArrayBuffer | Uint8Array
+): Promise<MasterPurchaseOrderImportRow[]> {
+  const wb = await createExcelWorkbook();
+  await wb.xlsx.load(toExactArrayBuffer(buffer));
+  const ws = wb.worksheets[0];
+  if (!ws) {
+    throw new Error('File Excel không có sheet dữ liệu.');
+  }
+
+  const headers: string[] = [];
+  ws.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    headers[colNumber] = cellValueToCleanString(cell.value);
+  });
+
+  const rows: MasterPurchaseOrderImportRow[] = [];
+  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const obj: Record<string, string> = {};
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const key = headers[colNumber] || `col_${colNumber}`;
+      const cleaned = cellValueToCleanString(cell.value);
+      obj[key] = cleaned;
+      obj[`col_${colNumber}`] = cleaned;
+    });
+
+    const poId =
+      obj['Mã Đơn Hàng / Lệnh PO (*)'] ||
+      obj['Mã Đơn Hàng'] ||
+      obj['Mã PO'] ||
+      obj.MaPO ||
+      obj.PO ||
+      obj.col_1 ||
+      '';
+
+    const customer =
+      obj['Khách Hàng (*)'] ||
+      obj['Khách Hàng'] ||
+      obj['Khách hàng'] ||
+      obj.KhachHang ||
+      obj.Customer ||
+      obj.col_2 ||
+      'Nội bộ';
+
+    const productName =
+      obj['Tên Sản Phẩm / Chi Tiết Bản Vẽ (*)'] ||
+      obj['Tên Sản Phẩm'] ||
+      obj['Tên sản phẩm'] ||
+      obj['Sản Phẩm'] ||
+      obj.TenSanPham ||
+      obj.Product ||
+      obj.col_3 ||
+      '';
+
+    if (!poId || !productName) return;
+
+    const rawQty =
+      obj['Số Lượng Đặt Hàng (*)'] ||
+      obj['Số Lượng'] ||
+      obj['Số lượng'] ||
+      obj.SoLuong ||
+      obj.Qty ||
+      obj.col_4 ||
+      '1';
+
+    const qtyPo = Math.max(1, Math.round(Number(String(rawQty).replace(/[^0-9.]/g, '')) || 1));
+
+    let dueDate =
+      obj['Hạn Giao Hàng (dd/mm/yyyy)'] ||
+      obj['Hạn Giao Hàng'] ||
+      obj['Hạn giao'] ||
+      obj.HanGiao ||
+      obj.DueDate ||
+      obj.col_5 ||
+      '';
+
+    // Normalize date format if dd/mm/yyyy
+    if (dueDate.includes('/')) {
+      const parts = dueDate.split('/');
+      if (parts.length === 3) {
+        const d = parts[0].padStart(2, '0');
+        const m = parts[1].padStart(2, '0');
+        const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        dueDate = `${y}-${m}-${d}`;
+      }
+    } else if (!dueDate || dueDate.length < 8) {
+      dueDate = '2026-11-30';
+    }
+
+    const materialLot =
+      obj['Mã Lô Phôi Đầu Vào'] ||
+      obj['Mã Lô Phôi'] ||
+      obj['Lô phôi'] ||
+      obj.MaLoPhoi ||
+      obj.Lot ||
+      obj.col_6 ||
+      `LOT-VICO-${Date.now().toString().slice(-4)}`;
+
+    const supplierName =
+      obj['Nhà Cung Cấp Phôi'] ||
+      obj['Nhà cung cấp'] ||
+      obj.NhaCungCap ||
+      obj.Supplier ||
+      obj.col_7 ||
+      'Xưởng Đúc VICO Thắng Lợi';
+
+    let castDate =
+      obj['Ngày Nhập / Đúc Phôi'] ||
+      obj['Ngày đúc phôi'] ||
+      obj['Ngày nhập'] ||
+      obj.NgayDuc ||
+      obj.col_8 ||
+      '';
+
+    if (castDate.includes('/')) {
+      const parts = castDate.split('/');
+      if (parts.length === 3) {
+        const d = parts[0].padStart(2, '0');
+        const m = parts[1].padStart(2, '0');
+        const y = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        castDate = `${y}-${m}-${d}`;
+      }
+    } else if (!castDate || castDate.length < 8) {
+      castDate = '2026-11-01';
+    }
+
+    const note =
+      obj['Ghi Chú Đơn Hàng'] ||
+      obj['Ghi Chú'] ||
+      obj['Ghi chú'] ||
+      obj.GhiChu ||
+      obj.Note ||
+      obj.col_9 ||
+      '';
+
+    rows.push({
+      poId,
+      customer,
+      productName,
+      qtyPo,
+      dueDate,
+      materialLot,
+      supplierName,
+      castDate,
+      note,
+    });
+  });
+
+  return rows;
 }
 
 export async function downloadOperationsTemplateExcel(): Promise<void> {

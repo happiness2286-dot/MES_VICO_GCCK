@@ -273,7 +273,12 @@ export function LogsQcTraceTab({
       const dto = await apiClient.get<TraceabilityDto>(
         `/orders/${encodeURIComponent(clean)}/traceability`
       );
-      setTraceData(dto);
+      if (dto && dto.po && dto.po.poId) {
+        setTraceData(dto);
+      } else {
+        setTraceData(null);
+        setTraceError(`Không tìm thấy dữ liệu truy vết hợp lệ cho PO ${clean}`);
+      }
     } catch (err: any) {
       setTraceError(err?.message || `Không tìm thấy dữ liệu truy vết cho ${clean}`);
       setTraceData(null);
@@ -1312,7 +1317,7 @@ export function LogsQcTraceTab({
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    navigateTo(`/print/traveler/${encodeURIComponent(traceData.po.poId)}`)
+                    navigateTo(`/print/traveler/${encodeURIComponent(traceData?.po?.poId)}`)
                   }
                 >
                   <Printer className="h-4 w-4 text-blue-600" />
@@ -1333,7 +1338,7 @@ export function LogsQcTraceTab({
                     void fetchTraceability(po.poId);
                   }}
                   className={`font-mono-num rounded-md border px-2 py-0.5 font-semibold transition-colors ${
-                    traceData?.po.poId === po.poId
+                    traceData?.po?.poId === po.poId
                       ? 'border-violet-600 bg-violet-50 text-violet-800 shadow-sm'
                       : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                   }`}
@@ -1359,17 +1364,17 @@ export function LogsQcTraceTab({
                     <div className="text-xs font-extrabold uppercase tracking-wider text-blue-700">
                       1. Lô Phôi Đầu Vào &amp; Nhà Cung Cấp
                     </div>
-                    {traceData.po.faiStatus && (
+                    {traceData?.po?.faiStatus && (
                       <Badge
                         variant={
-                          traceData.po.faiStatus === 'FAI_PASSED'
+                          traceData?.po?.faiStatus === 'FAI_PASSED'
                             ? 'success'
-                            : traceData.po.faiStatus === 'PENDING_FAI'
+                            : traceData?.po?.faiStatus === 'PENDING_FAI'
                               ? 'warning'
                               : 'neutral'
                         }
                       >
-                        {traceData.po.faiStatus}
+                        {traceData?.po?.faiStatus}
                       </Badge>
                     )}
                   </div>
@@ -1377,16 +1382,16 @@ export function LogsQcTraceTab({
                     <div className="flex justify-between">
                       <span className="text-slate-500">Mã Lệnh SX / PO:</span>
                       <span className="font-mono-num font-extrabold text-blue-700">
-                        {traceData.po.poId}
+                        {traceData?.po?.poId}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Khách hàng:</span>
-                      <span className="font-bold text-slate-900">{traceData.po.customer}</span>
+                      <span className="font-bold text-slate-900">{traceData?.po?.customer}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Sản phẩm:</span>
-                      <span className="font-bold text-slate-900">{traceData.po.productName}</span>
+                      <span className="font-bold text-slate-900">{traceData?.po?.productName}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Mã Lô Phôi (Heat Lot):</span>
@@ -1421,7 +1426,7 @@ export function LogsQcTraceTab({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => openNewQcModalForPo(traceData.po.poId, 'FAI')}
+                      onClick={() => openNewQcModalForPo(traceData?.po?.poId, 'FAI')}
                     >
                       + Lập QC
                     </Button>
@@ -1464,19 +1469,19 @@ export function LogsQcTraceTab({
                     <div>
                       <div className="text-[10px] font-medium text-slate-500">SL Đặt</div>
                       <div className="font-mono-num font-bold text-slate-900">
-                        {traceData.po.qtyPo}
+                        {traceData?.po?.qtyPo}
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] font-medium text-slate-500">Đã Giao</div>
                       <div className="font-mono-num font-bold text-emerald-700">
-                        {traceData.po.deliveredQty}
+                        {traceData?.po?.deliveredQty}
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] font-medium text-slate-500">Còn Lại</div>
                       <div className="font-mono-num font-bold text-amber-700">
-                        {traceData.po.remainQty}
+                        {traceData?.po?.remainQty}
                       </div>
                     </div>
                   </div>

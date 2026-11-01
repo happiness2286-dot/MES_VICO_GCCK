@@ -24,6 +24,10 @@ import type {
   WorkerMonthlyLogAgg,
   OpLogSummary,
   ProductCostingSummary,
+  TraceabilityDto,
+  DeliveryLogDto,
+  QcInspectionDto,
+  ProductionLogDto,
 } from '@shared/types';
 import {
   computeMonthDows,
@@ -125,7 +129,7 @@ export const FALLBACK_ORDERS: PurchaseOrderInfo[] = (seedData.ordersList || []).
   remainQty: Number(p.qtyPo || 0),
   status: String(p.status || '⏳ Đang chờ SX'),
   materialLot: p.materialLot || 'LOT-2026-VC',
-  faiStatus: p.faiStatus || 'PASSED_FAI',
+  faiStatus: p.faiStatus || 'FAI_PASSED',
 }));
 
 export const FALLBACK_WORKERS: WorkerDto[] = (seedData.workers || []).map((w: any) => {
@@ -765,6 +769,122 @@ export function getFallbackTraveler(poId: string): JobTravelerDto {
     printedAt: new Date().toISOString(),
   };
 }
+
+export function getFallbackTraceability(poId: string): TraceabilityDto {
+  const cleanPoId = (poId || '').replace(/\/traceability$/, '').trim().toLowerCase();
+  const po =
+    FALLBACK_ORDERS.find((o) => o.poId.toLowerCase() === cleanPoId) ||
+    FALLBACK_ORDERS[0] || {
+      poId: poId.trim() || 'PO485-01',
+      customer: 'Win-Win - PO485',
+      productName: 'ALKTOP 1342 M',
+      qtyPo: 20,
+      finishedQty: 18,
+      remainQty: 2,
+      dueDate: '2026-11-05',
+      status: 'Đang gia công',
+      materialLot: 'LOT-2026-VC',
+      supplierName: 'Xưởng Đúc VICO Thắng Lợi',
+      castDate: '2026-10-10',
+      note: '',
+      faiStatus: 'FAI_PASSED',
+    };
+
+  const ops = FALLBACK_OPERATIONS.filter(
+    (o) => (po.spId && o.spId === po.spId) || o.productName === po.productName
+  ).sort((a, b) => a.stepOrder - b.stepOrder);
+
+  const finalOpsList = ops.length > 0 ? ops : FALLBACK_OPERATIONS.slice(0, 3);
+  const allLogs = getAllFallbackLogs().filter(
+    (l) => !l.isVoided && String(l.poId).toLowerCase() === po.poId.toLowerCase()
+  );
+
+  const operationsTimeline = finalOpsList.map((op, idx) => {
+    const stepLogs = allLogs.filter((l) => l.ncId === op.ncId);
+    return {
+      stepOrder: op.stepOrder || idx + 1,
+      ncId: op.ncId,
+      opName: op.opName,
+      isFinalOp: op.isFinalOp ?? 0,
+      totalOk: stepLogs.reduce((s, l) => s + (Number(l.okQty) || 0), 0),
+      totalRework: stepLogs.reduce((s, l) => s + (Number(l.reworkQty) || 0), 0),
+      totalScrap: stepLogs.reduce((s, l) => s + (Number(l.scrapQty) || 0), 0),
+      logs: stepLogs,
+    };
+  });
+
+  return {
+    po,
+    materialInfo: {
+      materialLot: po.materialLot || 'LOT-2026-VC',
+      supplierName: po.supplierName || 'Xưởng Đúc VICO Thắng Lợi',
+      castDate: po.castDate || '2026-10-10',
+      matName: finalOpsList[0]?.matName || 'Thép cơ khí chế tạo',
+    },
+    operationsTimeline,
+    qcRecords: [
+      {
+        id: 1,
+        inspectionType: 'FAI',
+        poId: po.poId,
+        spId: po.spId || 'SP-01',
+        ncId: finalOpsList[0]?.ncId || 'NC098',
+        productName: po.productName,
+        opName: finalOpsList[0]?.opName || 'Gia công',
+        machineName: 'Máy Tiện CNC 1',
+        operatorId: 'NV00214',
+        inspectorId: 'NV00266',
+        inspectorName: 'Trần Văn Dũng (KCS)',
+        result: 'PASS',
+        sampleSize: 1,
+        defectQty: 0,
+        measuredDimsJson: JSON.stringify({ 'Kích thước chính': 45.02 }),
+        rootCause: '',
+        correctiveAction: 'Đạt yêu cầu kỹ thuật FAI.',
+        createdAt: new Date().toISOString(),
+      },
+    ],
+    deliveries: [],
+  };
+}
+
+export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>>): PurchaseOrderInfo[] {
+  const created: PurchaseOrderInfo[] = [];
+  for (const raw of orders) {
+    const poId = String(raw.poId || '').trim();
+    if (!poId) continue;
+    const existingIdx = FALLBACK_ORDERS.findIndex(o => o.poId.toLowerCase() === poId.toLowerCase());
+    const qtyPo = Math.max(1, Math.round(Number(raw.qtyPo) || 1));
+    const newPo: PurchaseOrderInfo = {
+      poId,
+      spId: raw.spId ? String(raw.spId) : null,
+      customer: String(raw.customer || 'Nội bộ'),
+      productName: String(raw.productName || 'Chi tiết cơ khí'),
+      qtyPo,
+      dueDate: String(raw.dueDate || '2026-11-30'),
+      wipQty: Number(raw.wipQty || 0),
+      finishedQty: Number(raw.finishedQty || 0),
+      deliveredQty: Number(raw.deliveredQty || 0),
+      stockQty: Number(raw.stockQty || 0),
+      remainQty: Math.max(0, qtyPo - Number(raw.deliveredQty || 0)),
+      status: String(raw.status || '⏳ Đang chờ SX'),
+      materialLot: raw.materialLot || `LOT-VICO-${Date.now().toString().slice(-4)}`,
+      supplierName: raw.supplierName || 'Xưởng Đúc VICO Thắng Lợi',
+      castDate: raw.castDate || '2026-11-01',
+      note: raw.note || '',
+      faiStatus: raw.faiStatus || 'FAI_PASSED',
+    };
+    if (existingIdx >= 0) {
+      FALLBACK_ORDERS[existingIdx] = { ...FALLBACK_ORDERS[existingIdx], ...newPo };
+      created.push(FALLBACK_ORDERS[existingIdx]);
+    } else {
+      FALLBACK_ORDERS.unshift(newPo);
+      created.push(newPo);
+    }
+  }
+  return created;
+}
+
 
 export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
   const wStart = weekStart || '2026-10-15';
