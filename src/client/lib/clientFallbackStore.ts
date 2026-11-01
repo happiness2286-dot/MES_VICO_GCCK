@@ -22,6 +22,8 @@ import type {
   WeeklyReportData,
   WorkerDto,
   WorkerMonthlyLogAgg,
+  OpLogSummary,
+  ProductCostingSummary,
 } from '@shared/types';
 import {
   computeMonthDows,
@@ -30,6 +32,7 @@ import {
   DEFAULT_MEAL_CONFIG,
   getDefShiftCode,
 } from '@shared/attendanceParser';
+import { computeProductCosting } from '@shared/costingEngine';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
 
@@ -1275,5 +1278,63 @@ export function getFallbackPayroll(ym: string) {
     yearMonth: ym,
     rows,
     totalNetPay,
+  };
+}
+
+export function getFallbackCosting(): {
+  items: ProductCostingSummary[];
+  summary: {
+    totalProducts: number;
+    profitCount: number;
+    lossCount: number;
+    totalNetProfit: number;
+  };
+} {
+  const opsBySp = new Map<string, OperationMeta[]>();
+  for (const o of FALLBACK_OPERATIONS) {
+    const list = opsBySp.get(o.spId) || [];
+    list.push(o);
+    opsBySp.set(o.spId, list);
+  }
+
+  const logs = getAllFallbackLogs();
+  const logsByNc = new Map<string, OpLogSummary[]>();
+  for (const l of logs) {
+    if (l.isVoided) continue;
+    const nc = l.ncId;
+    if (!nc) continue;
+    const list = logsByNc.get(nc) || [];
+    list.push({
+      ncId: nc,
+      okQty: Number(l.okQty || 0),
+      reworkQty: Number(l.reworkQty || 0),
+      scrapQty: Number(l.scrapQty || 0),
+      batchCost: Number(l.batchCost || 0),
+      isVoided: 0,
+    });
+    logsByNc.set(nc, list);
+  }
+
+  const items = FALLBACK_PRODUCTS.map((p) => {
+    const pOps = opsBySp.get(p.spId) || [];
+    const pLogs = pOps.flatMap((o) => logsByNc.get(o.ncId) || []);
+    return computeProductCosting(p, pOps, pLogs);
+  });
+
+  const profitCount = items.filter((i) => i.unitProfit >= 0).length;
+  const lossCount = items.filter((i) => i.unitProfit < 0).length;
+  const totalNetProfit = items.reduce(
+    (sum, i) => sum + (i.hasActual ? i.totalBatchProfit : 0),
+    0
+  );
+
+  return {
+    items,
+    summary: {
+      totalProducts: items.length,
+      profitCount,
+      lossCount,
+      totalNetProfit,
+    },
   };
 }

@@ -5,6 +5,7 @@ import {
   saveFallbackAttendanceCell,
   batchFallbackAttendance,
   getFallbackPayroll,
+  getFallbackCosting,
   getFallbackBootstrap,
   getFallbackHandovers,
   getFallbackSession,
@@ -275,7 +276,23 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return getFallbackAndonLive() as unknown as T;
   }
   if (norm.includes('/costing')) {
-    return FALLBACK_PRODUCTS as unknown as T;
+    if (options.method === 'PATCH') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const spId = decodeURIComponent(parts[parts.length - 1] || '');
+      const body = options.json as any;
+      const prod = FALLBACK_PRODUCTS.find((p) => p.spId === spId);
+      if (prod && body) {
+        if (body.quotedPrice !== undefined) prod.quotedPrice = Number(body.quotedPrice) || 0;
+        if (body.rawMaterialCost !== undefined) prod.rawMaterialCost = Number(body.rawMaterialCost) || 0;
+        if (body.outsourceCost !== undefined) prod.outsourceCost = Number(body.outsourceCost) || 0;
+        if (body.drawingUrl !== undefined) prod.drawingUrl = String(body.drawingUrl || '');
+        if (body.techDocUrl !== undefined) prod.techDocUrl = String(body.techDocUrl || '');
+      }
+      const costing = getFallbackCosting();
+      const updated = costing.items.find((i) => i.spId === spId);
+      return { success: true, item: updated } as unknown as T;
+    }
+    return getFallbackCosting() as unknown as T;
   }
   if (norm.includes('/logs')) {
     if (options.method === 'PATCH' || options.method === 'DELETE') {
