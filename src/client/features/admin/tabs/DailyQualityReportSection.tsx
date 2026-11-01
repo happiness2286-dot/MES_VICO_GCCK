@@ -418,21 +418,39 @@ export function DailyQualityReportSection({ bootstrap }: DailyQualityReportSecti
         @media print {
           @page {
             size: A4 landscape;
-            margin: 8mm 6mm;
+            margin: 6mm 6mm 6mm 6mm;
           }
-          body {
+          body, html, #root {
             background-color: white !important;
             color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
           }
-          .no-print {
-            display: none !important;
+          /* Strictly hide all outer layout elements (navigation tabs, headers, sidebars) */
+          body * {
+            visibility: hidden !important;
+          }
+          .print-landscape-sheet, .print-landscape-sheet * {
+            visibility: visible !important;
           }
           .print-landscape-sheet {
-            box-shadow: none !important;
-            border: none !important;
-            padding: 0 !important;
-            max-width: 100% !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            display: block !important;
+          }
+          .no-print,
+          .print-landscape-sheet .no-print {
+            display: none !important;
+            visibility: hidden !important;
           }
         }
       `}</style>

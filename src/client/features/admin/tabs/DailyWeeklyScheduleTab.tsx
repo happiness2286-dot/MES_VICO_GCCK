@@ -692,8 +692,8 @@ export function DailyWeeklyScheduleTab({
 
   return (
     <div className="space-y-4">
-      {/* Sub-tab Navigation Banner */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      {/* Sub-tab Navigation Banner (hidden when printing any form) */}
+      <div className="no-print rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap gap-1.5 rounded-xl bg-slate-100 p-1">
           <button
             type="button"

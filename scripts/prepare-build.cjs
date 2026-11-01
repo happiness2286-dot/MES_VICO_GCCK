@@ -9,3 +9,4 @@ if (fs.existsSync(templatePath)) {
   fs.copyFileSync(templatePath, targetPath);
   console.log('Restored source index.html from index.template.html for Vite compilation');
 }
+
