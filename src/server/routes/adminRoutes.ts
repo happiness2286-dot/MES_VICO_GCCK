@@ -1621,8 +1621,81 @@ export function createAdminRoutes(db: DatabaseSync): Router {
 
     res.status(existing ? 200 : 201).json({
       success: true,
-      workers: queryWorkersForViewer(db, req.authUser!.workerId, 'ADMIN'),
+      workers: queryWorkersForViewer(db, req.authUser!.workerId, 'ADMIN', true),
     });
+  });
+
+  router.post('/master/workers/:id/reset-pin', requireRoles('ADMIN'), (req, res) => {
+    const id = normalizeVn(req.params.id);
+    const pin = String(req.body?.pin || '1234').trim();
+    if (!pin) {
+      res.status(400).json({ error: 'Mã PIN không được để trống.' });
+      return;
+    }
+    const worker = db.prepare('SELECT id FROM workers WHERE id = ?').get(id);
+    if (!worker) {
+      res.status(404).json({ error: `Không tìm thấy nhân sự ${id}.` });
+      return;
+    }
+    db.prepare('UPDATE workers SET pin_hash = ? WHERE id = ?').run(hashPin(pin), id);
+    res.json({
+      success: true,
+      message: `Đã đặt lại mã PIN cho nhân sự ${id} về "${pin}".`,
+      workers: queryWorkersForViewer(db, req.authUser!.workerId, 'ADMIN', true),
+    });
+  });
+
+  router.post('/master/workers/:id/toggle-active', requireRoles('ADMIN'), (req, res) => {
+    const id = normalizeVn(req.params.id);
+    if (id === 'NV00053') {
+      res.status(400).json({ error: 'Không thể khóa tài khoản Quản trị viên tối cao NV00053.' });
+      return;
+    }
+    const row = db.prepare('SELECT id, is_active FROM workers WHERE id = ?').get(id) as
+      | { id: string; is_active: number }
+      | undefined;
+    if (!row) {
+      res.status(404).json({ error: `Không tìm thấy nhân sự ${id}.` });
+      return;
+    }
+    const nextActive = row.is_active === 1 ? 0 : 1;
+    db.prepare('UPDATE workers SET is_active = ? WHERE id = ?').run(nextActive, id);
+    res.json({
+      success: true,
+      isActive: nextActive,
+      message: nextActive === 1 ? `Đã mở khóa tài khoản ${id}.` : `Đã tạm khóa tài khoản ${id}.`,
+      workers: queryWorkersForViewer(db, req.authUser!.workerId, 'ADMIN', true),
+    });
+  });
+
+  router.delete('/master/workers/:id', requireRoles('ADMIN'), (req, res) => {
+    const id = normalizeVn(req.params.id);
+    if (id === 'NV00053') {
+      res.status(400).json({ error: 'Không thể xóa tài khoản Quản trị viên gốc NV00053.' });
+      return;
+    }
+    const row = db.prepare('SELECT id FROM workers WHERE id = ?').get(id);
+    if (!row) {
+      res.status(404).json({ error: `Không tìm thấy nhân sự ${id}.` });
+      return;
+    }
+    const logsCount = (db.prepare('SELECT COUNT(*) as c FROM production_logs WHERE worker_id = ?').get(id) as any)?.c || 0;
+    if (logsCount > 0) {
+      // Có dữ liệu nhật ký ca -> Chuyển sang trạng thái khóa để bảo toàn lịch sử truy xuất
+      db.prepare('UPDATE workers SET is_active = 0 WHERE id = ?').run(id);
+      res.json({
+        success: true,
+        message: `Nhân sự có ${logsCount} bản ghi nhật ký — Đã chuyển sang trạng thái Tạm Khóa để bảo toàn lịch sử sản xuất.`,
+        workers: queryWorkersForViewer(db, req.authUser!.workerId, 'ADMIN', true),
+      });
+    } else {
+      db.prepare('DELETE FROM workers WHERE id = ?').run(id);
+      res.json({
+        success: true,
+        message: `Đã xóa tài khoản nhân sự ${id} thành công.`,
+        workers: queryWorkersForViewer(db, req.authUser!.workerId, 'ADMIN', true),
+      });
+    }
   });
 
   // ==================== SYSTEM CONFIG & OUTBOX SYNC ====================

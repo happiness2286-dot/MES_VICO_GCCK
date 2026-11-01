@@ -53,12 +53,14 @@ export function getMealConfigFromDb(db: DatabaseSync): MealConfig {
 export function queryWorkersForViewer(
   db: DatabaseSync,
   viewerId: string | null,
-  viewerRole: AppRole | null
+  viewerRole: AppRole | null,
+  includeInactive: boolean = false
 ): WorkerDto[] {
+  const whereSql = includeInactive ? '' : 'WHERE is_active = 1';
   const rows = db
     .prepare(
       `SELECT id, name, username, role, title, salary_mode, base_salary, cost_per_sec, chat_id, is_linked, is_active
-       FROM workers WHERE is_active = 1 ORDER BY rowid ASC`
+       FROM workers ${whereSql} ORDER BY rowid ASC`
     )
     .all() as Array<Record<string, any>>;
 
@@ -79,6 +81,7 @@ export function queryWorkersForViewer(
       title: String(r.title),
       salaryMode: String(r.salary_mode),
       isLinked: Number(r.is_linked) === 1 && Boolean(chatId),
+      isActive: Number(r.is_active ?? 1),
     };
 
     if (includePrivate) {

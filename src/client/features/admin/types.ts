@@ -7,7 +7,8 @@ export type AdminTabKey =
   | 'logs_qc'
   | 'costing'
   | 'attendance'
-  | 'master';
+  | 'master'
+  | 'accounts';
 
 export interface AdminDeepLinkContext {
   tracePoId?: string;
@@ -17,6 +18,7 @@ export interface AdminDeepLinkContext {
   masterSubTab?: 'OPS' | 'MACHINES_TOOLS' | 'WORKERS' | 'CONFIG' | 'TRAINING_SOP';
   masterSearch?: string;
   attendanceSearch?: string;
+  accountsSearch?: string;
 }
 
 export interface AdminTabCommonProps {

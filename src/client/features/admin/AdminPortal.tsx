@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Smartphone,
+  Users,
   X,
 } from 'lucide-react';
 import type { BootstrapPayload } from '@shared/types';
@@ -45,6 +46,7 @@ import { LogsQcTraceTab } from './tabs/LogsQcTraceTab';
 import { CostingPnlTab } from './tabs/CostingPnlTab';
 import { AttendancePayrollTab } from './tabs/AttendancePayrollTab';
 import { MasterAndConfigTab } from './tabs/MasterAndConfigTab';
+import { AccountManagementTab } from './tabs/AccountManagementTab';
 
 interface NavTabItem {
   key: AdminTabKey;
@@ -174,14 +176,21 @@ export function AdminPortal() {
     };
   }, []);
 
-  // Auto-elevate session for QC / Schedule tabs if user is worker or unauthenticated
+  // Access guard: Workers are strictly restricted to WorkerPortal
   useEffect(() => {
-    if (!authLoading && (!user || !canEnterManagement)) {
+    if (!authLoading && user?.appRole === 'WORKER') {
+      navigateTo('/worker');
+    }
+  }, [authLoading, user?.appRole]);
+
+  // Auto-elevate session ONLY for unauthenticated demo sessions (not for logged in workers!)
+  useEffect(() => {
+    if (!authLoading && !user) {
       const urlTab = getTabFromUrl() || activeTab;
       const targetWorkerId = urlTab === 'logs_qc' ? 'NV00266' : 'NV00053';
       void quickSwitch({ workerId: targetWorkerId });
     }
-  }, [authLoading, user, canEnterManagement, activeTab, quickSwitch]);
+  }, [authLoading, user, activeTab, quickSwitch]);
 
   // If QC switches in, default them straight to Logs/QC if they were on costing or cockpit
   useEffect(() => {
@@ -318,6 +327,15 @@ export function AdminPortal() {
         subtitle: 'Định mức, máy móc & nhân sự',
         icon: Settings,
         badgeText: `${bootstrap?.operations.length ?? 0} NC`,
+        badgeVariant: 'neutral',
+      },
+      {
+        key: 'accounts',
+        shortLabel: 'Tài Khoản & PIN',
+        label: '8. Quản Lý Tài Khoản Đăng Nhập & Phân Quyền',
+        subtitle: 'Tài khoản nhân sự, phân quyền Admin/QC/Công nhân & cấp đổi PIN',
+        icon: Users,
+        badgeText: `${bootstrap?.workers.length ?? 16} TK`,
         badgeVariant: 'neutral',
       },
     ];
@@ -698,6 +716,29 @@ export function AdminPortal() {
     );
   };
 
+  if (user?.appRole === 'WORKER') {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md rounded-2xl border border-amber-200 bg-white p-6 shadow-sm">
+          <div className="mb-3 text-3xl">🔒</div>
+          <h2 className="text-base font-bold text-slate-900">Khu Vực Dành Riêng Cho Quản Lý &amp; Điều Độ</h2>
+          <p className="mt-1 text-xs text-slate-600">
+            Tài khoản công nhân ({user.name}) chỉ có quyền truy cập Cổng Báo Cáo Công Nhân.
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => navigateTo('/worker')}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-blue-700"
+            >
+              📱 Quay Về Cổng Công Nhân
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full bg-industrial-canvas text-slate-900">
       <div className="mx-auto flex min-h-[calc(100vh-52px)] w-full max-w-[1920px]">
@@ -892,6 +933,15 @@ export function AdminPortal() {
 
             {activeTab === 'master' && (
               <MasterAndConfigTab
+                bootstrap={bootstrap}
+                onRefreshBootstrap={() => fetchBootstrap(true)}
+                onNavigateTab={handleNavigateTab}
+                deepLink={deepLink}
+              />
+            )}
+
+            {activeTab === 'accounts' && (
+              <AccountManagementTab
                 bootstrap={bootstrap}
                 onRefreshBootstrap={() => fetchBootstrap(true)}
                 onNavigateTab={handleNavigateTab}

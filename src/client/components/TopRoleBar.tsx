@@ -12,6 +12,7 @@ import {
   Shield,
   Smartphone,
   UserCheck,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Badge, useToast } from './ui/IndustrialPrimitives';
@@ -55,6 +56,10 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
     );
   }
 
+  const isWorker = user?.appRole === 'WORKER';
+  const isAdmin = user?.appRole === 'ADMIN' || user?.appRole === 'DIRECTOR';
+  const isLeaderOrQc = user?.appRole === 'SHIFT_LEADER' || user?.appRole === 'QC';
+
   const handleRoleNav = async (
     targetPath: string,
     targetWorkerId?: string,
@@ -62,7 +67,14 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
     targetTab?: string
   ) => {
     try {
-      // 1. Immediately route so the UI switches with zero delay
+      // 1. Worker is strictly restricted to Worker portal only!
+      if (isWorker && targetPath !== '/worker' && !targetPath.startsWith('/print/')) {
+        toast.warning('⚠️ Tài khoản Công nhân chỉ có quyền truy cập Cổng Báo Cáo Công Nhân.');
+        navigateTo('/worker');
+        return;
+      }
+
+      // 2. Immediately route so the UI switches with zero delay
       navigateTo(targetPath);
       if (targetTab) {
         window.dispatchEvent(
@@ -70,16 +82,8 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
         );
       }
 
-      // 2. Seamlessly elevate role if currently unprivileged or switching to worker
-      const isManager =
-        user?.appRole === 'ADMIN' ||
-        user?.appRole === 'DIRECTOR' ||
-        user?.appRole === 'SHIFT_LEADER' ||
-        user?.appRole === 'QC';
-
-      const needsElevate = targetWorkerId && (!isManager || (targetWorkerId === 'NV00214' && user?.appRole !== 'WORKER'));
-
-      if (needsElevate && user?.workerId !== targetWorkerId) {
+      // 3. Seamlessly switch role only if manager or unauthenticated
+      if (!isWorker && targetWorkerId && user?.workerId !== targetWorkerId) {
         try {
           await quickSwitch({ workerId: targetWorkerId });
         } catch (swErr) {
@@ -96,12 +100,16 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
   const isWorkerActive = currentPath === '/' || currentPath.startsWith('/worker');
   const isScheduleActive =
     currentPath.includes('daily_schedule') || currentPath.startsWith('/print/daily-schedule');
+  const isAccountsActive =
+    currentPath.startsWith('/admin') &&
+    (currentPath.includes('tab=accounts') || currentPath.includes('tab=master&sub=WORKERS'));
   const isQcActive =
     currentPath.startsWith('/admin') &&
     (currentPath.includes('logs_qc') || currentPath.includes('tab=logs_qc')) &&
-    !isScheduleActive;
+    !isScheduleActive &&
+    !isAccountsActive;
   const isAdminActive =
-    currentPath.startsWith('/admin') && !isQcActive && !isScheduleActive;
+    currentPath.startsWith('/admin') && !isQcActive && !isScheduleActive && !isAccountsActive;
   const isPrintActive = currentPath.startsWith('/print/') && !currentPath.startsWith('/print/daily-schedule');
 
   const pillCls = (active: boolean) =>
@@ -129,6 +137,7 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
           aria-label="Chuyển nhanh cổng giao diện"
           className="flex flex-wrap lg:flex-nowrap items-center gap-1 rounded-xl bg-slate-100 p-1"
         >
+          {/* Worker Portal - Visible to everyone */}
           <button
             type="button"
             onClick={() =>
@@ -144,53 +153,80 @@ export function TopRoleBar({ currentPath }: TopRoleBarProps) {
             <span>Công Nhân</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => void handleRoleNav('/admin?tab=logs_qc', 'NV00266', '🔍 Tổ Trưởng / QC', 'logs_qc')}
-            className={pillCls(isQcActive)}
-          >
-            <UserCheck className="h-3.5 w-3.5 text-amber-600" />
-            <span>Tổ Trưởng / QC</span>
-          </button>
+          {/* Shift Leader & QC Portal - Only for Leader, QC, or Admin */}
+          {!isWorker && (
+            <button
+              type="button"
+              onClick={() => void handleRoleNav('/admin?tab=logs_qc', 'NV00266', '🔍 Tổ Trưởng / QC', 'logs_qc')}
+              className={pillCls(isQcActive)}
+            >
+              <UserCheck className="h-3.5 w-3.5 text-amber-600" />
+              <span>Tổ Trưởng / QC</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => void handleRoleNav('/admin?tab=cockpit', 'NV00053', '🛡️ Quản Trị Admin', 'cockpit')}
-            className={pillCls(isAdminActive)}
-          >
-            <Shield className="h-3.5 w-3.5 text-blue-600" />
-            <span>Quản Trị Admin</span>
-          </button>
+          {/* Admin Portal - Only for Admin */}
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => void handleRoleNav('/admin?tab=cockpit', 'NV00053', '🛡️ Quản Trị Admin', 'cockpit')}
+                className={pillCls(isAdminActive)}
+              >
+                <Shield className="h-3.5 w-3.5 text-blue-600" />
+                <span>Quản Trị Admin</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => void handleRoleNav('/andon', undefined, '📺 TV Andon 55"')}
-            className={pillCls(isAndon)}
-          >
-            <MonitorPlay className="h-3.5 w-3.5 text-violet-600" />
-            <span>TV Andon 55&quot;</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => void handleRoleNav('/admin?tab=accounts', 'NV00053', '👥 Quản Lý Tài Khoản', 'accounts')}
+                className={pillCls(isAccountsActive)}
+              >
+                <Users className="h-3.5 w-3.5 text-purple-600" />
+                <span>Quản Lý Tài Khoản</span>
+              </button>
+            </>
+          )}
 
-          <button
-            type="button"
-            onClick={() => void handleRoleNav('/admin?tab=daily_schedule', 'NV00053', '📅 Kế Hoạch & Báo Cáo', 'daily_schedule')}
-            className={pillCls(isScheduleActive)}
-          >
-            <CalendarClock className="h-3.5 w-3.5 text-blue-600" />
-            <span>Kế Hoạch &amp; Tuần</span>
-          </button>
+          {/* TV Andon 55" - Only for Managers / Leaders */}
+          {!isWorker && (
+            <button
+              type="button"
+              onClick={() => void handleRoleNav('/andon', undefined, '📺 TV Andon 55"')}
+              className={pillCls(isAndon)}
+            >
+              <MonitorPlay className="h-3.5 w-3.5 text-violet-600" />
+              <span>TV Andon 55&quot;</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() =>
-              void handleRoleNav('/print/traveler/PO485-01', undefined, '🖨️ Phiếu Công Nghệ QR')
-            }
-            className={pillCls(isPrintActive)}
-          >
-            <Printer className="h-3.5 w-3.5 text-slate-500" />
-            <span>Phiếu QR</span>
-          </button>
+          {/* Daily Schedule - Only for Managers / Leaders */}
+          {!isWorker && (
+            <button
+              type="button"
+              onClick={() => void handleRoleNav('/admin?tab=daily_schedule', 'NV00053', '📅 Kế Hoạch & Báo Cáo', 'daily_schedule')}
+              className={pillCls(isScheduleActive)}
+            >
+              <CalendarClock className="h-3.5 w-3.5 text-blue-600" />
+              <span>Kế Hoạch &amp; Tuần</span>
+            </button>
+          )}
 
+          {/* Print Traveler QR - For Managers / Leaders */}
+          {!isWorker && (
+            <button
+              type="button"
+              onClick={() =>
+                void handleRoleNav('/print/traveler/PO485-01', undefined, '🖨️ Phiếu Công Nghệ QR')
+              }
+              className={pillCls(isPrintActive)}
+            >
+              <Printer className="h-3.5 w-3.5 text-slate-500" />
+              <span>Phiếu QR</span>
+            </button>
+          )}
+
+          {/* SOP Guide - Available to everyone */}
           <button
             type="button"
             onClick={() => setGuideOpen(true)}

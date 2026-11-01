@@ -487,6 +487,45 @@ export function WorkerPortal() {
     [ordersList, operationsList, applyOperationSelection]
   );
 
+  const handleQuickCustomerSelect = useCallback(
+    (customer: string) => {
+      setSelectedCustomerFilter(customer);
+
+      const customerProducts = productsList.filter(
+        (p) => (p.customer || '').trim().toLowerCase() === customer.trim().toLowerCase()
+      );
+
+      if (customerProducts.length > 0) {
+        const firstProd = customerProducts[0];
+        setSelectedSpId(firstProd.spId);
+
+        const matchingPo = ordersList.find((p) => p.spId === firstProd.spId && p.remainQty > 0);
+        const targetPoId = matchingPo ? matchingPo.poId : 'PO-THEO-KH';
+
+        const firstOp = operationsList
+          .filter((o) => o.spId === firstProd.spId)
+          .sort((a, b) => a.stepOrder - b.stepOrder)[0];
+
+        if (firstOp) {
+          applyOperationSelection(firstOp, targetPoId);
+        } else {
+          setSelectedPoId(targetPoId);
+        }
+
+        toast.success(
+          `✅ Đã chọn nhanh: ${firstProd.productName} (${customer})${
+            customerProducts.length > 1
+              ? ` — Có ${customerProducts.length} bản vẽ (chạm ô bản vẽ để đổi nếu cần)`
+              : ''
+          }`
+        );
+      } else {
+        setActivePicker('PRODUCT');
+      }
+    },
+    [productsList, operationsList, ordersList, applyOperationSelection, toast]
+  );
+
   const handleQrDetected = useCallback(
     (rawQr: string) => {
       // 1. Check if this is a Cloud Supabase Connect QR
@@ -1397,10 +1436,7 @@ export function WorkerPortal() {
                     <button
                       key={customer}
                       type="button"
-                      onClick={() => {
-                        setSelectedCustomerFilter(customer);
-                        setActivePicker('PRODUCT');
-                      }}
+                      onClick={() => handleQuickCustomerSelect(customer)}
                       className={`min-h-[36px] shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
                         selectedCustomerFilter === customer
                           ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'

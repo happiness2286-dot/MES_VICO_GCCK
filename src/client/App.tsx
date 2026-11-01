@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect } from 'react';
 import { ToastProvider } from './components/ui/IndustrialPrimitives';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { TopRoleBar } from './components/TopRoleBar';
 import { navigateTo, useLocationPath } from './lib/navigation';
 import { getTravelerPoIdFromLocation } from './lib/formatters';
@@ -86,17 +86,31 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
 function ShellRouter() {
   const pathname = useLocationPath();
+  const { user, loading } = useAuth();
+
+  // Strict role guard: Workers can only view worker portal
+  useEffect(() => {
+    if (!loading && user?.appRole === 'WORKER') {
+      if (pathname.startsWith('/admin') || pathname.startsWith('/andon')) {
+        navigateTo('/worker');
+      }
+    }
+  }, [loading, user?.appRole, pathname]);
 
   useEffect(() => {
     if (pathname === '/') {
       const target =
-        typeof window !== 'undefined' && window.innerWidth >= 1280 ? '/admin' : '/worker';
+        typeof window !== 'undefined' && window.innerWidth >= 1280
+          ? (user?.appRole === 'WORKER' ? '/worker' : '/admin')
+          : '/worker';
       navigateTo(target);
     }
-  }, [pathname]);
+  }, [pathname, user?.appRole]);
 
   let content: React.ReactNode;
-  if (pathname.startsWith('/admin')) {
+  if (user?.appRole === 'WORKER' && (pathname.startsWith('/admin') || pathname.startsWith('/andon'))) {
+    content = <WorkerView />;
+  } else if (pathname.startsWith('/admin')) {
     content = <AdminView />;
   } else if (pathname.startsWith('/andon')) {
     content = <AndonTvBoard />;
