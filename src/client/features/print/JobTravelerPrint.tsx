@@ -98,12 +98,24 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-100 pb-12 text-slate-900 print:min-h-0 print:bg-white print:pb-0">
-      {/* Dynamic @page size rule */}
+      {/* Dynamic @page size rule: A5 is Landscape (Khổ Ngang), A4 is Portrait (Khổ Dọc) */}
       <style>{`
         @media print {
           @page {
-            size: ${isA5 ? 'A5 portrait' : 'A4 portrait'};
-            margin: ${isA5 ? '6mm' : '8mm'};
+            size: ${isA5 ? 'A5 landscape' : 'A4 portrait'};
+            margin: ${isA5 ? '4mm 6mm' : '8mm'};
+          }
+          body {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .print-sheet {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: ${isA5 ? '2mm 3mm' : '6mm 8mm'} !important;
+            border: ${isA5 ? '1.5px solid black' : '2px solid black'} !important;
+            box-shadow: none !important;
           }
         }
       `}</style>
@@ -146,7 +158,7 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
               <ChevronDown className="h-4 w-4 text-slate-500" />
             </button>
 
-            {/* A4 / A5 Toggle */}
+            {/* A4 (Dọc) / A5 (Ngang) Toggle */}
             <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
               {(['A4', 'A5'] as const).map((sz) => (
                 <button
@@ -154,7 +166,7 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
                   type="button"
                   onClick={() => {
                     setPaperSize(sz);
-                    toast.info(`Đã chuyển bố cục bản in sang khổ giấy ${sz}`);
+                    toast.info(`Đã chuyển bố cục bản in sang khổ giấy ${sz === 'A5' ? 'A5 (Khổ Ngang)' : 'A4 (Khổ Dọc)'}`);
                   }}
                   className={`min-h-[40px] rounded-lg px-3 text-xs font-extrabold transition-all ${
                     paperSize === sz
@@ -162,7 +174,7 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  Khổ {sz}
+                  {sz === 'A5' ? 'Khổ A5 (Ngang)' : 'Khổ A4 (Dọc)'}
                 </button>
               ))}
             </div>
@@ -219,117 +231,117 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
           <article
             data-testid="job-traveler-sheet"
             className={`print-sheet mx-auto w-full rounded-none border-2 border-black bg-white text-black shadow-2xl print:max-w-none print:border print:shadow-none ${
-              isA5 ? 'max-w-[560px] p-3.5 text-[11px]' : 'max-w-[860px] p-5 sm:p-6 text-xs'
+              isA5 ? 'max-w-[840px] p-3 text-[10.5px] leading-tight' : 'max-w-[860px] p-5 sm:p-6 text-xs'
             }`}
           >
             {/* 1. ISO HEADER FRAME */}
             <header className="grid grid-cols-12 border-2 border-black">
-              <div className="col-span-12 border-b border-black p-2.5 sm:col-span-4 sm:border-b-0 sm:border-r">
+              <div className={`col-span-12 border-b border-black sm:col-span-4 sm:border-b-0 sm:border-r ${isA5 ? 'p-1.5' : 'p-2.5'}`}>
                 <div className="flex items-center gap-2 mb-1">
-                  <VicoLogo className="h-8 w-auto object-contain" />
+                  <VicoLogo className={isA5 ? "h-6 w-auto object-contain" : "h-8 w-auto object-contain"} />
                   <div className="text-[10px] font-bold uppercase tracking-wider text-neutral-700">
                     CÔNG TY CP VICO
                   </div>
                 </div>
-                <div className="mt-0.5 text-xs font-black uppercase leading-tight sm:text-sm">
+                <div className={`mt-0.5 font-black uppercase leading-tight ${isA5 ? 'text-xs' : 'text-xs sm:text-sm'}`}>
                   XƯỞNG CƠ KHÍ CHÍNH XÁC THẮNG LỢI (GCCK)
                 </div>
-                <div className="mt-1.5 font-mono text-[10px] font-semibold">
+                <div className="mt-1 font-mono text-[9px] font-semibold">
                   Biểu mẫu: BM-GCCK-SX-01 · Lần BH: 02
                 </div>
               </div>
 
-              <div className="col-span-8 flex flex-col items-center justify-center border-r border-black p-2.5 text-center sm:col-span-5">
+              <div className={`col-span-8 flex flex-col items-center justify-center border-r border-black text-center sm:col-span-5 ${isA5 ? 'p-1.5' : 'p-2.5'}`}>
                 <h1
                   className={`font-black uppercase tracking-tight text-black ${
-                    isA5 ? 'text-sm' : 'text-base sm:text-lg'
+                    isA5 ? 'text-xs sm:text-sm leading-snug' : 'text-base sm:text-lg'
                   }`}
                 >
                   PHIẾU CÔNG NGHỆ &amp; THEO DÕI GIA CÔNG
                 </h1>
-                <div className="mt-0.5 text-[11px] font-bold uppercase tracking-wide text-neutral-800">
+                <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-neutral-800">
                   (SHOP FLOOR JOB TRAVELER — QUÉT QR 5 GIÂY)
                 </div>
-                <div className="mt-1 inline-block border border-black px-2 py-0.5 font-mono text-xs font-black">
+                <div className={`mt-0.5 inline-block border border-black font-mono font-black ${isA5 ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-0.5 text-xs'}`}>
                   MÃ LỆNH SX: {traveler.po.poId}
                 </div>
               </div>
 
-              <div className="col-span-4 flex flex-col items-center justify-center p-2 text-center sm:col-span-3">
+              <div className={`col-span-4 flex flex-col items-center justify-center text-center sm:col-span-3 ${isA5 ? 'p-1' : 'p-2'}`}>
                 <QRCodeSVG
                   value={`GCCK|${traveler.po.poId}`}
-                  size={isA5 ? 58 : 74}
+                  size={isA5 ? 54 : 74}
                   level="M"
                   bgColor="#FFFFFF"
                   fgColor="#000000"
                 />
-                <span className="mt-1 font-mono text-[10px] font-bold">
+                <span className="mt-0.5 font-mono text-[9px] font-bold">
                   GCCK|{traveler.po.poId}
                 </span>
               </div>
             </header>
 
             {/* 2. ORDER & MATERIAL LOT METADATA TABLE */}
-            <section className="mt-2.5 border-2 border-black">
+            <section className={`border-2 border-black ${isA5 ? 'mt-1.5' : 'mt-2.5'}`}>
               <div className="grid grid-cols-2 divide-x divide-y divide-black sm:grid-cols-4">
-                <div className="p-2">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={isA5 ? "p-1 sm:p-1.5" : "p-2"}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Mã Lệnh / PO
                   </div>
-                  <div className="font-mono text-sm font-black">{traveler.po.poId}</div>
+                  <div className={`font-mono font-black ${isA5 ? 'text-xs' : 'text-sm'}`}>{traveler.po.poId}</div>
                 </div>
-                <div className="p-2">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={isA5 ? "p-1 sm:p-1.5" : "p-2"}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Khách hàng
                   </div>
-                  <div className="font-bold">{traveler.po.customer}</div>
+                  <div className="font-bold truncate">{traveler.po.customer}</div>
                 </div>
-                <div className="p-2">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={isA5 ? "p-1 sm:p-1.5" : "p-2"}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Số lượng đặt
                   </div>
-                  <div className="font-mono text-sm font-black">{traveler.po.qtyPo} SP</div>
+                  <div className={`font-mono font-black ${isA5 ? 'text-xs' : 'text-sm'}`}>{traveler.po.qtyPo} SP</div>
                 </div>
-                <div className="p-2">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={isA5 ? "p-1 sm:p-1.5" : "p-2"}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Hạn giao hàng
                   </div>
-                  <div className="font-mono text-sm font-black">
+                  <div className={`font-mono font-black ${isA5 ? 'text-xs' : 'text-sm'}`}>
                     {formatDateVn(traveler.po.dueDate)}
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 divide-y divide-black border-t border-black sm:grid-cols-12 sm:divide-x sm:divide-y-0">
-                <div className="p-2 sm:col-span-6">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={`sm:col-span-6 ${isA5 ? "p-1 sm:p-1.5" : "p-2"}`}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Tên chi tiết / Bản vẽ kỹ thuật ({traveler.po.spId || 'SP'})
                   </div>
-                  <div className="mt-0.5 break-words text-sm font-black leading-snug">
+                  <div className={`mt-0.5 break-words font-black leading-snug ${isA5 ? 'text-xs' : 'text-sm'}`}>
                     {traveler.po.productName}
                   </div>
                 </div>
-                <div className="p-2 sm:col-span-3">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={`sm:col-span-3 ${isA5 ? "p-1 sm:p-1.5" : "p-2"}`}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Mã Lô Phôi / Vật liệu
                   </div>
                   <div className="font-mono font-bold">
-                    {traveler.po.materialLot || 'LOT-VICO-2610'}
+                    {traveler.po.materialLot || 'LOT-2026-VC'}
                   </div>
-                  <div className="text-[11px]">
+                  <div className="text-[10px] truncate">
                     {traveler.product?.matName ||
                       traveler.operations[0]?.matName ||
                       'Thép hợp kim cơ khí'}
                   </div>
                 </div>
-                <div className="p-2 sm:col-span-3">
-                  <div className="text-[10px] font-bold uppercase text-neutral-700">
+                <div className={`sm:col-span-3 ${isA5 ? "p-1 sm:p-1.5" : "p-2"}`}>
+                  <div className="text-[9px] font-bold uppercase text-neutral-700">
                     Nguồn phôi &amp; Ngày đúc
                   </div>
-                  <div className="font-semibold">
+                  <div className="font-semibold truncate">
                     {traveler.po.supplierName || 'Xưởng Đúc VICO Thắng Lợi'}
                   </div>
-                  <div className="font-mono text-[11px]">
+                  <div className="font-mono text-[10px]">
                     Ngày phôi: {formatDateVn(traveler.po.castDate)}
                   </div>
                 </div>
@@ -337,9 +349,9 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
             </section>
 
             {/* 3. SEQUENTIAL OPERATION ROUTING TABLE WITH INDIVIDUAL SVG QR CODES */}
-            <section className="mt-3">
-              <div className="mb-1 flex items-center justify-between">
-                <h2 className="text-xs font-black uppercase tracking-wide">
+            <section className={isA5 ? "mt-1.5" : "mt-3"}>
+              <div className="mb-0.5 flex items-center justify-between">
+                <h2 className={`font-black uppercase tracking-wide ${isA5 ? 'text-[11px]' : 'text-xs'}`}>
                   QUY TRÌNH NGUYÊN CÔNG TUẦN TỰ (QUÉT MÃ QR TỪNG BƯỚC ĐỂ BÁO CÁO SẢN LƯỢNG)
                 </h2>
                 <span className="font-mono text-[10px] font-bold">
@@ -379,84 +391,84 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
                     ) : (
                       traveler.operations.map((op) => (
                         <tr key={op.ncId} className="align-top">
-                          <td className="border-r border-black p-1.5 text-center font-mono">
-                            <div className="text-sm font-black">{op.stepOrder}</div>
-                            <div className="mt-0.5 inline-block border border-black px-1 text-[9px] font-extrabold uppercase">
+                          <td className={`border-r border-black text-center font-mono ${isA5 ? 'p-1' : 'p-1.5'}`}>
+                            <div className={`font-black ${isA5 ? 'text-xs' : 'text-sm'}`}>{op.stepOrder}</div>
+                            <div className="mt-0.5 inline-block border border-black px-1 text-[8px] sm:text-[9px] font-extrabold uppercase">
                               {op.isFinalOp === 1 ? 'END' : 'WIP'}
                             </div>
                           </td>
 
-                          <td className="border-r border-black p-1.5 text-center">
+                          <td className={`border-r border-black text-center ${isA5 ? 'p-1' : 'p-1.5'}`}>
                             <div className="flex flex-col items-center justify-center">
                               <QRCodeSVG
                                 value={op.qrPayload || `GCCK|${traveler?.po?.poId || 'PO'}|${op.ncId}`}
-                                size={isA5 ? 52 : 66}
+                                size={isA5 ? 46 : 66}
                                 level="M"
                                 bgColor="#FFFFFF"
                                 fgColor="#000000"
                               />
-                              <span className="mt-1 break-words font-mono text-[9px] font-bold leading-tight">
+                              <span className="mt-0.5 break-words font-mono text-[8.5px] sm:text-[9px] font-bold leading-tight">
                                 {(op.qrPayload || `GCCK|${traveler?.po?.poId || 'PO'}|${op.ncId}`).replace(/\|/g, '|\u200B')}
                               </span>
                             </div>
                           </td>
 
-                          <td className="border-r border-black p-1.5">
+                          <td className={`border-r border-black ${isA5 ? 'p-1' : 'p-1.5'}`}>
                             <div className="font-black">
                               [{op.ncId}] {op.opName}
                             </div>
-                            <div className="mt-0.5 text-[11px] font-semibold">
+                            <div className={`mt-0.5 font-semibold ${isA5 ? 'text-[10px]' : 'text-[11px]'}`}>
                               Máy: <strong>{op.defaultMachine}</strong>
                             </div>
-                            <div className="mt-0.5 font-mono text-[10px]">
+                            <div className="mt-0.5 font-mono text-[9.5px]">
                               ĐM: Setup {traveler.product?.setupMinutesStd ?? 15}p + Chu kỳ{' '}
                               <strong>{op.stdSeconds}s</strong>/SP
                             </div>
                             {op.isFinalOp === 1 && (
-                              <div className="mt-1 inline-block border border-black px-1 text-[9px] font-black uppercase">
+                              <div className="mt-0.5 inline-block border border-black px-1 text-[8.5px] font-black uppercase">
                                 ★ Công đoạn cuối — Cộng tồn kho TP
                               </div>
                             )}
                           </td>
 
-                          <td className="border-r border-black p-1.5 text-[11px]">
-                            <div className="font-bold">
+                          <td className={`border-r border-black ${isA5 ? 'p-1 text-[10px]' : 'p-1.5 text-[11px]'}`}>
+                            <div className="font-bold truncate">
                               {op.toolCode ? `${op.toolCode} — ${op.toolName}` : 'Dao tiêu chuẩn xưởng'}
                             </div>
-                            <div className="mt-0.5 font-mono text-[10px] font-semibold">
+                            <div className="mt-0.5 font-mono text-[9px] font-semibold">
                               {op.cuttingRec || 'Vc/f theo hướng dẫn gá đặt'}
                             </div>
-                            <div className="mt-0.5 text-[10px] text-neutral-700">
+                            <div className="mt-0.5 text-[9px] text-neutral-700">
                               ĐM cạnh: {op.stdEdgesPerPcs} cạnh/SP
                             </div>
                           </td>
 
-                          <td className="border-r border-black p-1.5 text-center text-[10px]">
+                          <td className={`border-r border-black text-center ${isA5 ? 'p-1 text-[9px]' : 'p-1.5 text-[10px]'}`}>
                             {op.isCriticalCheck === 1 ? (
                               <div className="font-black">★ BẮT BUỘC ĐO</div>
                             ) : (
                               <div className="font-semibold">Ngoại quan</div>
                             )}
-                            <div className="mt-3 border-t border-dotted border-black pt-1 text-left text-[9px]">
+                            <div className={`border-t border-dotted border-black text-left text-[8.5px] ${isA5 ? 'mt-1.5 pt-0.5' : 'mt-3 pt-1'}`}>
                               Đo: ..............
                             </div>
                           </td>
 
-                          <td className="border-r border-black p-1.5 text-center font-mono text-[10px]">
+                          <td className={`border-r border-black text-center font-mono ${isA5 ? 'p-1 text-[9px]' : 'p-1.5 text-[10px]'}`}>
                             {op.doneOkQty > 0 && (
-                              <div className="mb-1 border border-black px-1 py-0.5 font-bold">
+                              <div className="mb-0.5 border border-black px-1 py-0.2 font-bold text-[8.5px]">
                                 MES: {op.doneOkQty} OK
                               </div>
                             )}
-                            <div className="mt-1 text-left leading-loose">
+                            <div className="mt-0.5 text-left leading-normal sm:leading-loose">
                               <div>OK: .........</div>
                               <div>NG: .........</div>
                             </div>
                           </td>
 
-                          <td className="p-1.5 text-[10px]">
-                            <div className="h-12 border-b border-dotted border-black" />
-                            <div className="mt-1 text-center text-[9px]">Ca / Ngày</div>
+                          <td className={isA5 ? "p-1 text-[9px]" : "p-1.5 text-[10px]"}>
+                            <div className={`border-b border-dotted border-black ${isA5 ? 'h-6 sm:h-7' : 'h-12'}`} />
+                            <div className="mt-0.5 text-center text-[8.5px]">Ca / Ngày</div>
                           </td>
                         </tr>
                       ))
@@ -467,15 +479,15 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
             </section>
 
             {/* 4. FIRST ARTICLE INSPECTION (FAI - QC) SIGN-OFF FRAME */}
-            <section className="mt-3 border-2 border-black p-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black pb-1.5">
-                <div className="flex items-center gap-1.5 font-black uppercase">
-                  <FileCheck2 className="h-4 w-4" />
+            <section className={`border-2 border-black ${isA5 ? 'mt-1.5 p-1.5' : 'mt-3 p-2.5'}`}>
+              <div className="flex flex-wrap items-center justify-between gap-1 border-b border-black pb-1">
+                <div className={`flex items-center gap-1 font-black uppercase ${isA5 ? 'text-[10px]' : 'text-xs'}`}>
+                  <FileCheck2 className="h-3.5 w-3.5" />
                   <span>
                     XÁC NHẬN KIỂM TRA CHI TIẾT ĐẦU TIÊN (FIRST ARTICLE INSPECTION — FAI)
                   </span>
                 </div>
-                <span className="font-mono text-[10px] font-bold">
+                <span className="font-mono text-[9px] font-bold">
                   {traveler.po.qtyPo >= 5
                     ? '★ BẮT BUỘC DUYỆT CON ĐẦU (LÔ >= 5 SP)'
                     : 'Lô < 5 SP: Khuyến khích tự kiểm 100%'}
@@ -483,40 +495,40 @@ export function JobTravelerPrint({ poId }: JobTravelerPrintProps) {
               </div>
 
               {traveler.faiRecords.length > 0 && (
-                <div className="mt-1.5 border border-black bg-neutral-50 px-2 py-1 text-[11px]">
+                <div className={`mt-1 border border-black bg-neutral-50 px-1.5 py-0.5 ${isA5 ? 'text-[9.5px]' : 'text-[11px]'}`}>
                   <strong>Trạng thái trên MES:</strong> Đã ký duyệt điện tử ({traveler.faiRecords[0].result}) bởi{' '}
                   <strong>{traveler.faiRecords[0].inspectorName}</strong> —{' '}
                   {traveler.faiRecords[0].correctiveAction}
                 </div>
               )}
 
-              <div className="mt-2 grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-12">
-                <div className="space-y-1.5 border border-black p-2 sm:col-span-5">
+              <div className={`grid grid-cols-1 gap-1.5 sm:grid-cols-12 ${isA5 ? 'mt-1 text-[10px]' : 'mt-2 text-[11px]'}`}>
+                <div className={`space-y-1 border border-black p-1.5 sm:col-span-5 ${isA5 ? 'text-[9.5px]' : ''}`}>
                   <div className="font-bold uppercase">Kích thước thực đo mẫu đầu:</div>
-                  <div>1. KT chính #1: ................................. [Đạt / K.Đạt]</div>
-                  <div>2. KT lắp ghép #2: .............................. [Đạt / K.Đạt]</div>
-                  <div>3. Độ nhám / Ren: ............................... [Đạt / K.Đạt]</div>
+                  <div>1. KT chính #1: .............................. [Đạt / K.Đạt]</div>
+                  <div>2. KT lắp ghép #2: ........................... [Đạt / K.Đạt]</div>
+                  <div>3. Độ nhám / Ren: ............................ [Đạt / K.Đạt]</div>
                 </div>
 
                 <div className="grid grid-cols-3 divide-x divide-black border border-black text-center sm:col-span-7">
-                  <div className="flex flex-col justify-between p-2">
-                    <div className="text-[10px] font-black uppercase">Thợ Đứng Máy</div>
-                    <div className="h-12" />
-                    <div className="border-t border-dotted border-black pt-1 text-[9px]">
+                  <div className={`flex flex-col justify-between ${isA5 ? 'p-1' : 'p-2'}`}>
+                    <div className="text-[9px] font-black uppercase">Thợ Đứng Máy</div>
+                    <div className={isA5 ? "h-6 sm:h-7" : "h-12"} />
+                    <div className="border-t border-dotted border-black pt-0.5 text-[8.5px]">
                       Ký &amp; ghi rõ họ tên
                     </div>
                   </div>
-                  <div className="flex flex-col justify-between p-2">
-                    <div className="text-[10px] font-black uppercase">Tổ Trưởng / QC (FAI)</div>
-                    <div className="h-12" />
-                    <div className="border-t border-dotted border-black pt-1 text-[9px]">
+                  <div className={`flex flex-col justify-between ${isA5 ? 'p-1' : 'p-2'}`}>
+                    <div className="text-[9px] font-black uppercase">Tổ Trưởng / QC (FAI)</div>
+                    <div className={isA5 ? "h-6 sm:h-7" : "h-12"} />
+                    <div className="border-t border-dotted border-black pt-0.5 text-[8.5px]">
                       [ ] Cho phép chạy loạt
                     </div>
                   </div>
-                  <div className="flex flex-col justify-between p-2">
-                    <div className="text-[10px] font-black uppercase">Quản Đốc / Nhập Kho</div>
-                    <div className="h-12" />
-                    <div className="border-t border-dotted border-black pt-1 text-[9px]">
+                  <div className={`flex flex-col justify-between ${isA5 ? 'p-1' : 'p-2'}`}>
+                    <div className="text-[9px] font-black uppercase">Quản Đốc / Nhập Kho</div>
+                    <div className={isA5 ? "h-6 sm:h-7" : "h-12"} />
+                    <div className="border-t border-dotted border-black pt-0.5 text-[8.5px]">
                       SL nhập kho: ........ SP
                     </div>
                   </div>
