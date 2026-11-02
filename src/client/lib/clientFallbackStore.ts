@@ -46,6 +46,8 @@ export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';
 
 const LOCAL_LOGS_KEY = 'GCCK_LOCAL_CLIENT_LOGS_V2_NOV2026';
+const LOCAL_ORDERS_KEY = 'GCCK_LOCAL_ORDERS_V1';
+const LOCAL_DELIVERIES_KEY = 'GCCK_LOCAL_DELIVERIES_V1';
 
 // One-time automatic purge of pre-November test logs across devices
 if (typeof window !== 'undefined') {
@@ -116,34 +118,78 @@ export const FALLBACK_MACHINES: MachineInfo[] = (seedData.machines || []).map((m
   updatedAt: m.updatedAt || null,
 }));
 
-export const FALLBACK_ORDERS: PurchaseOrderInfo[] = (seedData.ordersList || []).map((p: any) => {
-  const norm = canonicalizeCustomerName(p.customer || 'Nội bộ');
-  const qtyPo = Math.max(1, Number(p.qtyPo || 0));
-  const wipQty = Math.max(0, Number(p.wipQty || 0));
-  const finishedQty = Math.max(0, Number(p.finishedQty || 0));
-  const deliveredQty = Math.max(0, Number(p.deliveredQty || 0));
-  const stockQty = Math.max(0, Number(p.stockQty ?? (finishedQty - deliveredQty)));
-  const remainQty = Math.max(0, Number(p.remainQty ?? (qtyPo - deliveredQty)));
+function initFallbackOrders(): PurchaseOrderInfo[] {
+  const seedOrders: PurchaseOrderInfo[] = (seedData.ordersList || []).map((p: any) => {
+    const norm = canonicalizeCustomerName(p.customer || 'Nội bộ');
+    const qtyPo = Math.max(1, Number(p.qtyPo || 0));
+    const wipQty = Math.max(0, Number(p.wipQty || 0));
+    const finishedQty = Math.max(0, Number(p.finishedQty || 0));
+    const deliveredQty = Math.max(0, Number(p.deliveredQty || 0));
+    const stockQty = Math.max(0, Number(p.stockQty ?? (finishedQty - deliveredQty)));
+    const remainQty = Math.max(0, Number(p.remainQty ?? (qtyPo - deliveredQty)));
 
-  return {
-    poId: String(p.poId),
-    spId: p.spId ? String(p.spId) : null,
-    customer: norm.customer,
-    contractRef: p.contractRef || norm.contractRef || '',
-    productName: String(p.productName),
-    qtyPo,
-    dueDate: String(p.dueDate || '2026-11-30'),
-    wipQty,
-    finishedQty,
-    deliveredQty,
-    stockQty,
-    remainQty,
-    status: String(p.status || '⏳ Đang chờ SX'),
-    materialLot: p.materialLot || 'LOT-2026-VC',
-    faiStatus: p.faiStatus || 'FAI_PASSED',
-    note: p.note || norm.contractRef || '',
-  };
-});
+    return {
+      poId: String(p.poId),
+      spId: p.spId ? String(p.spId) : null,
+      customer: norm.customer,
+      contractRef: p.contractRef || norm.contractRef || '',
+      productName: String(p.productName),
+      qtyPo,
+      dueDate: String(p.dueDate || '2026-11-30'),
+      wipQty,
+      finishedQty,
+      deliveredQty,
+      stockQty,
+      remainQty,
+      status: String(p.status || '⏳ Đang chờ SX'),
+      materialLot: p.materialLot || 'LOT-2026-VC',
+      faiStatus: p.faiStatus || 'FAI_PASSED',
+      note: p.note || norm.contractRef || '',
+    };
+  });
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_ORDERS_KEY);
+      if (raw) {
+        const stored: PurchaseOrderInfo[] = JSON.parse(raw);
+        if (Array.isArray(stored) && stored.length > 0) {
+          const map = new Map<string, PurchaseOrderInfo>();
+          for (const s of seedOrders) {
+            map.set(s.poId.toLowerCase(), s);
+          }
+          for (const st of stored) {
+            if (st && st.poId) {
+              const existing = map.get(st.poId.toLowerCase());
+              if (existing) {
+                map.set(st.poId.toLowerCase(), { ...existing, ...st });
+              } else {
+                map.set(st.poId.toLowerCase(), st);
+              }
+            }
+          }
+          return Array.from(map.values());
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return seedOrders;
+}
+
+export const FALLBACK_ORDERS: PurchaseOrderInfo[] = initFallbackOrders();
+
+export function saveFallbackOrdersToStorage(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_ORDERS_KEY, JSON.stringify(FALLBACK_ORDERS));
+    } catch {
+      // ignore
+    }
+  }
+}
 
 export const FALLBACK_WORKERS: WorkerDto[] = (seedData.workers || []).map((w: any) => {
   let appRole: AppRole = 'WORKER';
@@ -392,7 +438,7 @@ export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): Boot
     toolsList: FALLBACK_TOOLS,
     products: FALLBACK_PRODUCTS,
     operations: FALLBACK_OPERATIONS,
-    ordersList: FALLBACK_ORDERS,
+    ordersList: [...FALLBACK_ORDERS],
     schedules: [],
     machineLoads: [],
     qcInspections: [],
@@ -922,6 +968,100 @@ export function getFallbackTraceability(poId: string): TraceabilityDto {
   };
 }
 
+export function getFallbackDeliveries(): DeliveryLogDto[] {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_DELIVERIES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch { }
+  }
+  return [];
+}
+
+export function saveFallbackDelivery(delivery: DeliveryLogDto): void {
+  const current = getFallbackDeliveries();
+  current.unshift(delivery);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_DELIVERIES_KEY, JSON.stringify(current));
+    } catch { }
+  }
+}
+
+export function updateFallbackOrder(poId: string, updates: Partial<PurchaseOrderInfo>): PurchaseOrderInfo | null {
+  const po = FALLBACK_ORDERS.find((o) => o.poId.toLowerCase() === poId.toLowerCase());
+  if (!po) return null;
+
+  if (updates.qtyPo !== undefined) po.qtyPo = Math.max(1, Number(updates.qtyPo) || 1);
+  if (updates.dueDate !== undefined) po.dueDate = String(updates.dueDate);
+  if (updates.materialLot !== undefined) po.materialLot = String(updates.materialLot);
+  if (updates.supplierName !== undefined) po.supplierName = String(updates.supplierName);
+  if (updates.priority !== undefined) po.priority = Number(updates.priority);
+  if (updates.note !== undefined) po.note = String(updates.note);
+  if (updates.finishedQty !== undefined) po.finishedQty = Math.max(0, Number(updates.finishedQty) || 0);
+  if (updates.wipQty !== undefined) po.wipQty = Math.max(0, Number(updates.wipQty) || 0);
+  if (updates.deliveredQty !== undefined) po.deliveredQty = Math.max(0, Number(updates.deliveredQty) || 0);
+
+  po.stockQty = Math.max(0, (po.finishedQty || 0) - (po.deliveredQty || 0));
+  po.remainQty = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
+
+  if (po.deliveredQty >= po.qtyPo) {
+    po.status = '✅ Đã giao đủ';
+  } else if (po.finishedQty >= po.qtyPo) {
+    po.status = '📦 Xong CK - Chờ giao';
+  } else if ((po.wipQty || 0) > 0 || (po.finishedQty || 0) > 0) {
+    po.status = '⚙️ Đang gia công';
+  } else {
+    po.status = '⏳ Đang chờ SX';
+  }
+
+  saveFallbackOrdersToStorage();
+  return po;
+}
+
+export function deliverFallbackOrder(
+  poId: string,
+  qtyDeliver: number,
+  note?: string
+): { success: boolean; item?: PurchaseOrderInfo; message?: string } {
+  const po = FALLBACK_ORDERS.find((o) => o.poId.toLowerCase() === poId.toLowerCase());
+  if (!po) return { success: false, message: `Không tìm thấy PO ${poId}` };
+
+  const qty = Math.max(1, Math.round(qtyDeliver));
+  po.deliveredQty = (po.deliveredQty || 0) + qty;
+  po.stockQty = Math.max(0, (po.finishedQty || 0) - po.deliveredQty);
+  po.remainQty = Math.max(0, po.qtyPo - po.deliveredQty);
+
+  if (po.deliveredQty >= po.qtyPo) {
+    po.status = '✅ Đã giao đủ';
+  } else if (po.finishedQty >= po.qtyPo) {
+    po.status = '📦 Xong CK - Chờ giao';
+  } else if ((po.wipQty || 0) > 0 || (po.finishedQty || 0) > 0) {
+    po.status = '⚙️ Đang gia công';
+  } else {
+    po.status = '⏳ Đang chờ SX';
+  }
+
+  saveFallbackOrdersToStorage();
+
+  const newDelivery: DeliveryLogDto = {
+    id: Date.now(),
+    poId: po.poId,
+    customer: po.customer,
+    productName: po.productName,
+    qtyDeliver: qty,
+    deliveredAt: new Date().toISOString(),
+    deliveredBy: 'Quản đốc / Admin',
+    note: note || '',
+  };
+  saveFallbackDelivery(newDelivery);
+
+  return { success: true, item: po, message: `Đã xuất giao ${qty} SP cho ${po.poId}.` };
+}
+
 export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>>): PurchaseOrderInfo[] {
   const created: PurchaseOrderInfo[] = [];
   for (const raw of orders) {
@@ -929,6 +1069,25 @@ export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>
     if (!poId) continue;
     const existingIdx = FALLBACK_ORDERS.findIndex(o => o.poId.toLowerCase() === poId.toLowerCase());
     const qtyPo = Math.max(1, Math.round(Number(raw.qtyPo) || 1));
+    const wipQty = Math.max(0, Number(raw.wipQty || 0));
+    const finishedQty = Math.max(0, Number(raw.finishedQty || 0));
+    const deliveredQty = Math.max(0, Number(raw.deliveredQty || 0));
+    const stockQty = Math.max(0, Number(raw.stockQty ?? (finishedQty - deliveredQty)));
+    const remainQty = Math.max(0, Number(raw.remainQty ?? (qtyPo - deliveredQty)));
+
+    let status = String(raw.status || '');
+    if (!status || status.includes('Đang chờ SX')) {
+      if (deliveredQty >= qtyPo) {
+        status = '✅ Đã giao đủ';
+      } else if (finishedQty >= qtyPo) {
+        status = '📦 Xong CK - Chờ giao';
+      } else if (wipQty > 0 || finishedQty > 0) {
+        status = '⚙️ Đang gia công';
+      } else {
+        status = '⏳ Đang chờ SX';
+      }
+    }
+
     const newPo: PurchaseOrderInfo = {
       poId,
       spId: raw.spId ? String(raw.spId) : null,
@@ -936,12 +1095,12 @@ export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>
       productName: String(raw.productName || 'Chi tiết cơ khí'),
       qtyPo,
       dueDate: String(raw.dueDate || '2026-11-30'),
-      wipQty: Number(raw.wipQty || 0),
-      finishedQty: Number(raw.finishedQty || 0),
-      deliveredQty: Number(raw.deliveredQty || 0),
-      stockQty: Number(raw.stockQty || 0),
-      remainQty: Math.max(0, qtyPo - Number(raw.deliveredQty || 0)),
-      status: String(raw.status || '⏳ Đang chờ SX'),
+      wipQty,
+      finishedQty,
+      deliveredQty,
+      stockQty,
+      remainQty,
+      status,
       materialLot: raw.materialLot || `LOT-VICO-${Date.now().toString().slice(-4)}`,
       supplierName: raw.supplierName || 'Xưởng Đúc VICO Thắng Lợi',
       castDate: raw.castDate || '2026-11-01',
@@ -956,6 +1115,7 @@ export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>
       created.push(newPo);
     }
   }
+  saveFallbackOrdersToStorage();
   return created;
 }
 

@@ -459,13 +459,18 @@ export function OrdersAndTravelerTab({
     }
     setSubmittingDelivery(true);
     try {
-      const res = await apiClient.post<{ message: string }>(
+      const res = await apiClient.post<{ message: string; item?: PurchaseOrderInfo }>(
         `/orders/${encodeURIComponent(deliverTargetPo.poId)}/deliver`,
         {
           qtyDeliver: deliverQty,
           note: deliverNote.trim(),
         }
       );
+      if (res.item) {
+        setOrders((prev) =>
+          prev.map((o) => (o.poId.toLowerCase() === deliverTargetPo.poId.toLowerCase() ? res.item! : o))
+        );
+      }
       toast.success(res.message || `Đã xuất giao ${deliverQty} SP cho ${deliverTargetPo.poId}.`);
       setDeliverTargetPo(null);
       await loadOrdersAndDeliveries();
@@ -495,17 +500,54 @@ export function OrdersAndTravelerTab({
     if (!editTargetPo) return;
     setSavingEdit(true);
     try {
-      await apiClient.patch(`/orders/${encodeURIComponent(editTargetPo.poId)}`, {
-        qtyPo: editQtyPo,
-        dueDate: editDueDate,
-        materialLot: editMaterialLot,
-        supplierName: editSupplierName,
-        priority: editPriority,
-        note: editNote,
-        finishedQty: editFinishedQty,
-        wipQty: editWipQty,
-        deliveredQty: editDeliveredQty,
-      });
+      const res = await apiClient.patch<{ success: boolean; item?: PurchaseOrderInfo }>(
+        `/orders/${encodeURIComponent(editTargetPo.poId)}`,
+        {
+          qtyPo: editQtyPo,
+          dueDate: editDueDate,
+          materialLot: editMaterialLot,
+          supplierName: editSupplierName,
+          priority: editPriority,
+          note: editNote,
+          finishedQty: editFinishedQty,
+          wipQty: editWipQty,
+          deliveredQty: editDeliveredQty,
+        }
+      );
+      if (res.item) {
+        setOrders((prev) =>
+          prev.map((o) => (o.poId.toLowerCase() === editTargetPo.poId.toLowerCase() ? res.item! : o))
+        );
+      } else {
+        const stockQty = Math.max(0, editFinishedQty - editDeliveredQty);
+        const remainQty = Math.max(0, editQtyPo - editDeliveredQty);
+        let status = '⏳ Đang chờ SX';
+        if (editDeliveredQty >= editQtyPo) status = '✅ Đã giao đủ';
+        else if (editFinishedQty >= editQtyPo) status = '📦 Xong CK - Chờ giao';
+        else if (editWipQty > 0 || editFinishedQty > 0) status = '⚙️ Đang gia công';
+
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.poId.toLowerCase() === editTargetPo.poId.toLowerCase()
+              ? {
+                  ...o,
+                  qtyPo: editQtyPo,
+                  dueDate: editDueDate,
+                  materialLot: editMaterialLot,
+                  supplierName: editSupplierName,
+                  priority: editPriority,
+                  note: editNote,
+                  finishedQty: editFinishedQty,
+                  wipQty: editWipQty,
+                  deliveredQty: editDeliveredQty,
+                  stockQty,
+                  remainQty,
+                  status,
+                }
+              : o
+          )
+        );
+      }
       toast.success(
         `Đã cập nhật Lệnh SX ${editTargetPo.poId} (Xong CK: ${editFinishedQty}/${editQtyPo} SP).`
       );
@@ -1500,6 +1542,7 @@ export function OrdersAndTravelerTab({
                   min={0}
                   step="any"
                   value={editFinishedQty}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => setEditFinishedQty(Math.max(0, Number(e.target.value) || 0))}
                   className={`${modalInputCls} font-mono-num font-black text-emerald-700`}
                 />
@@ -1514,6 +1557,7 @@ export function OrdersAndTravelerTab({
                   min={0}
                   step="any"
                   value={editWipQty}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => setEditWipQty(Math.max(0, Number(e.target.value) || 0))}
                   className={`${modalInputCls} font-mono-num font-bold text-amber-800`}
                 />
@@ -1528,15 +1572,23 @@ export function OrdersAndTravelerTab({
                   min={0}
                   step="any"
                   value={editDeliveredQty}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => setEditDeliveredQty(Math.max(0, Number(e.target.value) || 0))}
                   className={`${modalInputCls} font-mono-num font-bold text-blue-800`}
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-semibold text-slate-700 border-t border-emerald-200/80 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-semibold text-slate-700 border-t border-emerald-200/80 pt-2">
               <div>
                 Tiến độ: <strong className="font-mono-num text-emerald-800">{editFinishedQty}</strong> / {editQtyPo} SP ({Math.min(100, Math.round((editFinishedQty / editQtyPo) * 100))}%)
+              </div>
+              <div>
+                Tồn kho TP (Chờ giao):{' '}
+                <strong className={`font-mono-num ${Math.max(0, editFinishedQty - editDeliveredQty) > 0 ? 'text-blue-700 font-black' : 'text-slate-600'}`}>
+                  {Math.max(0, editFinishedQty - editDeliveredQty)} SP
+                </strong>
+                <span className="block text-[9.5px] text-slate-500 font-normal leading-tight">(= Xong CK − Đã giao)</span>
               </div>
               <div>
                 Còn nợ giao:{' '}
@@ -1544,7 +1596,7 @@ export function OrdersAndTravelerTab({
                   {Math.max(0, editQtyPo - editDeliveredQty)} SP
                 </strong>
                 {editFinishedQty >= editQtyPo && (
-                  <span className="ml-2 inline-flex items-center gap-1 rounded bg-emerald-600 px-1.5 py-0.2 text-[10px] font-black text-white">
+                  <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-emerald-600 px-1 py-0.2 text-[9.5px] font-black text-white">
                     ✓ Đủ SL đặt
                   </span>
                 )}
@@ -1560,6 +1612,7 @@ export function OrdersAndTravelerTab({
                 min={1}
                 step="any"
                 value={editQtyPo}
+                onFocus={(e) => e.target.select()}
                 onChange={(e) => setEditQtyPo(Math.max(1, Number(e.target.value) || 1))}
                 className={`${modalInputCls} font-mono-num font-bold`}
               />
