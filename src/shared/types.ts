@@ -822,6 +822,8 @@ export interface AndonLivePayload {
     isLightsOut: boolean;
     loadPct: number;
     isBottleneck: boolean;
+    isDualMachine?: boolean;
+    shiftType?: string;
   }>;
   urgentOrders: Array<{
     poId: string;

@@ -101,7 +101,7 @@ function resolveMachineVisualState(m: AndonLivePayload['machines'][number]): {
 
   if (m.status === 'STOPPED' || m.status === 'MAINTENANCE') {
     return {
-      badgeLabel: '🔴 DỪNG SỰ CỐ / HỎNG',
+      badgeLabel: '🔴 SỰ CỐ / CHỜ SỬA CHỮA',
       cardCls: 'border-rose-200 border-l-4 border-l-rose-600 bg-rose-50/40 shadow-sm',
       pillCls: 'border-rose-200 bg-rose-100/80 text-rose-800',
       dotCls: 'bg-rose-600 animate-ping',
@@ -543,20 +543,25 @@ export function AndonTvBoard() {
                               </div>
                             )}
                             {m.currentWorkerName && (
-                              <div className="truncate text-[11px] font-semibold text-slate-700">
-                                👷 {m.currentWorkerName}
+                              <div className="flex flex-wrap items-center gap-1.5 truncate text-[11px] font-semibold text-slate-800">
+                                <span>👷 {m.currentWorkerName}</span>
+                                {m.isDualMachine && (
+                                  <span className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-900 shadow-2xs">
+                                    ⭐ Ghép 2 máy (+0.33)
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
                         ) : (
-                          <div className="mt-2 text-[11px] italic text-slate-500">
-                            Sẵn sàng nhận lệnh điều độ
+                          <div className="mt-2 text-[11px] italic text-slate-400">
+                            ⚪ Nghỉ theo kế hoạch ca
                           </div>
                         )}
 
                         {m.stopReason && m.status !== 'RUNNING' && (
-                          <div className="mt-1.5 truncate rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
-                            ⚠️ {m.stopReason}
+                          <div className="mt-1.5 truncate rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-bold text-rose-800">
+                            🚨 {m.stopReason}
                           </div>
                         )}
                       </div>

@@ -36,6 +36,11 @@ import {
   updateFallbackLog,
   clearAllClientStoredLogs,
   clearAllFallbackHandovers,
+  getFallbackDailyDates,
+  getFallbackDailyPlan,
+  saveFallbackDailyPlan,
+  deleteFallbackDailyPlan,
+  copyFallbackDailyPlan,
   FALLBACK_PRODUCTS,
   FALLBACK_ORDERS,
   FALLBACK_WORKERS,
@@ -268,14 +273,35 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
   if (norm.includes('/schedules/daily-dates')) {
     return {
       success: true,
-      dates: [
-        { workDate: '2026-10-21', rowCount: 39, workerCount: 13 },
-        { workDate: '2026-10-22', rowCount: 39, workerCount: 13 },
-      ],
+      dates: getFallbackDailyDates(),
     } as unknown as T;
   }
+  if (norm.includes('/schedules/daily/copy')) {
+    const body = options.json as any;
+    const res = copyFallbackDailyPlan(body?.sourceDate, body?.targetDate, body?.resetQty);
+    return res as unknown as T;
+  }
   if (norm.includes('/schedules/daily')) {
-    return { success: true, rows: [] } as unknown as T;
+    if (options.method === 'DELETE') {
+      const urlParams = new URLSearchParams(path.split('?')[1] || '');
+      const date = urlParams.get('date') || '';
+      deleteFallbackDailyPlan(date);
+      return { success: true, workDate: date } as unknown as T;
+    }
+    if (options.method === 'POST') {
+      const body = options.json as any;
+      const workDate = body?.workDate || body?.date || '2026-11-02';
+      const rows = Array.isArray(body?.rows) ? body.rows : [];
+      saveFallbackDailyPlan(workDate, rows);
+      return { success: true, workDate, count: rows.length } as unknown as T;
+    }
+    const urlParams = new URLSearchParams(path.split('?')[1] || '');
+    const date =
+      urlParams.get('date') ||
+      new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const shift = urlParams.get('shift') || undefined;
+    const rows = getFallbackDailyPlan(date, shift);
+    return { success: true, workDate: date, rows } as unknown as T;
   }
   if (norm.includes('/schedules')) {
     if (options.method === 'POST' || options.method === 'PATCH' || options.method === 'DELETE') {

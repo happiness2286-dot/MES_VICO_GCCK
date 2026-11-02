@@ -7,6 +7,7 @@ import type {
   AuthSessionUser,
   BootstrapPayload,
   CuttingTool,
+  DailyPlanRow,
   EmployeeAttSummary,
   HandoverSlipRow,
   JobTravelerDto,
@@ -1736,6 +1737,373 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
   };
 }
 
+const LOCAL_DAILY_PLAN_PREFIX = 'GCCK_DAILY_SCHEDULE_V1_';
+const LOCAL_DAILY_DATES_KEY = 'GCCK_DAILY_DATES_V1';
+
+export function getFallbackDailyDates(): Array<{ workDate: string; rowCount: number; workerCount: number }> {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_DAILY_DATES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  const now = new Date();
+  const vDate = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+  return [
+    { workDate: vDate, rowCount: 15, workerCount: 10 },
+    { workDate: '2026-10-21', rowCount: 39, workerCount: 13 },
+  ];
+}
+
+export function saveFallbackDailyPlan(workDate: string, rows: DailyPlanRow[]): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_DAILY_PLAN_PREFIX + workDate, JSON.stringify(rows));
+      const dates = getFallbackDailyDates();
+      const existingIdx = dates.findIndex((d) => d.workDate === workDate);
+      const workerSet = new Set(rows.map((r) => r.workerName).filter(Boolean));
+      const entry = { workDate, rowCount: rows.length, workerCount: workerSet.size };
+      if (existingIdx >= 0) dates[existingIdx] = entry;
+      else dates.unshift(entry);
+      localStorage.setItem(LOCAL_DAILY_DATES_KEY, JSON.stringify(dates));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function deleteFallbackDailyPlan(workDate: string): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(LOCAL_DAILY_PLAN_PREFIX + workDate);
+      const dates = getFallbackDailyDates().filter((d) => d.workDate !== workDate);
+      localStorage.setItem(LOCAL_DAILY_DATES_KEY, JSON.stringify(dates));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function copyFallbackDailyPlan(
+  sourceDate: string,
+  targetDate: string,
+  resetQty?: boolean
+): { success: boolean; targetDate: string; rowCount: number } {
+  const sourceRows = getFallbackDailyPlan(sourceDate);
+  const newRows = sourceRows.map((r, idx) => ({
+    ...r,
+    workDate: targetDate,
+    plannedQty: resetQty ? 0 : r.plannedQty,
+    actualQty: 0,
+    stt: idx + 1,
+  }));
+  saveFallbackDailyPlan(targetDate, newRows);
+  return { success: true, targetDate, rowCount: newRows.length };
+}
+
+export function getFallbackDailyPlan(workDate: string, shiftType?: string): DailyPlanRow[] {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_DAILY_PLAN_PREFIX + workDate);
+      if (raw) {
+        const rows: DailyPlanRow[] = JSON.parse(raw);
+        if (Array.isArray(rows) && rows.length > 0) {
+          return shiftType ? rows.filter((r) => r.shiftType === shiftType) : rows;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Realistic initial plan adhering strictly to factory mechanism:
+  // - 3 shifts, wire cut runs 24/24 continuously
+  // - Worker runs 2 machines for +0.33 coefficient
+  // - Milling combined long + short cycles
+  // - 1 dedicated to Shift 2, 1 flexible Shift 1/2, ~3 fixed workers per shift
+  const defaultPlan: DailyPlanRow[] = [
+    // ========== CA 1 (06:00 - 14:00) ==========
+    // Thợ 1: Trần Văn Quỳnh (Ghép 2 máy: T630 + Cắt Dây 24/24)
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 1,
+      workerName: 'Trần Văn Quỳnh',
+      customer: 'Win-Win',
+      spId: 'PO471-1',
+      productName: 'SFP216',
+      ncId: 'NC006',
+      opName: 'Gia công tiện tinh mặt côn',
+      plannedQty: 18,
+      machineName: 'Máy tiện T630',
+      note: 'Máy chính - Chu kỳ ngắn',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 2,
+      workerName: 'Trần Văn Quỳnh',
+      customer: 'Vico - Nội bộ',
+      spId: 'PO485-01',
+      productName: 'ALKTOP 1342 M',
+      ncId: 'NC050',
+      opName: 'G/c cắt dây mài hoàn thiện',
+      plannedQty: 12,
+      machineName: 'Máy Cắt Dây DK7745 - 1',
+      note: 'Máy phụ ghép 2 máy (+0.33) - Chạy tự động 24/24',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 2: Phạm Văn Tráng (Ghép 2 máy phay dài + ngắn)
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 3,
+      workerName: 'Phạm Văn Tráng',
+      customer: 'Win-Win',
+      spId: 'PO475-01',
+      productName: 'ISHIZUE 267.4-700',
+      ncId: 'NC002',
+      opName: 'Phay mặt đầu & phay hốc (Chu kỳ dài)',
+      plannedQty: 10,
+      machineName: 'Máy Phay CNC1',
+      note: 'Máy chính - Nguyên công dài',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 4,
+      workerName: 'Phạm Văn Tráng',
+      customer: 'Win-Win',
+      spId: 'PO475-02',
+      productName: 'ISHIZUE 267.4-800',
+      ncId: 'NC001',
+      opName: 'Phay rãnh then cơ (Chu kỳ ngắn)',
+      plannedQty: 8,
+      machineName: 'Máy phay OKK1',
+      note: 'Máy phụ ghép 2 máy (+0.33) - Nguyên công ngắn',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 3: Lê Minh Tuấn (Cố định Ca 1)
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 5,
+      workerName: 'Lê Minh Tuấn',
+      customer: 'Win-Win',
+      spId: 'PO483-01',
+      productName: 'ISHIZUEOMEGA T267.4-950',
+      ncId: 'NC003',
+      opName: 'Tiện CNC thô & tinh mặt bích',
+      plannedQty: 14,
+      machineName: 'Máy Tiện CNC 1',
+      note: 'Đứng máy chính',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 4: Nguyễn Văn Thắng (Linh hoạt Ca 1 hoặc Ca 2 tùy bố trí)
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 6,
+      workerName: 'Nguyễn Văn Thắng',
+      customer: 'TFG',
+      spId: 'PO-2026-015',
+      productName: 'Pattern Drawing No 2CG00382',
+      ncId: 'NC005',
+      opName: 'Tiện đứng chi tiết lớn',
+      plannedQty: 6,
+      machineName: 'Máy tiện đứng T1516',
+      note: 'Thợ linh hoạt Ca 1 / Ca 2',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+
+    // ========== CA 2 (14:00 - 22:00) ==========
+    // Thợ 1: Phùng Đình Hùng (Ghép 2 máy: Tiện CNC 2 + Cắt Dây 24/24)
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 7,
+      workerName: 'Phùng Đình Hùng',
+      customer: 'Win-Win',
+      spId: 'PO475-03',
+      productName: 'ISHIZUEOMEGA S216.3-550',
+      ncId: 'NC004',
+      opName: 'Tiện CNC bán tinh',
+      plannedQty: 16,
+      machineName: 'Máy Tiện CNC 2',
+      note: 'Máy chính',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 8,
+      workerName: 'Phùng Đình Hùng',
+      customer: 'Vico - Nội bộ',
+      spId: 'PO485-01',
+      productName: 'ALKTOP 1342 M',
+      ncId: 'NC050',
+      opName: 'G/c cắt dây mài hoàn thiện',
+      plannedQty: 10,
+      machineName: 'Máy Cắt Dây DK7745 - 1',
+      note: 'Ghép 2 máy (+0.33) - Cắt dây 24/24',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 2: Trịnh Văn Chung (Ghép 2 máy phay)
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 9,
+      workerName: 'Trịnh Văn Chung',
+      customer: 'Win-Win',
+      spId: 'PO475-04',
+      productName: 'ISHIZUEOMEGA S216.3-650',
+      ncId: 'NC007',
+      opName: 'Phay mặt phẳng & hốc sâu',
+      plannedQty: 12,
+      machineName: 'Máy Phay CNC2',
+      note: 'Máy chính',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 10,
+      workerName: 'Trịnh Văn Chung',
+      customer: 'Win-Win',
+      spId: 'PO475-05',
+      productName: 'ISHIZUEOMEGA S267.4-700',
+      ncId: 'NC008',
+      opName: 'Phay cơ khoan lỗ định vị',
+      plannedQty: 8,
+      machineName: 'Máy phay OKK2',
+      note: 'Ghép 2 máy (+0.33)',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 3: Bùi Văn Hưng (Cố định Ca 2)
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 11,
+      workerName: 'Bùi Văn Hưng',
+      customer: 'Win-Win',
+      spId: 'PO487-03',
+      productName: 'ALKTOP II 1950H',
+      ncId: 'NC009',
+      opName: 'Tiện CNC 2 trục hoàn thiện',
+      plannedQty: 15,
+      machineName: 'Máy tiện FUJI',
+      note: 'Đứng máy chính',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 4: Đỗ Văn Nam (Định biên cố định Ca 2 vì lý do đặc biệt)
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 12,
+      workerName: 'Đỗ Văn Nam',
+      customer: 'Hùng HD - XM Hoàng Thạch',
+      spId: 'PO-2026-088',
+      productName: 'Thanh đập đá vôi',
+      ncId: 'NC010',
+      opName: 'Phay vạn năng làm sạch mặt gá',
+      plannedQty: 7,
+      machineName: 'Máy phay YM',
+      note: 'Định biên cố định Ca 2 theo thỏa thuận',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+
+    // ========== CA 3 (22:00 - 06:00 Lights-out) ==========
+    // Thợ 1: Nguyễn Đức Thọ (Ghép Tiện CNC 1 + Cắt dây 24/24)
+    {
+      workDate,
+      shiftType: 'Ca 3',
+      stt: 13,
+      workerName: 'Nguyễn Đức Thọ',
+      customer: 'Win-Win',
+      spId: 'PO471-1',
+      productName: 'SFP216',
+      ncId: 'NC006',
+      opName: 'Gia công tiện chi tiết dài qua đêm',
+      plannedQty: 12,
+      machineName: 'Máy Tiện CNC 1',
+      note: 'Ca đêm Lights-out - Chu kỳ dài',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    {
+      workDate,
+      shiftType: 'Ca 3',
+      stt: 14,
+      workerName: 'Nguyễn Đức Thọ',
+      customer: 'Vico - Nội bộ',
+      spId: 'PO485-01',
+      productName: 'ALKTOP 1342 M',
+      ncId: 'NC050',
+      opName: 'G/c cắt dây mài hoàn thiện',
+      plannedQty: 8,
+      machineName: 'Máy Cắt Dây DK7745 - 1',
+      note: 'Ghép 2 máy (+0.33) - Cắt dây tự động 24/24',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 2: Vũ Văn Hùng (Ca 3 đêm)
+    {
+      workDate,
+      shiftType: 'Ca 3',
+      stt: 15,
+      workerName: 'Vũ Văn Hùng',
+      customer: 'Win-Win',
+      spId: 'PO475-01',
+      productName: 'ISHIZUE 267.4-700',
+      ncId: 'NC002',
+      opName: 'Phay chạy tự động qua đêm',
+      plannedQty: 10,
+      machineName: 'Máy Phay CNC1',
+      note: 'Ca đêm Lights-out',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 3: Nguyễn Văn Long (Ca 3 đêm)
+    {
+      workDate,
+      shiftType: 'Ca 3',
+      stt: 16,
+      workerName: 'Nguyễn Văn Long',
+      customer: 'Win-Win',
+      spId: 'PO475-03',
+      productName: 'ISHIZUEOMEGA S216.3-550',
+      ncId: 'NC004',
+      opName: 'Tiện tự động chi tiết lô lớn',
+      plannedQty: 14,
+      machineName: 'Máy Tiện CNC 2',
+      note: 'Ca đêm Lights-out',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+  ];
+
+  return shiftType ? defaultPlan.filter((r) => r.shiftType === shiftType) : defaultPlan;
+}
+
 export function getFallbackAndonLive(): AndonLivePayload {
   const now = new Date();
   const vDate = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -1744,93 +2112,196 @@ export function getFallbackAndonLive(): AndonLivePayload {
   const todayOkQty = todayLogs.reduce((acc, l) => acc + (Number(l.okQty) || 0), 0);
   const todayScrapQty = todayLogs.reduce((acc, l) => acc + (Number(l.scrapQty) || 0), 0);
 
-  const machines = FALLBACK_MACHINES.map((m, idx) => {
-    let status: MachineStatus = (m.status as MachineStatus) || 'RUNNING';
-    let isLightsOut = false;
-    let isBottleneck = false;
-    let loadPct = 65 + ((idx * 7) % 45);
+  // Determine current active shift (Ca 1: 06-14, Ca 2: 14-22, Ca 3: 22-06)
+  const hour = now.getHours();
+  const currentShift = hour >= 6 && hour < 14 ? 'Ca 1' : hour >= 14 && hour < 22 ? 'Ca 2' : 'Ca 3';
 
-    if (idx === 3 || idx === 11) {
-      status = 'STOPPED';
-      loadPct = 40;
-    } else if (idx === 5) {
-      status = 'SETUP';
-      loadPct = 80;
-    } else if (idx === 7) {
-      status = 'IDLE';
-      loadPct = 20;
-    } else if (idx === 2 || idx === 4) {
-      isBottleneck = true;
-      loadPct = 108;
-    } else if (idx >= 18) {
-      isLightsOut = true;
-      loadPct = 90;
+  // Load Daily Plan for today
+  let planRows = getFallbackDailyPlan(vDate);
+  if (planRows.length === 0) {
+    const dates = getFallbackDailyDates();
+    if (dates.length > 0) planRows = getFallbackDailyPlan(dates[0].workDate);
+  }
+
+  // Filter rows for current shift first, fallback to all shift rows
+  const shiftPlanRows = planRows.filter((r) => r.shiftType === currentShift);
+  const activePlanRows = shiftPlanRows.length > 0 ? shiftPlanRows : planRows;
+
+  // Track workers assigned to 2 or more machines in this shift (+0.33)
+  const machinesByWorker = new Map<string, Set<string>>();
+  for (const r of activePlanRows) {
+    const wName = (r.workerName || '').trim();
+    const mName = (r.machineName || '').trim();
+    if (wName && mName) {
+      let mSet = machinesByWorker.get(wName);
+      if (!mSet) {
+        mSet = new Set<string>();
+        machinesByWorker.set(wName, mSet);
+      }
+      mSet.add(mName.toLowerCase());
     }
+  }
 
-    const assignedOrder = FALLBACK_ORDERS[idx % FALLBACK_ORDERS.length];
-    const assignedOp = FALLBACK_OPERATIONS[idx % FALLBACK_OPERATIONS.length];
+  // Group plan rows by machine
+  const planByMachine = new Map<string, DailyPlanRow[]>();
+  for (const r of activePlanRows) {
+    const mName = (r.machineName || '').trim().toLowerCase();
+    if (mName) {
+      let list = planByMachine.get(mName);
+      if (!list) {
+        list = [];
+        planByMachine.set(mName, list);
+      }
+      list.push(r);
+    }
+  }
+
+  // Check today's real production logs per machine
+  const latestLogByMachine = new Map<string, any>();
+  for (const l of todayLogs) {
+    const mName = String(l.machineName || l.machineId || '').trim().toLowerCase();
+    if (mName && !latestLogByMachine.has(mName)) {
+      latestLogByMachine.set(mName, l);
+    }
+  }
+
+  const machines = FALLBACK_MACHINES.map((m) => {
+    const mKey = m.name.trim().toLowerCase();
+    const planRowsForMachine = planByMachine.get(mKey) || [];
+    const recentActivity = latestLogByMachine.get(mKey);
+
+    let status: MachineStatus = (m.status as MachineStatus) || 'IDLE';
+    let currentWorkerName: string | null = null;
+    let currentPoId: string | null = null;
+    let currentNcId: string | null = null;
+    let currentProductName: string | null = null;
+    let currentOpName: string | null = null;
+    let stopReason: string | null = m.stopReason || null;
+    let isLightsOut = currentShift === 'Ca 3';
+    let isBottleneck = false;
+    let loadPct = 0;
+    let isDualMachine = false;
+
+    // Check if machine is broken / maintenance
+    if (m.status === 'STOPPED' || m.status === 'MAINTENANCE' || m.stopReason) {
+      status = 'STOPPED';
+      stopReason = m.stopReason || 'Chờ sửa chữa / Bảo trì kỹ thuật';
+      loadPct = 0;
+    } else if (planRowsForMachine.length > 0) {
+      // Machine has active planned work for this shift!
+      const topRow = planRowsForMachine[0];
+      currentWorkerName = (topRow.workerName || '').trim() || null;
+      currentPoId = topRow.spId || (topRow.note?.match(/PO\d+-\d+/i)?.[0]) || 'PO471-1';
+      currentNcId = topRow.ncId || null;
+      currentProductName = topRow.productName || null;
+      currentOpName = topRow.opName || null;
+
+      // Check if worker runs >= 2 machines
+      if (currentWorkerName) {
+        const workerMachineCount = machinesByWorker.get(currentWorkerName)?.size || 1;
+        isDualMachine = workerMachineCount >= 2;
+      }
+
+      // Calculate Tải KH % based on planned hours
+      const opMeta = FALLBACK_OPERATIONS.find((o) => o.ncId === topRow.ncId);
+      const stdSec = opMeta?.stdSeconds || 1800;
+      const totalPlannedSec = planRowsForMachine.reduce(
+        (sum, r) => sum + Math.max(1, Number(r.plannedQty || 0)) * stdSec,
+        0
+      );
+
+      // Wire cut runs 24/24 (86400s), standard shift is 8h (28800s)
+      const isWireCut = m.name.toLowerCase().includes('cắt dây');
+      const capacitySec = isWireCut ? 24 * 3600 : 8 * 3600;
+      loadPct = Math.round((totalPlannedSec / capacitySec) * 100);
+      if (loadPct === 0 && topRow.plannedQty > 0) loadPct = 80;
+      if (loadPct > 100) isBottleneck = true;
+
+      // Status: running if logged today, otherwise setup for shift
+      if (recentActivity) {
+        status = 'RUNNING';
+        if (recentActivity.workerName) currentWorkerName = recentActivity.workerName;
+      } else {
+        status = 'SETUP';
+      }
+    } else {
+      // Machine has NO planned work for this shift -> BÁO NGHỈ
+      status = 'IDLE';
+      currentWorkerName = null;
+      currentPoId = null;
+      currentNcId = null;
+      currentProductName = null;
+      currentOpName = null;
+      stopReason = null;
+      loadPct = 0;
+      isDualMachine = false;
+    }
 
     return {
       id: m.id,
       name: m.name,
       group: m.group,
-      status,
-      currentWorkerName:
-        status === 'RUNNING' || status === 'SETUP'
-          ? m.currentWorkerName || 'Trần Văn Quỳnh'
-          : null,
-      currentPoId:
-        status === 'RUNNING' || status === 'SETUP'
-          ? m.currentPoId || assignedOrder?.poId || 'PO485-01'
-          : null,
-      currentNcId:
-        status === 'RUNNING' || status === 'SETUP'
-          ? m.currentNcId || assignedOp?.ncId || 'NC001'
-          : null,
-      currentProductName:
-        status === 'RUNNING' || status === 'SETUP'
-          ? assignedOrder?.productName || assignedOp?.productName || 'Đĩa búa'
-          : null,
-      currentOpName:
-        status === 'RUNNING' || status === 'SETUP'
-          ? assignedOp?.opName || 'Tiện CNC'
-          : null,
-      stopReason:
-        status === 'STOPPED'
-          ? m.stopReason || 'Chờ phôi thép SCM440 từ kho'
-          : null,
+      status: status as MachineStatus,
+      currentWorkerName,
+      currentPoId,
+      currentNcId,
+      currentProductName,
+      currentOpName,
+      stopReason,
       isLightsOut,
       loadPct,
       isBottleneck,
+      isDualMachine,
+      shiftType: currentShift,
     };
   });
 
   const runningCount = machines.filter((m) => m.status === 'RUNNING').length;
   const setupCount = machines.filter((m) => m.status === 'SETUP').length;
-  const stoppedCount = machines.filter((m) => m.status === 'STOPPED').length;
+  const stoppedCount = machines.filter(
+    (m) => m.status === 'STOPPED' || (m.status as string) === 'MAINTENANCE'
+  ).length;
   const idleCount = machines.length - runningCount - setupCount - stoppedCount;
   const spindleRunPct =
-    machines.length > 0 ? Math.round((runningCount / machines.length) * 100) : 0;
+    machines.length > 0 ? Math.round(((runningCount + setupCount) / machines.length) * 100) : 0;
 
-  const urgentOrders = FALLBACK_ORDERS.filter((po) => po.remainQty > 0)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+  // Urgent Orders: ONLY orders that still need production (finishedQty < qtyPo)
+  const urgentOrders = FALLBACK_ORDERS.filter(
+    (po) => Number(po.finishedQty || 0) < Number(po.qtyPo || 0)
+  )
+    .sort((a, b) => {
+      const aDue = a.dueDate || '9999-99-99';
+      const bDue = b.dueDate || '9999-99-99';
+      return aDue.localeCompare(bDue);
+    })
     .slice(0, 12)
-    .map((po) => ({
-      poId: po.poId,
-      customer: po.customer,
-      productName: po.productName,
-      qtyPo: po.qtyPo,
-      finishedQty: po.finishedQty,
-      remainQty: po.remainQty,
-      dueDate: po.dueDate,
-      isOverdue: Boolean(po.dueDate && po.dueDate < vDate),
-      progressPct:
+    .map((po) => {
+      const isOverdue = Boolean(
+        po.dueDate && po.dueDate < vDate && Number(po.finishedQty || 0) < Number(po.qtyPo || 0)
+      );
+      const progressPct =
         po.qtyPo > 0
-          ? Math.min(100, Math.round((po.finishedQty / po.qtyPo) * 100))
-          : 0,
-      status: po.status,
-    }));
+          ? Math.min(
+              100,
+              Math.round((Number(po.finishedQty || 0) / Number(po.qtyPo || 1)) * 100)
+            )
+          : 0;
+      return {
+        poId: po.poId,
+        customer: po.customer,
+        productName: po.productName,
+        qtyPo: po.qtyPo,
+        finishedQty: po.finishedQty,
+        remainQty: Math.max(0, Number(po.qtyPo || 0) - Number(po.finishedQty || 0)),
+        dueDate: po.dueDate,
+        isOverdue,
+        progressPct,
+        status: po.status,
+      };
+    });
 
+  // Worker Leaderboard: Prioritize active logs with production
+  const targetLogs = todayLogs.length > 0 ? todayLogs : allLogs;
   const workerStatsMap = new Map<
     string,
     {
@@ -1841,8 +2312,9 @@ export function getFallbackAndonLive(): AndonLivePayload {
       kpis: number[];
     }
   >();
-  allLogs
-    .filter((l) => !l.isVoided)
+
+  targetLogs
+    .filter((l) => !l.isVoided && Number(l.okQty || 0) > 0)
     .forEach((l) => {
       const wId = l.workerId || 'NV00214';
       const entry = workerStatsMap.get(wId) || {
@@ -1872,40 +2344,24 @@ export function getFallbackAndonLive(): AndonLivePayload {
       okQtyTotal: w.okQty,
     }));
 
-  if (workerLeaderboard.length === 0) {
-    workerLeaderboard = [
-      {
-        rank: 1,
-        workerId: 'NV00214',
-        workerName: 'Trần Văn Quỳnh',
-        earnedStdHours: 14.5,
-        kpiPct: 112,
-        okQtyTotal: 18,
-      },
-      {
-        rank: 2,
-        workerId: 'NV00215',
-        workerName: 'Phạm Văn Tráng',
-        earnedStdHours: 12.8,
-        kpiPct: 104,
-        okQtyTotal: 15,
-      },
-      {
-        rank: 3,
-        workerId: 'NV00216',
-        workerName: 'Lê Minh Tuấn',
-        earnedStdHours: 11.2,
-        kpiPct: 98,
-        okQtyTotal: 12,
-      },
-    ];
+  const alertsTicker: string[] = [];
+  for (const m of machines) {
+    if (m.status === 'STOPPED') {
+      alertsTicker.push(`🚨 SỰ CỐ / DỪNG MÁY: ${m.name} (${m.stopReason || 'Kiểm tra kỹ thuật'})`);
+    }
   }
-
-  const alertsTicker: string[] = [
-    '🔔 Phân xưởng Gia công Cơ khí Thắng Lợi — Tín hiệu giám sát sản xuất Realtime đang kết nối.',
-    '🟢 18/23 máy đang chạy tải ổn định.',
-    '⚠️ Máy Phay CNC 4 đang chờ cấp phôi SCM440 từ kho.',
-  ];
+  for (const po of urgentOrders.slice(0, 4)) {
+    if (po.isOverdue) {
+      alertsTicker.push(
+        `⏰ ĐƠN QUÁ HẠN: ${po.poId} (${po.productName}) còn thiếu ${po.remainQty} SP`
+      );
+    }
+  }
+  if (alertsTicker.length === 0) {
+    alertsTicker.push(
+      `✅ Kế hoạch ${currentShift} xưởng GCCK Thắng Lợi — Máy cắt dây DK7745 chạy 24/24 — Tuân thủ tự kiểm ★ & 5S cuối ca.`
+    );
+  }
 
   return {
     serverTime: now.toISOString(),
@@ -1917,8 +2373,8 @@ export function getFallbackAndonLive(): AndonLivePayload {
       setupCount,
       stoppedCount,
       idleCount,
-      todayOkQty: todayOkQty || 26,
-      todayScrapQty: todayScrapQty || 0,
+      todayOkQty,
+      todayScrapQty,
     },
     machines,
     urgentOrders,
