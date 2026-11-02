@@ -50,7 +50,7 @@ import {
   Modal,
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
-import { getFallbackBootstrap, rotateDailyPlanWeek } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan } from '@client/lib/clientFallbackStore';
 import { DEFAULT_DRIVE_FOLDER_URL } from '@shared/driveHelper';
 import { DailyQualityReportSection } from './DailyQualityReportSection';
 import type { AdminTabCommonProps } from '../types';
@@ -88,7 +88,31 @@ export function DailyWeeklyScheduleTab({
   };
 
   // ==================== TAB 1: DAILY SCHEDULE STATE ====================
-  const [selectedDate, setSelectedDate] = useState<string>('2026-10-21');
+  const getVietnamToday = () =>
+    new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+
+  const getInitialPlanDate = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('GCCK_SELECTED_PLAN_DATE');
+        if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) {
+          return saved;
+        }
+      } catch {}
+    }
+    return getVietnamToday();
+  };
+
+  const [selectedDate, setSelectedDateState] = useState<string>(getInitialPlanDate);
+
+  const setSelectedDate = (d: string) => {
+    setSelectedDateState(d);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('GCCK_SELECTED_PLAN_DATE', d);
+      } catch {}
+    }
+  };
   const [selectedShift, setSelectedShift] = useState<string>('ALL');
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [dailyRows, setDailyRows] = useState<DailyPlanRow[]>([]);
@@ -101,7 +125,7 @@ export function DailyWeeklyScheduleTab({
   const [showNewDateModal, setShowNewDateModal] = useState<boolean>(false);
   const [newPlanDate, setNewPlanDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [newPlanMode, setNewPlanMode] = useState<'copy' | 'template' | 'blank'>('copy');
-  const [sourceCopyDate, setSourceCopyDate] = useState<string>('2026-10-21');
+  const [sourceCopyDate, setSourceCopyDate] = useState<string>(() => getVietnamToday());
   const [copyResetQty, setCopyResetQty] = useState<boolean>(false);
   const [creatingDate, setCreatingDate] = useState<boolean>(false);
 
@@ -132,29 +156,34 @@ export function DailyWeeklyScheduleTab({
       if (res.rows && res.rows.length > 0) {
         setDailyRows(res.rows);
       } else {
-        // Generate blank 3-rows template for the 13 active workers if date is empty
-        const activeWorkers = (bootstrap.workers || []).filter((w) => w.isActive !== 0);
-        const blankRows: DailyPlanRow[] = [];
-        let stt = 1;
-        for (const w of activeWorkers) {
-          for (let i = 0; i < 3; i++) {
-            blankRows.push({
-              workDate: date,
-              shiftType: 'Ca 2',
-              stt: stt++,
-              workerName: w.name,
-              customer: '',
-              productName: '',
-              opName: '',
-              plannedQty: 0,
-              machineName: '',
-              note: '',
-              actualQty: 0,
-              status: 'PLANNED',
-            });
+        const fallback = getFallbackDailyPlan(date);
+        if (fallback && fallback.length > 0) {
+          setDailyRows(fallback);
+        } else {
+          // Generate blank 3-rows template for the 13 active workers if completely empty
+          const activeWorkers = (bootstrap.workers || []).filter((w) => w.isActive !== 0);
+          const blankRows: DailyPlanRow[] = [];
+          let stt = 1;
+          for (const w of activeWorkers) {
+            for (let i = 0; i < 3; i++) {
+              blankRows.push({
+                workDate: date,
+                shiftType: 'Ca 2',
+                stt: stt++,
+                workerName: w.name,
+                customer: '',
+                productName: '',
+                opName: '',
+                plannedQty: 0,
+                machineName: '',
+                note: '',
+                actualQty: 0,
+                status: 'PLANNED',
+              });
+            }
           }
+          setDailyRows(blankRows);
         }
-        setDailyRows(blankRows);
       }
     } catch (err: any) {
       toast.error(err?.message || 'Không thể tải kế hoạch ngày.');
@@ -419,7 +448,7 @@ export function DailyWeeklyScheduleTab({
       if (updatedDates.length > 0) {
         setSelectedDate(updatedDates[0].workDate);
       } else {
-        setSelectedDate('2026-10-21');
+        setSelectedDate(getVietnamToday());
       }
     } catch (err: any) {
       toast.error(err?.message || 'Không thể xóa kế hoạch ngày.');
@@ -946,8 +975,7 @@ export function DailyWeeklyScheduleTab({
                   <button
                     type="button"
                     onClick={() => {
-                      const todayStr = new Date().toISOString().slice(0, 10);
-                      setSelectedDate(todayStr);
+                      setSelectedDate(getVietnamToday());
                     }}
                     className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-blue-600"
                   >

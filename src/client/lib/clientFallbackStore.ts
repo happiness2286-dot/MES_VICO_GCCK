@@ -1769,6 +1769,7 @@ export function saveFallbackDailyPlan(workDate: string, rows: DailyPlanRow[]): v
       const entry = { workDate, rowCount: rows.length, workerCount: workerSet.size };
       if (existingIdx >= 0) dates[existingIdx] = entry;
       else dates.unshift(entry);
+      dates.sort((a, b) => b.workDate.localeCompare(a.workDate));
       localStorage.setItem(LOCAL_DAILY_DATES_KEY, JSON.stringify(dates));
     } catch {
       // ignore
@@ -1834,7 +1835,10 @@ export function rotateDailyPlanWeek(rows: DailyPlanRow[]): DailyPlanRow[] {
 export function getFallbackDailyPlan(workDate: string, shiftType?: string): DailyPlanRow[] {
   if (typeof window !== 'undefined') {
     try {
-      const raw = localStorage.getItem(LOCAL_DAILY_PLAN_PREFIX + workDate);
+      let raw = localStorage.getItem(LOCAL_DAILY_PLAN_PREFIX + workDate);
+      if (!raw) {
+        raw = localStorage.getItem('GCCK_DAILY_SCHEDULE_' + workDate);
+      }
       if (raw) {
         const rows: DailyPlanRow[] = JSON.parse(raw);
         if (Array.isArray(rows) && rows.length > 0) {
@@ -2206,6 +2210,10 @@ export function getFallbackAndonLive(requestedShift?: string): AndonLivePayload 
 
   // Load Daily Plan for today
   let planRows = getFallbackDailyPlan(vDate);
+  if (planRows.length === 0) {
+    const selectedDate = typeof window !== 'undefined' ? localStorage.getItem('GCCK_SELECTED_PLAN_DATE') : null;
+    if (selectedDate) planRows = getFallbackDailyPlan(selectedDate);
+  }
   if (planRows.length === 0) {
     const dates = getFallbackDailyDates();
     if (dates.length > 0) planRows = getFallbackDailyPlan(dates[0].workDate);

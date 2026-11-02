@@ -72,5 +72,13 @@ export function openDatabase(customDbPath?: string): DatabaseSync {
   const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schemaSql);
 
+  // Auto-migration for daily_schedule_rows overtime columns
+  try {
+    db.exec("ALTER TABLE daily_schedule_rows ADD COLUMN is_overtime INTEGER NOT NULL DEFAULT 0;");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE daily_schedule_rows ADD COLUMN overtime_hours REAL NOT NULL DEFAULT 0;");
+  } catch {}
+
   return db;
 }

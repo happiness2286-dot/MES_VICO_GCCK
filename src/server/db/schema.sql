@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS daily_schedule_rows (
   actual_qty REAL NOT NULL DEFAULT 0,
   drawing_url TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'PLANNED',
+  is_overtime INTEGER NOT NULL DEFAULT 0,
+  overtime_hours REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

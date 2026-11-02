@@ -7,11 +7,16 @@ import { VicoLogo } from '../../components/VicoLogo';
 
 export function DailySchedulePrint() {
   const [workDate, setWorkDate] = useState<string>(() => {
+    const vnToday = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      return url.searchParams.get('date') || '2026-10-21';
+      return (
+        url.searchParams.get('date') ||
+        localStorage.getItem('GCCK_SELECTED_PLAN_DATE') ||
+        vnToday
+      );
     }
-    return '2026-10-21';
+    return vnToday;
   });
 
   const [rows, setRows] = useState<DailyPlanRow[]>([]);

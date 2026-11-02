@@ -9,6 +9,7 @@ import type {
   WorkerMonthlyLogAgg,
 } from '../../shared/types';
 import { withTransaction } from '../db/connection';
+import { getVietnamDateString } from '../../shared/payrollEngine';
 import { canonicalizeCustomerName, derivePoStatus } from '../db/seed';
 import {
   getConfigMap,
@@ -1874,8 +1875,8 @@ export function createAdminRoutes(db: DatabaseSync): Router {
       const ins = db.prepare(`
         INSERT INTO daily_schedule_rows (
           work_date, shift_type, stt, worker_name, customer, sp_id, product_name, nc_id, op_name,
-          planned_qty, machine_name, note, actual_qty, drawing_url, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          planned_qty, machine_name, note, actual_qty, drawing_url, status, is_overtime, overtime_hours
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (let idx = 0; idx < existingRows.length; idx++) {
@@ -1914,12 +1915,12 @@ export function createAdminRoutes(db: DatabaseSync): Router {
   });
 
   router.get('/schedules/daily', (req, res) => {
-    const workDate = String(req.query.date || '2026-10-21');
+    const workDate = String(req.query.date || getVietnamDateString());
     const shiftType = req.query.shift ? String(req.query.shift) : undefined;
 
     let querySql = `
       SELECT id, work_date, shift_type, stt, worker_name, customer, sp_id, product_name, nc_id, op_name,
-             planned_qty, machine_name, note, actual_qty, drawing_url, status
+             planned_qty, machine_name, note, actual_qty, drawing_url, status, is_overtime, overtime_hours
       FROM daily_schedule_rows
       WHERE work_date = ?
     `;
@@ -1953,12 +1954,14 @@ export function createAdminRoutes(db: DatabaseSync): Router {
         actualQty: Number(r.actual_qty || 0),
         drawingUrl: String(r.drawing_url || ''),
         status: String(r.status || 'PLANNED'),
+        isOvertime: Boolean(r.is_overtime),
+        overtimeHours: Number(r.overtime_hours || 0),
       })),
     });
   });
 
   router.post('/schedules/daily', requireRoles('DIRECTOR', 'ADMIN', 'SHIFT_LEADER'), (req, res) => {
-    const workDate = String(req.body.workDate || req.body.date || '2026-10-21');
+    const workDate = String(req.body.workDate || req.body.date || getVietnamDateString());
     const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
 
     withTransaction(db, () => {
@@ -1988,7 +1991,9 @@ export function createAdminRoutes(db: DatabaseSync): Router {
           String(r.note || '').trim(),
           Number(r.actualQty || 0),
           String(r.drawingUrl || '').trim(),
-          String(r.status || 'PLANNED')
+          String(r.status || 'PLANNED'),
+          r.isOvertime ? 1 : 0,
+          Number(r.overtimeHours || 0)
         );
       }
     });

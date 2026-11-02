@@ -13,7 +13,7 @@ import { getVietnamDateString } from '../../shared/payrollEngine';
 export function createAndonRoutes(db: DatabaseSync): Router {
   const router = Router();
 
-  router.get('/andon/live', (_req, res) => {
+  router.get('/andon/live', (req, res) => {
     const vietnamDate = getVietnamDateString();
     const machines = queryMachines(db);
     const orders = queryPurchaseOrders(db);
@@ -22,17 +22,161 @@ export function createAndonRoutes(db: DatabaseSync): Router {
     const loads = computeMachineLoads(machines, orders, operations, schedules);
 
     const loadById = new Map(loads.map((l) => [l.machineId, l]));
-    const opByNcId = new Map(operations.map((o) => [o.ncId, o]));
     const lightsOutSet = new Set(
       schedules.filter((s) => s.isLightsOut === 1).map((s) => s.machineId)
     );
 
-    const runningCount = machines.filter((m) => m.status === 'RUNNING').length;
-    const setupCount = machines.filter((m) => m.status === 'SETUP').length;
-    const stoppedCount = machines.filter((m) => m.status === 'STOPPED').length;
-    const idleCount = machines.length - runningCount - setupCount - stoppedCount;
+    // 1. Determine shift: explicit query or auto-detected by VN clock
+    const reqShift = String(req.query.shift || '').trim();
+    const now = new Date();
+    const vnHourStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: 'numeric',
+      hour12: false,
+    }).format(now);
+    const currentHour = parseInt(vnHourStr, 10);
+    const autoShift = currentHour >= 6 && currentHour < 14 ? 'Ca 1' : currentHour >= 14 && currentHour < 22 ? 'Ca 2' : 'Ca 3';
+    const currentShift = ['Ca 1', 'Ca 2', 'Ca 3'].includes(reqShift) ? reqShift : autoShift;
+
+    // 2. Query daily_schedule_rows for today (or latest available date in DB)
+    let planDate = vietnamDate;
+    let planRows = db.prepare(`
+      SELECT * FROM daily_schedule_rows WHERE work_date = ?
+    `).all(vietnamDate) as Array<Record<string, any>>;
+
+    if (planRows.length === 0) {
+      const latestMeta = db.prepare(`
+        SELECT work_date FROM daily_schedule_rows ORDER BY work_date DESC LIMIT 1
+      `).get() as { work_date?: string } | undefined;
+      if (latestMeta?.work_date) {
+        planDate = String(latestMeta.work_date);
+        planRows = db.prepare(`
+          SELECT * FROM daily_schedule_rows WHERE work_date = ?
+        `).all(planDate) as Array<Record<string, any>>;
+      }
+    }
+
+    // 3. Filter rows strictly for currentShift
+    const shiftPlanRows = planRows.filter((r) => String(r.shift_type) === currentShift);
+
+    // 4. Map workers to count of distinct machines in this shift (+0.33 allowance)
+    const workerMachines = new Map<string, Set<string>>();
+    for (const r of shiftPlanRows) {
+      const wName = String(r.worker_name || '').trim();
+      const mName = String(r.machine_name || '').trim();
+      if (wName && mName) {
+        let set = workerMachines.get(wName);
+        if (!set) {
+          set = new Set<string>();
+          workerMachines.set(wName, set);
+        }
+        set.add(mName.toLowerCase());
+      }
+    }
+
+    // 5. Index plan rows by machine name (normalized)
+    const normMach = (s: string) => s.toLowerCase().replace(/[\s\-_]/g, '');
+    const planByMach = new Map<string, Array<Record<string, any>>>();
+    for (const r of shiftPlanRows) {
+      const mName = String(r.machine_name || '').trim();
+      if (mName) {
+        const key = normMach(mName);
+        let list = planByMach.get(key);
+        if (!list) {
+          list = [];
+          planByMach.set(key, list);
+        }
+        list.push(r);
+      }
+    }
+
+    // 6. Build live machine models
+    let runningCount = 0;
+    let setupCount = 0;
+    let stoppedCount = 0;
+    let idleCount = 0;
+    let overtimeCount = 0;
+
+    const mappedMachines = machines.map((m) => {
+      const l = loadById.get(m.id);
+      const isLightsOutMach = lightsOutSet.has(m.id) || m.group.toLowerCase().includes('cắt dây');
+      const isStopped = m.status === 'STOPPED';
+
+      const assignedRows = planByMach.get(normMach(m.name)) || planByMach.get(normMach(m.id)) || [];
+      const primaryRow = assignedRows[0];
+
+      let status: 'RUNNING' | 'SETUP' | 'STOPPED' | 'IDLE' | 'MAINTENANCE' = 'IDLE';
+      let workerName: string | null = null;
+      let poId: string | null = null;
+      let ncId: string | null = null;
+      let productName: string | null = null;
+      let opName: string | null = null;
+      let isDual = false;
+      let isOt = false;
+      let otHours = 0;
+
+      if (isStopped) {
+        status = 'STOPPED';
+        stoppedCount++;
+        if (primaryRow) {
+          workerName = String(primaryRow.worker_name || '');
+          poId = String(primaryRow.sp_id || '');
+          productName = String(primaryRow.product_name || '');
+          opName = String(primaryRow.op_name || '');
+        }
+      } else if (primaryRow) {
+        workerName = String(primaryRow.worker_name || '');
+        poId = String(primaryRow.sp_id || '');
+        productName = String(primaryRow.product_name || '');
+        opName = String(primaryRow.op_name || '');
+        ncId = String(primaryRow.nc_id || '');
+
+        const machCount = workerMachines.get(workerName)?.size || 0;
+        isDual = machCount >= 2;
+
+        const rowOt = assignedRows.find((r) => r.is_overtime);
+        if (rowOt) {
+          isOt = true;
+          otHours = Number(rowOt.overtime_hours || 2);
+          overtimeCount++;
+        }
+
+        if (currentShift === 'Ca 3' && isLightsOutMach) {
+          status = 'RUNNING';
+        } else {
+          status = m.status === 'RUNNING' ? 'RUNNING' : 'SETUP';
+        }
+
+        if (status === 'RUNNING') runningCount++;
+        else setupCount++;
+      } else {
+        status = 'IDLE';
+        idleCount++;
+      }
+
+      return {
+        id: m.id,
+        name: m.name,
+        group: m.group,
+        status,
+        currentWorkerName: workerName,
+        currentPoId: poId,
+        currentNcId: ncId,
+        currentProductName: productName,
+        currentOpName: opName,
+        stopReason: m.stopReason ?? null,
+        isLightsOut: isLightsOutMach,
+        loadPct: l?.loadPct ?? 0,
+        isBottleneck: l?.isBottleneck ?? false,
+        isDualMachine: isDual,
+        isOvertime: isOt,
+        overtimeHours: otHours,
+        shiftType: currentShift,
+      };
+    });
+
     const spindleRunPct =
-      machines.length > 0 ? Math.round((runningCount / machines.length) * 100) : 0;
+      machines.length > 0 ? Math.round(((runningCount + setupCount) / machines.length) * 100) : 0;
 
     const todayAgg = db
       .prepare(
@@ -84,6 +228,7 @@ export function createAndonRoutes(db: DatabaseSync): Router {
     }));
 
     const alertsTicker: string[] = [];
+    alertsTicker.push(`🔔 CA LÀM VIỆC HIỆN TẠI: ${currentShift.toUpperCase()} — Kế hoạch ngày ${planDate.split('-').reverse().join('/')}`);
     for (const m of machines) {
       if (m.status === 'STOPPED') {
         alertsTicker.push(`🚨 DỪNG MÁY: ${m.name} (${m.stopReason || 'Kiểm tra kỹ thuật'})`);
@@ -103,7 +248,7 @@ export function createAndonRoutes(db: DatabaseSync): Router {
         );
       }
     }
-    if (alertsTicker.length === 0) {
+    if (alertsTicker.length === 1) {
       alertsTicker.push('✅ Xưởng GCCK Thắng Lợi vận hành ổn định — Tuân thủ tự kiểm ★ và 5S cuối ca.');
     }
 
@@ -119,26 +264,9 @@ export function createAndonRoutes(db: DatabaseSync): Router {
         idleCount,
         todayOkQty: Number(todayAgg.ok_sum || 0),
         todayScrapQty: Number(todayAgg.ng_sum || 0),
+        overtimeCount,
       },
-      machines: machines.map((m) => {
-        const l = loadById.get(m.id);
-        const curOp = m.currentNcId ? opByNcId.get(m.currentNcId) : undefined;
-        return {
-          id: m.id,
-          name: m.name,
-          group: m.group,
-          status: m.status ?? 'IDLE',
-          currentWorkerName: m.currentWorkerName ?? null,
-          currentPoId: m.currentPoId ?? null,
-          currentNcId: m.currentNcId ?? null,
-          currentProductName: curOp?.productName ?? null,
-          currentOpName: curOp?.opName ?? null,
-          stopReason: m.stopReason ?? null,
-          isLightsOut: lightsOutSet.has(m.id),
-          loadPct: l?.loadPct ?? 0,
-          isBottleneck: l?.isBottleneck ?? false,
-        };
-      }),
+      machines: mappedMachines,
       urgentOrders,
       workerLeaderboard,
       alertsTicker,
