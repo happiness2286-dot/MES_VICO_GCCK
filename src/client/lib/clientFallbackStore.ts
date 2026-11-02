@@ -1737,8 +1737,8 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
   };
 }
 
-const LOCAL_DAILY_PLAN_PREFIX = 'GCCK_DAILY_SCHEDULE_V1_';
-const LOCAL_DAILY_DATES_KEY = 'GCCK_DAILY_DATES_V1';
+const LOCAL_DAILY_PLAN_PREFIX = 'GCCK_DAILY_SCHEDULE_V2_';
+const LOCAL_DAILY_DATES_KEY = 'GCCK_DAILY_DATES_V2';
 
 export function getFallbackDailyDates(): Array<{ workDate: string; rowCount: number; workerCount: number }> {
   if (typeof window !== 'undefined') {
@@ -1755,8 +1755,7 @@ export function getFallbackDailyDates(): Array<{ workDate: string; rowCount: num
   const now = new Date();
   const vDate = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
   return [
-    { workDate: vDate, rowCount: 15, workerCount: 10 },
-    { workDate: '2026-10-21', rowCount: 39, workerCount: 13 },
+    { workDate: vDate, rowCount: 19, workerCount: 11 },
   ];
 }
 
@@ -1804,6 +1803,32 @@ export function copyFallbackDailyPlan(
   }));
   saveFallbackDailyPlan(targetDate, newRows);
   return { success: true, targetDate, rowCount: newRows.length };
+}
+
+/**
+ * Đảo ca theo vòng lặp 1 tuần của nhà máy:
+ * - Ca 1 -> Ca 3 (Ca sáng đổi xuống Ca đêm)
+ * - Ca 2 -> Ca 1 (Ca chiều đổi lên Ca sáng)
+ * - Ca 3 -> Ca 2 (Ca đêm đổi lên Ca chiều)
+ * - Đặng Ngọc Long cố định Ca 2 (không đảo ca)
+ * - Hoàng Ngọc Hà (Quản đốc) chỉ đạo 3 ca (không đứng máy)
+ */
+export function rotateDailyPlanWeek(rows: DailyPlanRow[]): DailyPlanRow[] {
+  return rows.map((r) => {
+    // Đặng Ngọc Long cố định Ca 2 theo yêu cầu nhà máy
+    if ((r.workerName || '').includes('Long')) {
+      return { ...r, shiftType: 'Ca 2' };
+    }
+    // Quản đốc Hoàng Ngọc Hà không trực tiếp đứng máy
+    if ((r.workerName || '').includes('Hà')) {
+      return r;
+    }
+    let newShift = r.shiftType;
+    if (r.shiftType === 'Ca 1') newShift = 'Ca 3';
+    else if (r.shiftType === 'Ca 2') newShift = 'Ca 1';
+    else if (r.shiftType === 'Ca 3') newShift = 'Ca 2';
+    return { ...r, shiftType: newShift };
+  });
 }
 
 export function getFallbackDailyPlan(workDate: string, shiftType?: string): DailyPlanRow[] {
@@ -2163,7 +2188,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
   return shiftType ? defaultPlan.filter((r) => r.shiftType === shiftType) : defaultPlan;
 }
 
-export function getFallbackAndonLive(): AndonLivePayload {
+export function getFallbackAndonLive(requestedShift?: string): AndonLivePayload {
   const now = new Date();
   const vDate = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
   const allLogs = getAllFallbackLogs();
@@ -2173,7 +2198,11 @@ export function getFallbackAndonLive(): AndonLivePayload {
 
   // Determine current active shift (Ca 1: 06-14, Ca 2: 14-22, Ca 3: 22-06)
   const hour = now.getHours();
-  const currentShift = hour >= 6 && hour < 14 ? 'Ca 1' : hour >= 14 && hour < 22 ? 'Ca 2' : 'Ca 3';
+  const autoShift = hour >= 6 && hour < 14 ? 'Ca 1' : hour >= 14 && hour < 22 ? 'Ca 2' : 'Ca 3';
+  const currentShift =
+    requestedShift && ['Ca 1', 'Ca 2', 'Ca 3'].includes(requestedShift)
+      ? requestedShift
+      : autoShift;
 
   // Load Daily Plan for today
   let planRows = getFallbackDailyPlan(vDate);
@@ -2182,9 +2211,10 @@ export function getFallbackAndonLive(): AndonLivePayload {
     if (dates.length > 0) planRows = getFallbackDailyPlan(dates[0].workDate);
   }
 
-  // Filter rows for current shift first, fallback to all shift rows
+  // Filter STRICTLY for currentShift (only include rows planned for this shift):
+  // CRITICAL: NEVER fall back to all shifts! Each shift strictly displays its own workers and machines.
   const shiftPlanRows = planRows.filter((r) => r.shiftType === currentShift);
-  const activePlanRows = shiftPlanRows.length > 0 ? shiftPlanRows : planRows;
+  const activePlanRows = shiftPlanRows;
 
   // Track workers assigned to 2 or more machines in this shift (+0.33)
   const machinesByWorker = new Map<string, Set<string>>();
@@ -2215,12 +2245,14 @@ export function getFallbackAndonLive(): AndonLivePayload {
     }
   }
 
-  // Check today's real production logs per machine
+  // Check today's real production logs per machine FOR THIS SHIFT ONLY
   const latestLogByMachine = new Map<string, any>();
   for (const l of todayLogs) {
-    const mName = String(l.machineName || l.machineId || '').trim().toLowerCase();
-    if (mName && !latestLogByMachine.has(mName)) {
-      latestLogByMachine.set(mName, l);
+    if (l.shiftType === currentShift) {
+      const mName = String(l.machineName || l.machineId || '').trim().toLowerCase();
+      if (mName && !latestLogByMachine.has(mName)) {
+        latestLogByMachine.set(mName, l);
+      }
     }
   }
 

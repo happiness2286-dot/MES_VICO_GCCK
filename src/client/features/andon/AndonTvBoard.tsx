@@ -124,27 +124,36 @@ export function AndonTvBoard() {
   const [slideIdx, setSlideIdx] = useState<AndonSlideIndex>(0);
   const [slidePinned, setSlidePinned] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [viewShift, setViewShift] = useState<'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3'>('AUTO');
 
-  const fetchAndon = useCallback(async (silent = true) => {
-    if (!silent) setLoading(true);
-    try {
-      const payload = await apiClient.get<AndonLivePayload>('/andon/live', { timeoutMs: 9000 });
-      setData(payload);
-    } catch {
-      // Keep last known live board on transient network hiccup
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchAndon = useCallback(
+    async (silent = true, overrideShift?: 'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3') => {
+      if (!silent) setLoading(true);
+      try {
+        const curShift = overrideShift !== undefined ? overrideShift : viewShift;
+        const url =
+          curShift !== 'AUTO'
+            ? `/andon/live?shift=${encodeURIComponent(curShift)}`
+            : '/andon/live';
+        const payload = await apiClient.get<AndonLivePayload>(url, { timeoutMs: 9000 });
+        setData(payload);
+      } catch {
+        // Keep last known live board on transient network hiccup
+      } finally {
+        setLoading(false);
+      }
+    },
+    [viewShift]
+  );
 
   // Poll /andon/live every 10s
   useEffect(() => {
-    void fetchAndon(false);
+    void fetchAndon(false, viewShift);
     const pollId = window.setInterval(() => {
-      void fetchAndon(true);
+      void fetchAndon(true, viewShift);
     }, 10000);
     return () => window.clearInterval(pollId);
-  }, [fetchAndon]);
+  }, [fetchAndon, viewShift]);
 
   // Digital 1s clock
   useEffect(() => {
@@ -220,13 +229,50 @@ export function AndonTvBoard() {
                 GCCK THẮNG LỢI — LIVE SHOPFLOOR ANDON
               </h1>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-bold sm:text-sm">
-              <span className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-blue-700">
-                {shiftLabel}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold sm:text-sm">
+              <span
+                className={`rounded-lg border px-2.5 py-1 font-black ${
+                  viewShift === 'AUTO'
+                    ? 'border-blue-300 bg-blue-50 text-blue-800'
+                    : 'border-amber-400 bg-amber-100 text-amber-950 animate-pulse'
+                }`}
+              >
+                {viewShift === 'AUTO' ? shiftLabel : `ĐANG XEM TRƯỚC: ${viewShift.toUpperCase()}`}
               </span>
               <span className="font-mono-num text-slate-600">
                 Ngày {formatDateVn(data?.vietnamDate)}
               </span>
+
+              {/* Shift Selector Toolbar on TV Andon */}
+              <div className="flex items-center gap-1 rounded-xl border border-slate-300 bg-slate-100/90 p-1 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setViewShift('AUTO')}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-black transition-all ${
+                    viewShift === 'AUTO'
+                      ? 'border border-emerald-500 bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-white hover:text-emerald-700'
+                  }`}
+                  title="Nhận diện tự động theo giờ thực tế tại xưởng"
+                >
+                  🔴 Tự động (Live)
+                </button>
+                {(['Ca 1', 'Ca 2', 'Ca 3'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setViewShift(s)}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-black transition-all ${
+                      viewShift === s
+                        ? 'border border-blue-600 bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-700 hover:bg-white hover:text-blue-700'
+                    }`}
+                    title={`Chuyển sang xem kế hoạch & máy ${s}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

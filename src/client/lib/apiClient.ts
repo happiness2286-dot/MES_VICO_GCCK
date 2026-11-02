@@ -438,7 +438,9 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return { success: true, message: 'Đã làm mới trắng dữ liệu' } as unknown as T;
   }
   if (norm.includes('/andon/live')) {
-    return getFallbackAndonLive() as unknown as T;
+    const urlParams = new URLSearchParams(path.split('?')[1] || '');
+    const shift = urlParams.get('shift') || undefined;
+    return getFallbackAndonLive(shift) as unknown as T;
   }
   if (norm.includes('/costing')) {
     if (options.method === 'PATCH') {

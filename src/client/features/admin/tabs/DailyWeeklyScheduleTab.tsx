@@ -50,7 +50,7 @@ import {
   Modal,
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
-import { getFallbackBootstrap } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, rotateDailyPlanWeek } from '@client/lib/clientFallbackStore';
 import { DEFAULT_DRIVE_FOLDER_URL } from '@shared/driveHelper';
 import { DailyQualityReportSection } from './DailyQualityReportSection';
 import type { AdminTabCommonProps } from '../types';
@@ -992,6 +992,27 @@ export function DailyWeeklyScheduleTab({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      if (dailyRows.length === 0) {
+                        toast.warning('Chưa có danh sách kế hoạch ngày để đảo ca.');
+                        return;
+                      }
+                      const rotated = rotateDailyPlanWeek(dailyRows);
+                      setDailyRows(rotated);
+                      toast.success(
+                        'Đã đảo ca theo vòng lặp (Ca 1 ➔ Ca 3, Ca 2 ➔ Ca 1, Ca 3 ➔ Ca 2). Đặng Ngọc Long cố định Ca 2. Bấm "Lưu Kế Hoạch" để lưu lại!'
+                      );
+                    }}
+                    className="font-bold text-violet-700 border-violet-300 bg-violet-50 hover:bg-violet-100"
+                    title="Đảo ca hàng tuần theo vòng lặp: Ca 1 về Ca 3, Ca 2 về Ca 1, Ca 3 về Ca 2"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 text-violet-600" />
+                    🔄 Đảo Ca Tuần (1→3, 2→1, 3→2)
+                  </Button>
                   <Button
                     type="button"
                     variant="secondary"
