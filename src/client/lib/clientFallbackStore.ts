@@ -1894,12 +1894,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 3: Lê Minh Tuấn (Cố định Ca 1)
+    // Thợ 3: Phùng Công Thắng (NV00219 - Cố định Ca 1)
     {
       workDate,
       shiftType: 'Ca 1',
       stt: 5,
-      workerName: 'Lê Minh Tuấn',
+      workerName: 'Phùng Công Thắng',
       customer: 'Win-Win',
       spId: 'PO483-01',
       productName: 'ISHIZUEOMEGA T267.4-950',
@@ -1911,12 +1911,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 4: Nguyễn Văn Thắng (Linh hoạt Ca 1 hoặc Ca 2 tùy bố trí)
+    // Thợ 4: Phạm Văn Sam (NV00265 - Linh hoạt Ca 1 hoặc Ca 2 tùy bố trí phân xưởng)
     {
       workDate,
       shiftType: 'Ca 1',
       stt: 6,
-      workerName: 'Nguyễn Văn Thắng',
+      workerName: 'Phạm Văn Sam',
       customer: 'TFG',
       spId: 'PO-2026-015',
       productName: 'Pattern Drawing No 2CG00382',
@@ -1930,7 +1930,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
     },
 
     // ========== CA 2 (14:00 - 22:00) ==========
-    // Thợ 1: Phùng Đình Hùng (Ghép 2 máy: Tiện CNC 2 + Cắt Dây 24/24)
+    // Thợ 1: Phùng Đình Hùng (NV00282 - Ghép 2 máy: Tiện CNC 2 + Cắt Dây 24/24)
     {
       workDate,
       shiftType: 'Ca 2',
@@ -1963,12 +1963,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 2: Trịnh Văn Chung (Ghép 2 máy phay)
+    // Thợ 2: Phùng Gia Phúc (NV00267 - Ghép 2 máy phay dài + ngắn)
     {
       workDate,
       shiftType: 'Ca 2',
       stt: 9,
-      workerName: 'Trịnh Văn Chung',
+      workerName: 'Phùng Gia Phúc',
       customer: 'Win-Win',
       spId: 'PO475-04',
       productName: 'ISHIZUEOMEGA S216.3-650',
@@ -1984,7 +1984,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       workDate,
       shiftType: 'Ca 2',
       stt: 10,
-      workerName: 'Trịnh Văn Chung',
+      workerName: 'Phùng Gia Phúc',
       customer: 'Win-Win',
       spId: 'PO475-05',
       productName: 'ISHIZUEOMEGA S267.4-700',
@@ -1996,12 +1996,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 3: Bùi Văn Hưng (Cố định Ca 2)
+    // Thợ 3: Vũ Tiến Thuận (NV00283 - Cố định Ca 2)
     {
       workDate,
       shiftType: 'Ca 2',
       stt: 11,
-      workerName: 'Bùi Văn Hưng',
+      workerName: 'Vũ Tiến Thuận',
       customer: 'Win-Win',
       spId: 'PO487-03',
       productName: 'ALKTOP II 1950H',
@@ -2013,12 +2013,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 4: Đỗ Văn Nam (Định biên cố định Ca 2 vì lý do đặc biệt)
+    // Thợ 4: Đinh Văn Nhận (NV00279 - Định biên cố định Ca 2 vì lý do đặc biệt)
     {
       workDate,
       shiftType: 'Ca 2',
       stt: 12,
-      workerName: 'Đỗ Văn Nam',
+      workerName: 'Đinh Văn Nhận',
       customer: 'Hùng HD - XM Hoàng Thạch',
       spId: 'PO-2026-088',
       productName: 'Thanh đập đá vôi',
@@ -2032,12 +2032,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
     },
 
     // ========== CA 3 (22:00 - 06:00 Lights-out) ==========
-    // Thợ 1: Nguyễn Đức Thọ (Ghép Tiện CNC 1 + Cắt dây 24/24)
+    // Thợ 1: Nguyễn Trung Đông (NV00218 - Ghép Tiện CNC 1 + Cắt dây 24/24)
     {
       workDate,
       shiftType: 'Ca 3',
       stt: 13,
-      workerName: 'Nguyễn Đức Thọ',
+      workerName: 'Nguyễn Trung Đông',
       customer: 'Win-Win',
       spId: 'PO471-1',
       productName: 'SFP216',
@@ -2053,7 +2053,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       workDate,
       shiftType: 'Ca 3',
       stt: 14,
-      workerName: 'Nguyễn Đức Thọ',
+      workerName: 'Nguyễn Trung Đông',
       customer: 'Vico - Nội bộ',
       spId: 'PO485-01',
       productName: 'ALKTOP 1342 M',
@@ -2065,12 +2065,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 2: Vũ Văn Hùng (Ca 3 đêm)
+    // Thợ 2: Nguyễn Văn Thanh (NV00216 - Ca 3 đêm)
     {
       workDate,
       shiftType: 'Ca 3',
       stt: 15,
-      workerName: 'Vũ Văn Hùng',
+      workerName: 'Nguyễn Văn Thanh',
       customer: 'Win-Win',
       spId: 'PO475-01',
       productName: 'ISHIZUE 267.4-700',
@@ -2082,12 +2082,12 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 3: Nguyễn Văn Long (Ca 3 đêm)
+    // Thợ 3: Đặng Ngọc Long (NV00261 - Ca 3 đêm)
     {
       workDate,
       shiftType: 'Ca 3',
       stt: 16,
-      workerName: 'Nguyễn Văn Long',
+      workerName: 'Đặng Ngọc Long',
       customer: 'Win-Win',
       spId: 'PO475-03',
       productName: 'ISHIZUEOMEGA S216.3-550',
