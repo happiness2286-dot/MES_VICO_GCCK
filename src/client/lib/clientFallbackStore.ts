@@ -83,40 +83,391 @@ export const FALLBACK_TOOLS: CuttingTool[] = (seedData.toolsList || []).map((t: 
   usedEdgesTotal: Number(t.usedEdgesTotal ?? 0),
 }));
 
-export const FALLBACK_OPERATIONS: OperationMeta[] = (seedData.operations || []).map((o: any, idx: number) => ({
-  ncId: String(o.ncId),
-  spId: String(o.spId || `SP${String(idx + 1).padStart(3, '0')}`),
-  customer: String(o.customer || 'Vico - Nội bộ / Khách lẻ'),
-  productName: String(o.productName),
-  opName: String(o.opName),
-  stdSeconds: Number(o.stdSeconds || 1800),
-  stage: String(o.stage || '1'),
-  stepOrder: Number(o.stepOrder || idx + 1),
-  isFinalOp: Number(o.isFinalOp || (idx % 2 === 1 ? 1 : 0)),
-  defaultMachine: String(o.defaultMachine || 'Máy Tiện CNC 1'),
-  matName: String(o.matName || ''),
-  cuttingRec: String(o.cuttingRec || ''),
-  toolCode: String(o.toolCode || ''),
-  toolName: String(o.toolName || ''),
-  costPerEdge: Number(o.costPerEdge || 0),
-  stdEdgesPerPcs: Number(o.stdEdgesPerPcs || 0),
-  stdLaborCost: Number(o.stdLaborCost || 0),
-  stdMachCost: Number(o.stdMachCost || 0),
-  stdToolCost: Number(o.stdToolCost || 0),
-}));
+const LOCAL_OPERATIONS_KEY = 'GCCK_LOCAL_OPERATIONS_V1';
+const LOCAL_MACHINES_KEY = 'GCCK_LOCAL_MACHINES_V1';
+const LOCAL_WORKERS_KEY = 'GCCK_LOCAL_WORKERS_V1';
 
-export const FALLBACK_MACHINES: MachineInfo[] = (seedData.machines || []).map((m: any) => ({
-  id: String(m.id),
-  name: String(m.name),
-  group: String(m.group || 'Gia công CNC'),
-  costPerHour: Number(m.costPerHour || 250000),
-  status: (m.status || 'IDLE') as any,
-  currentWorkerName: m.currentWorkerName || null,
-  currentPoId: m.currentPoId || null,
-  currentNcId: m.currentNcId || null,
-  stopReason: m.stopReason || null,
-  updatedAt: m.updatedAt || null,
-}));
+function initFallbackOperations(): OperationMeta[] {
+  const seedOps: OperationMeta[] = (seedData.operations || []).map((o: any, idx: number) => ({
+    ncId: String(o.ncId),
+    spId: String(o.spId || `SP${String(idx + 1).padStart(3, '0')}`),
+    customer: String(o.customer || 'Vico - Nội bộ / Khách lẻ'),
+    productName: String(o.productName),
+    opName: String(o.opName),
+    stdSeconds: Number(o.stdSeconds || 1800),
+    stage: String(o.stage || '1'),
+    stepOrder: Number(o.stepOrder || idx + 1),
+    isFinalOp: Number(o.isFinalOp || (idx % 2 === 1 ? 1 : 0)),
+    defaultMachine: String(o.defaultMachine || 'Máy Tiện CNC 1'),
+    matName: String(o.matName || ''),
+    cuttingRec: String(o.cuttingRec || ''),
+    toolCode: String(o.toolCode || ''),
+    toolName: String(o.toolName || ''),
+    costPerEdge: Number(o.costPerEdge || 0),
+    stdEdgesPerPcs: Number(o.stdEdgesPerPcs || 0),
+    stdLaborCost: Number(o.stdLaborCost || 0),
+    stdMachCost: Number(o.stdMachCost || 0),
+    stdToolCost: Number(o.stdToolCost || 0),
+    isCriticalCheck: Number(o.isCriticalCheck || 0),
+    drawingUrl: o.drawingUrl ? String(o.drawingUrl) : undefined,
+    setupDocUrl: o.setupDocUrl ? String(o.setupDocUrl) : undefined,
+  }));
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_OPERATIONS_KEY);
+      if (raw) {
+        const stored: OperationMeta[] = JSON.parse(raw);
+        if (Array.isArray(stored) && stored.length > 0) {
+          const map = new Map<string, OperationMeta>();
+          for (const s of seedOps) {
+            map.set(s.ncId.toLowerCase(), s);
+          }
+          for (const st of stored) {
+            if (st && st.ncId) {
+              const existing = map.get(st.ncId.toLowerCase());
+              if (existing) {
+                map.set(st.ncId.toLowerCase(), { ...existing, ...st });
+              } else {
+                map.set(st.ncId.toLowerCase(), st);
+              }
+            }
+          }
+          return Array.from(map.values());
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return seedOps;
+}
+
+export const FALLBACK_OPERATIONS: OperationMeta[] = initFallbackOperations();
+
+export function saveFallbackOperationsToStorage(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_OPERATIONS_KEY, JSON.stringify(FALLBACK_OPERATIONS));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function updateFallbackOperation(ncId: string, patch: Partial<OperationMeta>): OperationMeta {
+  const normId = ncId.toLowerCase();
+  const idx = FALLBACK_OPERATIONS.findIndex((o) => o.ncId.toLowerCase() === normId);
+  if (idx < 0) {
+    throw new Error(`Không tìm thấy nguyên công ${ncId}`);
+  }
+  const current = FALLBACK_OPERATIONS[idx];
+  const stdSeconds =
+    patch.stdSeconds !== undefined
+      ? Math.max(10, Math.round(Number(patch.stdSeconds)))
+      : current.stdSeconds;
+  const costPerEdge = Number(current.costPerEdge || 25000);
+  const stdEdgesPerPcs = Number(((stdSeconds / 1800) * 1.0).toFixed(2));
+  const stdLaborCost = Math.round(stdSeconds * 13.89);
+  const stdMachCost = Math.round((stdSeconds / 3600) * 350000);
+  const stdToolCost = Math.round(stdEdgesPerPcs * costPerEdge);
+
+  const updated: OperationMeta = {
+    ...current,
+    ...patch,
+    stdSeconds,
+    stdEdgesPerPcs,
+    stdLaborCost,
+    stdMachCost,
+    stdToolCost,
+    isCriticalCheck:
+      patch.isCriticalCheck !== undefined
+        ? patch.isCriticalCheck
+          ? 1
+          : 0
+        : current.isCriticalCheck,
+  };
+  FALLBACK_OPERATIONS[idx] = updated;
+  saveFallbackOperationsToStorage();
+  return updated;
+}
+
+export function deleteFallbackOperation(ncId: string): void {
+  const normId = ncId.toLowerCase();
+  const idx = FALLBACK_OPERATIONS.findIndex((o) => o.ncId.toLowerCase() === normId);
+  if (idx >= 0) {
+    const deleted = FALLBACK_OPERATIONS[idx];
+    FALLBACK_OPERATIONS.splice(idx, 1);
+    const siblingOps = FALLBACK_OPERATIONS.filter((o) => o.spId === deleted.spId).sort(
+      (a, b) => a.stepOrder - b.stepOrder
+    );
+    siblingOps.forEach((op, index) => {
+      op.stepOrder = index + 1;
+      op.isFinalOp = index === siblingOps.length - 1 ? 1 : 0;
+      op.stage = String(index + 1);
+    });
+    saveFallbackOperationsToStorage();
+  }
+}
+
+export function createFallbackOperations(data: {
+  customer: string;
+  productName: string;
+  matName?: string;
+  defaultMachine?: string;
+  toolCode?: string;
+  cuttingRec?: string;
+  rawLines?: string;
+}): { createdIds: string[]; items: OperationMeta[] } {
+  const maxNum = FALLBACK_OPERATIONS.reduce((acc, o) => {
+    const m = o.ncId.match(/\d+/);
+    return m ? Math.max(acc, parseInt(m[0], 10)) : acc;
+  }, 0);
+  let nextNum = maxNum + 1;
+
+  let prod = FALLBACK_PRODUCTS.find(
+    (p) => p.productName.toLowerCase() === (data.productName || '').trim().toLowerCase()
+  );
+  const spId = prod ? prod.spId : `SP${String(FALLBACK_PRODUCTS.length + 1).padStart(3, '0')}`;
+  if (!prod) {
+    FALLBACK_PRODUCTS.push({
+      spId,
+      customer: data.customer || 'Vico - Nội bộ / Khách lẻ',
+      productName: data.productName,
+      matName: data.matName || 'Thép C45',
+      quotedPrice: 0,
+      rawMaterialCost: 0,
+      outsourceCost: 0,
+      drawingUrl: '',
+      techDocUrl: '',
+    });
+  }
+
+  const lines = (data.rawLines || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const createdIds: string[] = [];
+  const existingSpOps = FALLBACK_OPERATIONS.filter((o) => o.spId === spId);
+  let currentStep = existingSpOps.length + 1;
+
+  if (lines.length > 0) {
+    for (const line of lines) {
+      const parts = line.split('|').map((p) => p.trim());
+      const opName = parts[0] || 'Gia công cơ khí';
+      const stdSeconds = Math.max(10, Number(parts[1]) || 1800);
+      const ncId = `NC${String(nextNum++).padStart(3, '0')}`;
+      const stdEdges = Number(((stdSeconds / 1800) * 1.0).toFixed(2));
+      const op: OperationMeta = {
+        ncId,
+        spId,
+        customer: data.customer || 'Vico - Nội bộ / Khách lẻ',
+        productName: data.productName,
+        opName,
+        stdSeconds,
+        stage: String(currentStep),
+        stepOrder: currentStep++,
+        isFinalOp: 0,
+        defaultMachine: data.defaultMachine || 'Máy Tiện CNC 1',
+        matName: data.matName || 'Thép C45',
+        cuttingRec: data.cuttingRec || 'Vc=100m/p | f=0.15mm/v',
+        toolCode: data.toolCode || 'T01',
+        toolName: 'Mảnh tiện thô CNMG',
+        costPerEdge: 25000,
+        stdEdgesPerPcs: stdEdges,
+        stdLaborCost: Math.round(stdSeconds * 13.89),
+        stdMachCost: Math.round((stdSeconds / 3600) * 350000),
+        stdToolCost: Math.round(stdEdges * 25000),
+        isCriticalCheck: 0,
+      };
+      FALLBACK_OPERATIONS.push(op);
+      createdIds.push(ncId);
+    }
+  } else {
+    const ncId = `NC${String(nextNum++).padStart(3, '0')}`;
+    const stdSeconds = 1800;
+    const op: OperationMeta = {
+      ncId,
+      spId,
+      customer: data.customer || 'Vico - Nội bộ / Khách lẻ',
+      productName: data.productName,
+      opName: 'Gia công hoàn thiện',
+      stdSeconds,
+      stage: String(currentStep),
+      stepOrder: currentStep++,
+      isFinalOp: 1,
+      defaultMachine: data.defaultMachine || 'Máy Tiện CNC 1',
+      matName: data.matName || 'Thép C45',
+      cuttingRec: data.cuttingRec || 'Vc=100m/p | f=0.15mm/v',
+      toolCode: data.toolCode || 'T01',
+      toolName: 'Mảnh tiện thô CNMG',
+      costPerEdge: 25000,
+      stdEdgesPerPcs: 1.0,
+      stdLaborCost: Math.round(stdSeconds * 13.89),
+      stdMachCost: Math.round((stdSeconds / 3600) * 350000),
+      stdToolCost: 25000,
+      isCriticalCheck: 0,
+    };
+    FALLBACK_OPERATIONS.push(op);
+    createdIds.push(ncId);
+  }
+
+  const allSpOps = FALLBACK_OPERATIONS.filter((o) => o.spId === spId).sort(
+    (a, b) => a.stepOrder - b.stepOrder
+  );
+  allSpOps.forEach((op, idx) => {
+    op.stepOrder = idx + 1;
+    op.isFinalOp = idx === allSpOps.length - 1 ? 1 : 0;
+    op.stage = String(idx + 1);
+  });
+
+  saveFallbackOperationsToStorage();
+  return { createdIds, items: FALLBACK_OPERATIONS };
+}
+
+export function importFallbackOperations(
+  rows: any[]
+): { success: boolean; createdCount: number; items: OperationMeta[] } {
+  let createdCount = 0;
+  const maxNum = FALLBACK_OPERATIONS.reduce((acc, o) => {
+    const m = o.ncId.match(/\d+/);
+    return m ? Math.max(acc, parseInt(m[0], 10)) : acc;
+  }, 0);
+  let nextNum = maxNum + 1;
+
+  for (const r of rows) {
+    if (!r.productName) continue;
+    const ncId = `NC${String(nextNum++).padStart(3, '0')}`;
+    let prod = FALLBACK_PRODUCTS.find(
+      (p) => p.productName.toLowerCase() === String(r.productName).trim().toLowerCase()
+    );
+    let spId = prod ? prod.spId : `SP${String(FALLBACK_PRODUCTS.length + 1).padStart(3, '0')}`;
+    const stdSeconds = Math.max(10, Number(r.stdSeconds) || 1800);
+    const op: OperationMeta = {
+      ncId,
+      spId,
+      customer: String(r.customer || 'Vico - Nội bộ / Khách lẻ').trim(),
+      productName: String(r.productName).trim(),
+      opName: String(r.opName || 'Gia công tiện phay CNC').trim(),
+      stdSeconds,
+      stage: '1',
+      stepOrder: 1,
+      isFinalOp: 1,
+      defaultMachine: String(r.defaultMachine || 'Máy Tiện CNC 1').trim(),
+      matName: String(r.matName || 'Thép C45').trim(),
+      cuttingRec: String(r.cuttingRec || 'Vc=100m/p | f=0.15mm/v').trim(),
+      toolCode: String(r.toolCode || 'T01').trim(),
+      toolName: 'Mảnh tiện thô CNMG',
+      costPerEdge: 25000,
+      stdEdgesPerPcs: Number(((stdSeconds / 1800) * 1.0).toFixed(2)),
+      stdLaborCost: Math.round(stdSeconds * 13.89),
+      stdMachCost: Math.round((stdSeconds / 3600) * 350000),
+      stdToolCost: 25000,
+      isCriticalCheck: 0,
+    };
+    FALLBACK_OPERATIONS.push(op);
+    createdCount++;
+  }
+  saveFallbackOperationsToStorage();
+  return { success: true, createdCount, items: FALLBACK_OPERATIONS };
+}
+
+function initFallbackMachines(): MachineInfo[] {
+  const seedMachines: MachineInfo[] = (seedData.machines || []).map((m: any) => ({
+    id: String(m.id),
+    name: String(m.name),
+    group: String(m.group || 'Gia công CNC'),
+    costPerHour: Number(m.costPerHour || 250000),
+    status: (m.status || 'IDLE') as any,
+    currentWorkerName: m.currentWorkerName || null,
+    currentPoId: m.currentPoId || null,
+    currentNcId: m.currentNcId || null,
+    stopReason: m.stopReason || null,
+    updatedAt: m.updatedAt || null,
+  }));
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_MACHINES_KEY);
+      if (raw) {
+        const stored: MachineInfo[] = JSON.parse(raw);
+        if (Array.isArray(stored) && stored.length > 0) {
+          const map = new Map<string, MachineInfo>();
+          for (const s of seedMachines) map.set(s.id.toLowerCase(), s);
+          for (const st of stored) {
+            if (st && st.id) {
+              const existing = map.get(st.id.toLowerCase());
+              if (existing) map.set(st.id.toLowerCase(), { ...existing, ...st });
+              else map.set(st.id.toLowerCase(), st);
+            }
+          }
+          return Array.from(map.values());
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return seedMachines;
+}
+
+export const FALLBACK_MACHINES: MachineInfo[] = initFallbackMachines();
+
+export function saveFallbackMachinesToStorage(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_MACHINES_KEY, JSON.stringify(FALLBACK_MACHINES));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function saveFallbackMachine(m: Partial<MachineInfo>): MachineInfo[] {
+  if (!m.id) return FALLBACK_MACHINES;
+  const idx = FALLBACK_MACHINES.findIndex((x) => x.id.toLowerCase() === m.id!.toLowerCase());
+  if (idx >= 0) {
+    FALLBACK_MACHINES[idx] = { ...FALLBACK_MACHINES[idx], ...m } as MachineInfo;
+  } else {
+    FALLBACK_MACHINES.push({
+      id: m.id,
+      name: m.name || m.id,
+      group: m.group || 'Gia công CNC',
+      costPerHour: Number(m.costPerHour) || 250000,
+      status: 'IDLE',
+      currentWorkerName: null,
+      currentPoId: null,
+      currentNcId: null,
+      stopReason: null,
+      updatedAt: null,
+    });
+  }
+  saveFallbackMachinesToStorage();
+  return FALLBACK_MACHINES;
+}
+
+export function saveFallbackTool(
+  tool: Partial<CuttingTool>
+): { success: boolean; message: string; item: CuttingTool } {
+  const code = (tool.code || '').trim();
+  const idx = FALLBACK_TOOLS.findIndex((t) => t.code.toLowerCase() === code.toLowerCase());
+  const item: CuttingTool = {
+    code,
+    name: tool.name || code,
+    group: tool.group || 'Tiện CNC',
+    buyPrice: Number(tool.buyPrice) || 0,
+    edges: Number(tool.edges) || 1,
+    costPerEdge:
+      Number(tool.costPerEdge) ||
+      Math.round((Number(tool.buyPrice) || 0) / Math.max(1, Number(tool.edges) || 1)),
+    stockQty: Number(tool.stockQty) || 0,
+    usedEdgesTotal: Number(tool.usedEdgesTotal) || 0,
+  };
+  if (idx >= 0) {
+    FALLBACK_TOOLS[idx] = item;
+  } else {
+    FALLBACK_TOOLS.push(item);
+  }
+  return { success: true, message: 'Đã lưu thông tin dao cụ', item };
+}
 
 function initFallbackOrders(): PurchaseOrderInfo[] {
   const seedOrders: PurchaseOrderInfo[] = (seedData.ordersList || []).map((p: any) => {
@@ -198,28 +549,128 @@ export function saveFallbackOrdersToStorage(): void {
   }
 }
 
-export const FALLBACK_WORKERS: WorkerDto[] = (seedData.workers || []).map((w: any) => {
+function initFallbackWorkers(): WorkerDto[] {
+  const seedWorkers: WorkerDto[] = (seedData.workers || []).map((w: any) => {
+    let appRole: AppRole = 'WORKER';
+    if (w.id === 'NV00053' || w.role === 'QĐ' || w.title?.includes('Quản đốc')) {
+      appRole = 'ADMIN';
+    } else if (w.id === 'NV00266' || w.role === 'TC' || w.title?.includes('Trưởng ca') || w.title?.includes('QC')) {
+      appRole = 'SHIFT_LEADER';
+    } else if (w.role === 'KT') {
+      appRole = 'SHIFT_LEADER';
+    }
+
+    return {
+      id: String(w.id),
+      name: String(w.name),
+      username: String(w.username || w.name),
+      role: String(w.role || 'CN'),
+      appRole,
+      title: String(w.title || 'Công nhân'),
+      salaryMode: String(w.salaryMode || 'KHOAN'),
+      baseSalary: Number(w.baseSalary || 400000),
+      isActive: w.isActive !== undefined ? Number(w.isActive) : 1,
+      isLinked: true,
+      chatId: w.chatId ? String(w.chatId) : null,
+    };
+  });
+
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_WORKERS_KEY);
+      if (raw) {
+        const stored: WorkerDto[] = JSON.parse(raw);
+        if (Array.isArray(stored) && stored.length > 0) {
+          const map = new Map<string, WorkerDto>();
+          for (const s of seedWorkers) map.set(s.id.toLowerCase(), s);
+          for (const st of stored) {
+            if (st && st.id) {
+              const existing = map.get(st.id.toLowerCase());
+              if (existing) map.set(st.id.toLowerCase(), { ...existing, ...st });
+              else map.set(st.id.toLowerCase(), st);
+            }
+          }
+          return Array.from(map.values());
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return seedWorkers;
+}
+
+export const FALLBACK_WORKERS: WorkerDto[] = initFallbackWorkers();
+
+export function saveFallbackWorkersToStorage(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_WORKERS_KEY, JSON.stringify(FALLBACK_WORKERS));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function saveFallbackWorker(w: Partial<WorkerDto>): WorkerDto[] {
+  if (!w.id) return FALLBACK_WORKERS;
+  const idx = FALLBACK_WORKERS.findIndex((x) => x.id.toLowerCase() === w.id!.toLowerCase());
   let appRole: AppRole = 'WORKER';
   if (w.id === 'NV00053' || w.role === 'QĐ' || w.title?.includes('Quản đốc')) {
     appRole = 'ADMIN';
-  } else if (w.id === 'NV00266' || w.role === 'TC' || w.title?.includes('Trưởng ca') || w.title?.includes('QC')) {
-    appRole = 'SHIFT_LEADER';
-  } else if (w.role === 'KT') {
+  } else if (w.id === 'NV00266' || w.role === 'TC' || w.role === 'KT' || w.title?.includes('Trưởng ca') || w.title?.includes('QC')) {
     appRole = 'SHIFT_LEADER';
   }
-
-  return {
-    id: String(w.id),
-    name: String(w.name),
-    username: String(w.username || w.name),
-    role: String(w.role || 'CN'),
+  const workerObj: WorkerDto = {
+    id: w.id.toUpperCase(),
+    name: w.name || w.id,
+    username: (w.username || w.id).toLowerCase(),
+    role: w.role || 'CN',
     appRole,
-    title: String(w.title || 'Công nhân'),
-    salaryMode: String(w.salaryMode || 'KHOAN'),
-    isLinked: true,
+    title: w.title || 'Công nhân đứng máy CNC',
+    salaryMode: w.salaryMode || 'Khoán 1 + 0.33 máy',
+    baseSalary: Number(w.baseSalary) || 400000,
+    isActive: w.isActive !== undefined ? Number(w.isActive) : 1,
+    isLinked: Boolean(w.chatId),
     chatId: w.chatId ? String(w.chatId) : null,
   };
-});
+  if (idx >= 0) {
+    FALLBACK_WORKERS[idx] = { ...FALLBACK_WORKERS[idx], ...workerObj };
+  } else {
+    FALLBACK_WORKERS.push(workerObj);
+  }
+  saveFallbackWorkersToStorage();
+  return FALLBACK_WORKERS;
+}
+
+export function toggleActiveFallbackWorker(
+  workerId: string
+): { success: boolean; isActive: number; message: string; workers: WorkerDto[] } {
+  const idx = FALLBACK_WORKERS.findIndex((x) => x.id.toLowerCase() === workerId.toLowerCase());
+  if (idx < 0) throw new Error('Không tìm thấy tài khoản nhân viên');
+  const nextActive = FALLBACK_WORKERS[idx].isActive === 0 ? 1 : 0;
+  FALLBACK_WORKERS[idx].isActive = nextActive;
+  saveFallbackWorkersToStorage();
+  return {
+    success: true,
+    isActive: nextActive,
+    message:
+      nextActive === 1
+        ? `Đã mở khóa tài khoản ${FALLBACK_WORKERS[idx].name}`
+        : `Đã khóa tài khoản ${FALLBACK_WORKERS[idx].name}`,
+    workers: FALLBACK_WORKERS,
+  };
+}
+
+export function deleteFallbackWorker(workerId: string): WorkerDto[] {
+  const idx = FALLBACK_WORKERS.findIndex((x) => x.id.toLowerCase() === workerId.toLowerCase());
+  if (idx >= 0) {
+    FALLBACK_WORKERS.splice(idx, 1);
+    saveFallbackWorkersToStorage();
+  }
+  return FALLBACK_WORKERS;
+}
 
 export const FALLBACK_PROFILES: QuickSwitchProfile[] = FALLBACK_WORKERS.filter(
   (w) => w.isActive !== 0
@@ -365,6 +816,20 @@ export function saveClientStoredLog(log: any): void {
   }
 }
 
+export function updateFallbackLog(id: string | number, patch: any): void {
+  try {
+    const existing = getClientStoredLogs();
+    const key = String(id);
+    const idx = existing.findIndex((e) => String(e.id) === key || String(e.recordUid) === key);
+    if (idx >= 0) {
+      existing[idx] = { ...existing[idx], ...patch };
+      localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 200)));
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function getAllFallbackLogs(): any[] {
   const stored = getClientStoredLogs();
   const seen = new Set<string>();
@@ -419,6 +884,24 @@ export function saveFallbackHandover(row: HandoverSlipRow): void {
     localStorage.setItem(LOCAL_HANDOVERS_KEY, JSON.stringify(list));
   } catch {
     // ignore
+  }
+}
+
+export function updateFallbackHandover(
+  id: string,
+  patch: Partial<HandoverSlipRow>
+): HandoverSlipRow | null {
+  try {
+    const list = getFallbackHandovers();
+    const idx = list.findIndex((h) => String(h.id) === String(id));
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...patch };
+      localStorage.setItem(LOCAL_HANDOVERS_KEY, JSON.stringify(list));
+      return list[idx];
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 

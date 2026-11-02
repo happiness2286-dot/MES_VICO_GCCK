@@ -18,13 +18,30 @@ import {
   getFallbackUser,
   getFallbackWeeklyReport,
   saveFallbackHandover,
+  updateFallbackHandover,
+  deleteFallbackHandover,
   setCustomPin,
   submitDirectToGoogleAppsScript,
   verifyFallbackPin,
   findFallbackWorker,
+  updateFallbackOperation,
+  deleteFallbackOperation,
+  createFallbackOperations,
+  importFallbackOperations,
+  saveFallbackMachine,
+  saveFallbackWorker,
+  toggleActiveFallbackWorker,
+  deleteFallbackWorker,
+  saveFallbackTool,
+  updateFallbackLog,
+  clearAllClientStoredLogs,
+  clearAllFallbackHandovers,
   FALLBACK_PRODUCTS,
   FALLBACK_ORDERS,
   FALLBACK_WORKERS,
+  FALLBACK_OPERATIONS,
+  FALLBACK_MACHINES,
+  FALLBACK_TOOLS,
 } from './clientFallbackStore';
 import { isStaticHost } from './navigation';
 
@@ -308,12 +325,73 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     }
     return { items: FALLBACK_ORDERS, deliveries: getFallbackDeliveries() } as unknown as T;
   }
+  if (norm.includes('/master/operations')) {
+    if (options.method === 'PATCH') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const ncId = decodeURIComponent(parts[parts.length - 1] || '');
+      const updated = updateFallbackOperation(ncId, (options.json || {}) as any);
+      return { success: true, item: updated } as unknown as T;
+    }
+    if (options.method === 'DELETE') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const ncId = decodeURIComponent(parts[parts.length - 1] || '');
+      deleteFallbackOperation(ncId);
+      return { success: true } as unknown as T;
+    }
+    if (options.method === 'POST') {
+      if (norm.includes('/import-xlsx')) {
+        const res = importFallbackOperations(((options.json as any)?.excelRows || []) as any[]);
+        return res as unknown as T;
+      }
+      const res = createFallbackOperations((options.json || {}) as any);
+      return res as unknown as T;
+    }
+    return FALLBACK_OPERATIONS as unknown as T;
+  }
+  if (norm.includes('/master/machines')) {
+    if (options.method === 'POST' || options.method === 'PATCH') {
+      const items = saveFallbackMachine((options.json || {}) as any);
+      return { success: true, items } as unknown as T;
+    }
+    return { items: FALLBACK_MACHINES } as unknown as T;
+  }
+  if (norm.includes('/master/tools')) {
+    if (norm.includes('swap')) {
+      return { success: true, message: 'Đã đổi dao thành công' } as unknown as T;
+    }
+    if (options.method === 'POST') {
+      const res = saveFallbackTool((options.json || {}) as any);
+      return res as unknown as T;
+    }
+    return { items: FALLBACK_TOOLS } as unknown as T;
+  }
   if (norm.includes('/master/workers')) {
     if (norm.includes('toggle-active')) {
-      return { success: true, isActive: 1, message: 'Thao tác thành công', workers: FALLBACK_WORKERS } as unknown as T;
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const workerId = parts[parts.length - 2] || '';
+      const res = toggleActiveFallbackWorker(workerId);
+      return res as unknown as T;
     }
     if (norm.includes('reset-pin')) {
-      return { success: true, message: 'Đã đặt lại mã PIN về mặc định (1234)', workers: FALLBACK_WORKERS } as unknown as T;
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const workerId = parts[parts.length - 2] || '';
+      const pin = String((options.json as any)?.pin || '1234');
+      setCustomPin(workerId, pin);
+      return {
+        success: true,
+        message: `Đã đặt lại mã PIN về "${pin}"`,
+        workers: FALLBACK_WORKERS,
+      } as unknown as T;
+    }
+    if (options.method === 'DELETE') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const workerId = parts[parts.length - 1] || '';
+      const workers = deleteFallbackWorker(workerId);
+      return { success: true, message: 'Đã xóa tài khoản', workers } as unknown as T;
+    }
+    if (options.method === 'POST') {
+      const workers = saveFallbackWorker((options.json || {}) as any);
+      return { success: true, message: 'Thao tác thành công', workers } as unknown as T;
     }
     return { success: true, message: 'Thao tác thành công', workers: FALLBACK_WORKERS } as unknown as T;
   }
@@ -329,6 +407,8 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return { success: true, message: 'Đã liên kết Telegram thành công' } as unknown as T;
   }
   if (norm.includes('/admin/reset-production-data')) {
+    clearAllClientStoredLogs();
+    clearAllFallbackHandovers();
     return { success: true, message: 'Đã làm mới trắng dữ liệu' } as unknown as T;
   }
   if (norm.includes('/andon/live')) {
@@ -354,7 +434,15 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return getFallbackCosting() as unknown as T;
   }
   if (norm.includes('/logs')) {
-    if (options.method === 'PATCH' || options.method === 'DELETE') {
+    if (options.method === 'PATCH') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const logId = parts[parts.length - 1];
+      if (logId && options.json) {
+        updateFallbackLog(logId, options.json);
+      }
+      return { success: true } as unknown as T;
+    }
+    if (options.method === 'DELETE') {
       return { success: true } as unknown as T;
     }
     return { items: getAllFallbackLogs() } as unknown as T;
@@ -407,9 +495,6 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       warnings: [],
     } as unknown as T;
   }
-  if (norm.includes('/master/tools/swap')) {
-    return { success: true, message: 'Đã đổi dao thành công' } as unknown as T;
-  }
   if (norm.includes('/reports') && options.method === 'POST') {
     const body = (options.json || {}) as any;
     void submitDirectToGoogleAppsScript(body);
@@ -417,6 +502,19 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return mockRes as unknown as T;
   }
   if (norm.includes('/handovers')) {
+    if (options.method === 'DELETE') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const id = parts[parts.length - 1] || '';
+      deleteFallbackHandover(id);
+      return { success: true } as unknown as T;
+    }
+    if (options.method === 'PATCH') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const id = parts[parts.length - 1] || '';
+      const body = options.json as any;
+      const updated = updateFallbackHandover(id, body || {});
+      return { success: true, item: updated || body } as unknown as T;
+    }
     if (options.method === 'POST') {
       const body = options.json as any;
       if (body) saveFallbackHandover(body);
