@@ -541,7 +541,13 @@ export function DailyWeeklyScheduleTab({
   // Filtered rows by shift and search query
   const filteredDailyRows = useMemo(() => {
     return dailyRows.filter((r) => {
-      if (selectedShift !== 'ALL' && r.shiftType !== selectedShift) return false;
+      if (selectedShift !== 'ALL') {
+        if (selectedShift === 'TĂNG CA') {
+          if (!r.isOvertime && r.shiftType !== 'Tăng ca' && !(r.note && /tăng ca|ot/i.test(r.note))) return false;
+        } else if (r.shiftType !== selectedShift) {
+          return false;
+        }
+      }
       if (searchFilter.trim()) {
         const q = searchFilter.toLowerCase();
         const matches =
@@ -561,7 +567,13 @@ export function DailyWeeklyScheduleTab({
   const rowsByWorker = useMemo(() => {
     const map = new Map<string, Array<{ row: DailyPlanRow; originalIdx: number }>>();
     dailyRows.forEach((row, originalIdx) => {
-      if (selectedShift !== 'ALL' && row.shiftType !== selectedShift) return;
+      if (selectedShift !== 'ALL') {
+        if (selectedShift === 'TĂNG CA') {
+          if (!row.isOvertime && row.shiftType !== 'Tăng ca' && !(row.note && /tăng ca|ot/i.test(row.note))) return;
+        } else if (row.shiftType !== selectedShift) {
+          return;
+        }
+      }
       if (searchFilter.trim()) {
         const q = searchFilter.toLowerCase();
         const matches =
@@ -579,6 +591,22 @@ export function DailyWeeklyScheduleTab({
     });
     return Array.from(map.entries());
   }, [dailyRows, selectedShift, searchFilter]);
+
+  // Overtime statistics
+  const totalOvertimeTasks = useMemo(() => {
+    return dailyRows.filter(
+      (r) => r.isOvertime || r.shiftType === 'Tăng ca' || (r.note && /tăng ca|ot/i.test(r.note))
+    ).length;
+  }, [dailyRows]);
+
+  const totalOvertimeHours = useMemo(() => {
+    return dailyRows.reduce((sum, r) => {
+      if (r.isOvertime || r.shiftType === 'Tăng ca' || (r.note && /tăng ca|ot/i.test(r.note))) {
+        return sum + (Number(r.overtimeHours) || 2);
+      }
+      return sum;
+    }, 0);
+  }, [dailyRows]);
 
   // ==================== TAB 2: WEEKLY REPORT STATE ====================
   const [weeklyStart, setWeeklyStart] = useState<string>('2026-10-15');
@@ -983,18 +1011,22 @@ export function DailyWeeklyScheduleTab({
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-700">Ca làm việc:</span>
                     <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-                      {['ALL', 'Ca 1', 'Ca 2', 'Ca 3', 'Ca Hành chính'].map((s) => (
+                      {['ALL', 'Ca 1', 'Ca 2', 'Ca 3', 'Ca Hành chính', 'TĂNG CA'].map((s) => (
                         <button
                           key={s}
                           type="button"
                           onClick={() => setSelectedShift(s)}
                           className={`rounded-md px-2.5 py-1 text-xs font-bold transition-all ${
                             selectedShift === s
-                              ? 'bg-white text-blue-700 shadow-sm'
-                              : 'text-slate-600 hover:text-slate-900'
+                              ? s === 'TĂNG CA'
+                                ? 'bg-orange-600 text-white shadow-sm'
+                                : 'bg-white text-blue-700 shadow-sm'
+                              : s === 'TĂNG CA'
+                                ? 'text-orange-700 hover:text-orange-950 bg-orange-100/60 font-black'
+                                : 'text-slate-600 hover:text-slate-900'
                           }`}
                         >
-                          {s === 'ALL' ? 'Tất Cả Ca' : s}
+                          {s === 'ALL' ? 'Tất Cả Ca' : s === 'TĂNG CA' ? '🔥 Tăng Ca (OT)' : s}
                         </button>
                       ))}
                     </div>
@@ -1014,6 +1046,12 @@ export function DailyWeeklyScheduleTab({
                 </div>
 
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                  {totalOvertimeTasks > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-orange-300 bg-orange-100 px-2.5 py-0.5 text-xs font-black text-orange-900 shadow-xs">
+                      <Flame className="h-3.5 w-3.5 text-orange-600" />
+                      Tăng ca: {totalOvertimeTasks} việc ({totalOvertimeHours}h)
+                    </span>
+                  )}
                   <span>Tổng số dòng: <strong>{filteredDailyRows.length}</strong></span>
                   <span>&bull;</span>
                   <span>Thợ phân công: <strong>{rowsByWorker.length} thợ</strong></span>
@@ -1076,7 +1114,25 @@ export function DailyWeeklyScheduleTab({
             </Card>
           ) : (
             <div className="space-y-3">
-              {rowsByWorker.map(([workerName, workerRows]) => (
+              {rowsByWorker.map(([workerName, workerRows]) => {
+                const hasWorkerOt = workerRows.some(
+                  ({ row }) =>
+                    row.isOvertime ||
+                    row.shiftType === 'Tăng ca' ||
+                    (row.note && /tăng ca|ot/i.test(row.note))
+                );
+                const workerOtHours = workerRows.reduce((sum, { row }) => {
+                  if (
+                    row.isOvertime ||
+                    row.shiftType === 'Tăng ca' ||
+                    (row.note && /tăng ca|ot/i.test(row.note))
+                  ) {
+                    return sum + (Number(row.overtimeHours) || 2);
+                  }
+                  return sum;
+                }, 0);
+
+                return (
                 <Card key={workerName} className="overflow-hidden border-slate-200 bg-white p-0">
                   {/* Worker Header Header */}
                   <div className="flex flex-wrap items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
@@ -1103,7 +1159,15 @@ export function DailyWeeklyScheduleTab({
                         <option value="Ca 2">Ca 2</option>
                         <option value="Ca 3">Ca 3</option>
                         <option value="Ca Hành chính">Ca Hành chính</option>
+                        <option value="Tăng ca">🔥 Tăng ca</option>
                       </select>
+
+                      {hasWorkerOt && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-orange-400 bg-orange-100 px-2 py-0.5 text-xs font-black text-orange-950 shadow-2xs">
+                          <Flame className="h-3 w-3 text-orange-600 animate-pulse" />
+                          TĂNG CA (+{workerOtHours}h)
+                        </span>
+                      )}
 
                       <span className="text-xs text-slate-500">
                         ({workerRows.length} mặt hàng / nguyên công)
@@ -1125,18 +1189,19 @@ export function DailyWeeklyScheduleTab({
 
                   {/* 3-Tier Cascade Table */}
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[900px] border-collapse text-left text-xs text-slate-900">
+                    <table className="w-full min-w-[950px] border-collapse text-left text-xs text-slate-900">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-100/70 text-[11px] font-extrabold uppercase text-slate-700">
-                          <th className="w-10 px-3 py-2 text-center">#</th>
-                          <th className="w-40 px-3 py-2">Khách Hàng (1)</th>
-                          <th className="px-3 py-2">Sản Phẩm / Bản Vẽ (2)</th>
-                          <th className="px-3 py-2">Công Đoạn HT (3)</th>
-                          <th className="w-24 px-2 py-2 text-center">Kế Hoạch</th>
-                          <th className="w-48 px-3 py-2">Máy / Ca</th>
-                          <th className="w-44 px-3 py-2">Ghi Chú</th>
-                          <th className="w-20 px-2 py-2 text-center">Mã QR</th>
-                          <th className="w-10 px-2 py-2 text-center"></th>
+                          <th className="w-10 px-2 py-2 text-center">#</th>
+                          <th className="w-36 px-2 py-2">Khách Hàng (1)</th>
+                          <th className="px-2 py-2">Sản Phẩm / Bản Vẽ (2)</th>
+                          <th className="px-2 py-2">Công Đoạn HT (3)</th>
+                          <th className="w-20 px-2 py-2 text-center">Kế Hoạch</th>
+                          <th className="w-40 px-2 py-2">Máy / Ca</th>
+                          <th className="w-32 px-2 py-2 text-center">🔥 Tăng Ca (OT)</th>
+                          <th className="w-36 px-2 py-2">Ghi Chú</th>
+                          <th className="w-16 px-1 py-2 text-center">Mã QR</th>
+                          <th className="w-10 px-1 py-2 text-center"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -1156,7 +1221,7 @@ export function DailyWeeklyScheduleTab({
 
                           return (
                             <tr key={originalIdx} className="hover:bg-blue-50/30">
-                              <td className="px-3 py-2 text-center font-mono font-bold text-slate-500">
+                              <td className="px-2 py-1.5 text-center font-mono font-bold text-slate-500">
                                 {rowSubIdx + 1}
                               </td>
 
@@ -1251,7 +1316,7 @@ export function DailyWeeklyScheduleTab({
                                       Number(e.target.value) || 0
                                     )
                                   }
-                                  className="font-mono-num h-8 w-20 rounded-md border border-slate-300 px-1 text-center text-xs font-extrabold text-blue-700 focus:border-blue-600 focus:outline-none"
+                                  className="font-mono-num h-8 w-18 rounded-md border border-slate-300 px-1 text-center text-xs font-extrabold text-blue-700 focus:border-blue-600 focus:outline-none"
                                 />
                               </td>
 
@@ -1275,6 +1340,49 @@ export function DailyWeeklyScheduleTab({
                                       <option value={row.machineName}>{row.machineName}</option>
                                     )}
                                 </select>
+                              </td>
+
+                              {/* Cột TĂNG CA (OT) */}
+                              <td className="px-2 py-1.5 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextVal = !row.isOvertime;
+                                      handleRowChange(originalIdx, 'isOvertime', nextVal);
+                                      if (nextVal && !row.overtimeHours) {
+                                        handleRowChange(originalIdx, 'overtimeHours', 2);
+                                      }
+                                    }}
+                                    className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-black transition-all ${
+                                      row.isOvertime
+                                        ? 'border border-orange-500 bg-orange-500 text-white shadow-xs'
+                                        : 'border border-slate-300 bg-slate-50 text-slate-500 hover:border-orange-400 hover:text-orange-600'
+                                    }`}
+                                    title="Bấm để bật/tắt chế độ Tăng Ca cho công việc này"
+                                  >
+                                    <Flame className="h-3 w-3" />
+                                    {row.isOvertime ? 'TĂNG CA' : 'Thường'}
+                                  </button>
+                                  {row.isOvertime && (
+                                    <input
+                                      type="number"
+                                      min={0.5}
+                                      max={12}
+                                      step={0.5}
+                                      value={row.overtimeHours ?? 2}
+                                      onChange={(e) =>
+                                        handleRowChange(
+                                          originalIdx,
+                                          'overtimeHours',
+                                          Number(e.target.value) || 0
+                                        )
+                                      }
+                                      className="font-mono-num h-7 w-12 rounded border border-orange-400 bg-orange-50 text-center text-xs font-black text-orange-950 focus:outline-none"
+                                      title="Số giờ tăng ca"
+                                    />
+                                  )}
+                                </div>
                               </td>
 
                               {/* Ghi chú */}
@@ -1317,7 +1425,8 @@ export function DailyWeeklyScheduleTab({
                     </table>
                   </div>
                 </Card>
-              ))}
+              );
+            })}
             </div>
           )}
 
@@ -2166,6 +2275,7 @@ export function DailyWeeklyScheduleTab({
               <option value="Ca 2">Ca 2 (14:00 - 22:00)</option>
               <option value="Ca 3">Ca 3 (22:00 - 06:00)</option>
               <option value="Ca Hành chính">Ca Hành chính (08:00 - 17:00)</option>
+              <option value="Tăng ca">🔥 Tăng ca (OT)</option>
             </select>
           </div>
 

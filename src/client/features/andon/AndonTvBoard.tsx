@@ -396,7 +396,7 @@ export function AndonTvBoard() {
         {/* ==================== SUMMARY KPI STRIP ==================== */}
         <section
           aria-label="Tóm tắt trạng thái máy công cụ"
-          className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5"
+          className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6"
         >
           <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white px-3.5 py-2 shadow-sm">
             <div>
@@ -415,6 +415,16 @@ export function AndonTvBoard() {
             </div>
             <span className="font-mono-num text-2xl font-black text-amber-700">
               {data?.summary?.setupCount ?? 0}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-orange-200 border-l-4 border-l-orange-500 bg-orange-50/30 px-3.5 py-2 shadow-sm">
+            <div>
+              <div className="text-[11px] font-bold uppercase text-orange-700">Tăng ca (OT)</div>
+              <div className="text-xs font-semibold text-orange-800">🔥 Đang tăng cường</div>
+            </div>
+            <span className="font-mono-num text-2xl font-black text-orange-700">
+              {data?.summary?.overtimeCount ?? machines.filter((m) => m.isOvertime).length}
             </span>
           </div>
 
@@ -438,7 +448,7 @@ export function AndonTvBoard() {
             </span>
           </div>
 
-          <div className="col-span-2 flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-slate-400 bg-white px-3.5 py-2 shadow-sm sm:col-span-1">
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-slate-400 bg-white px-3.5 py-2 shadow-sm">
             <div>
               <div className="text-[11px] font-bold uppercase text-slate-600">Đang nghỉ</div>
               <div className="text-xs font-semibold text-slate-600">⚪ Chờ điều độ</div>
@@ -548,6 +558,12 @@ export function AndonTvBoard() {
                                 {m.isDualMachine && (
                                   <span className="rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-900 shadow-2xs">
                                     ⭐ Ghép 2 máy (+0.33)
+                                  </span>
+                                )}
+                                {m.isOvertime && (
+                                  <span className="inline-flex items-center gap-1 rounded border border-orange-400 bg-orange-100 px-1.5 py-0.5 text-[10px] font-black text-orange-950 shadow-2xs animate-pulse">
+                                    <Flame className="h-3 w-3 text-orange-600" />
+                                    TĂNG CA {m.overtimeHours ? `(+${m.overtimeHours}h)` : ''}
                                   </span>
                                 )}
                               </div>

@@ -44,7 +44,7 @@ export function DailySchedulePrint() {
   const displayDateStr = d && m && y ? `${d}/${m}/${y}` : workDate;
 
   // Group by shift
-  const shiftGroups = ['Ca 2', 'Ca 3', 'Ca 1', 'Ca Hành chính'].filter((s) =>
+  const shiftGroups = ['Ca 1', 'Ca 2', 'Ca 3', 'Ca Hành chính', 'Tăng ca'].filter((s) =>
     rows.some((r) => r.shiftType === s)
   );
 

@@ -1822,18 +1822,20 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
   }
 
   // Realistic initial plan adhering strictly to factory mechanism:
-  // - 3 shifts, wire cut runs 24/24 continuously
-  // - Worker runs 2 machines for +0.33 coefficient
-  // - Milling combined long + short cycles
-  // - 1 dedicated to Shift 2, 1 flexible Shift 1/2, ~3 fixed workers per shift
+  // - Ca 1: Tráng (Trưởng ca), Đông, Thắng, Quỳnh (Chuyên Phay CNC 1)
+  // - Ca 2: Dũng (Trưởng ca, Chuyên Phay CNC 2), Thanh, Thuận, Long (Cố định Ca 2)
+  // - Ca 3: Phúc (Trưởng ca), Sam, Nhận (Đêm Lights-out)
+  // - Luân chuyển Ca 1 / Ca 2: Hùng (Phùng Đình Hùng - NV00282)
+  // - Quản đốc: Hoàng Ngọc Hà (NV00053 - chỉ đạo SX 3 ca, không tham gia đứng máy)
+  // - Tăng ca (OT): Thể hiện trực quan trên hệ thống
   const defaultPlan: DailyPlanRow[] = [
     // ========== CA 1 (06:00 - 14:00) ==========
-    // Thợ 1: Trần Văn Quỳnh (Ghép 2 máy: T630 + Cắt Dây 24/24)
+    // Thợ 1: Phạm Văn Tráng (NV00215 - Trưởng ca 1, trực tiếp làm bình thường, ghép 2 máy T630 + Cắt Dây 24/24)
     {
       workDate,
       shiftType: 'Ca 1',
       stt: 1,
-      workerName: 'Trần Văn Quỳnh',
+      workerName: 'Phạm Văn Tráng',
       customer: 'Win-Win',
       spId: 'PO471-1',
       productName: 'SFP216',
@@ -1841,7 +1843,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Gia công tiện tinh mặt côn',
       plannedQty: 18,
       machineName: 'Máy tiện T630',
-      note: 'Máy chính - Chu kỳ ngắn',
+      note: 'Trưởng ca 1 - Máy chính',
       actualQty: 0,
       status: 'PLANNED',
     },
@@ -1849,7 +1851,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       workDate,
       shiftType: 'Ca 1',
       stt: 2,
-      workerName: 'Trần Văn Quỳnh',
+      workerName: 'Phạm Văn Tráng',
       customer: 'Vico - Nội bộ',
       spId: 'PO485-01',
       productName: 'ALKTOP 1342 M',
@@ -1857,16 +1859,16 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'G/c cắt dây mài hoàn thiện',
       plannedQty: 12,
       machineName: 'Máy Cắt Dây DK7745 - 1',
-      note: 'Máy phụ ghép 2 máy (+0.33) - Chạy tự động 24/24',
+      note: 'Ghép 2 máy (+0.33) - Cắt dây tự động 24/24',
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 2: Phạm Văn Tráng (Ghép 2 máy phay dài + ngắn)
+    // Thợ 2: Trần Văn Quỳnh (NV00214 - Chuyên máy Phay CNC 1, ghép Phay OKK1)
     {
       workDate,
       shiftType: 'Ca 1',
       stt: 3,
-      workerName: 'Phạm Văn Tráng',
+      workerName: 'Trần Văn Quỳnh',
       customer: 'Win-Win',
       spId: 'PO475-01',
       productName: 'ISHIZUE 267.4-700',
@@ -1874,7 +1876,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Phay mặt đầu & phay hốc (Chu kỳ dài)',
       plannedQty: 10,
       machineName: 'Máy Phay CNC1',
-      note: 'Máy chính - Nguyên công dài',
+      note: 'Chuyên máy Phay CNC 1 - NC dài',
       actualQty: 0,
       status: 'PLANNED',
     },
@@ -1882,7 +1884,7 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       workDate,
       shiftType: 'Ca 1',
       stt: 4,
-      workerName: 'Phạm Văn Tráng',
+      workerName: 'Trần Văn Quỳnh',
       customer: 'Win-Win',
       spId: 'PO475-02',
       productName: 'ISHIZUE 267.4-800',
@@ -1890,16 +1892,16 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Phay rãnh then cơ (Chu kỳ ngắn)',
       plannedQty: 8,
       machineName: 'Máy phay OKK1',
-      note: 'Máy phụ ghép 2 máy (+0.33) - Nguyên công ngắn',
+      note: 'Ghép 2 máy (+0.33) - Phay OKK1 NC ngắn',
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 3: Phùng Công Thắng (NV00219 - Cố định Ca 1)
+    // Thợ 3: Nguyễn Trung Đông (NV00218 - Ca 1)
     {
       workDate,
       shiftType: 'Ca 1',
       stt: 5,
-      workerName: 'Phùng Công Thắng',
+      workerName: 'Nguyễn Trung Đông',
       customer: 'Win-Win',
       spId: 'PO483-01',
       productName: 'ISHIZUEOMEGA T267.4-950',
@@ -1907,16 +1909,16 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Tiện CNC thô & tinh mặt bích',
       plannedQty: 14,
       machineName: 'Máy Tiện CNC 1',
-      note: 'Đứng máy chính',
+      note: 'Máy chính',
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 4: Phạm Văn Sam (NV00265 - Linh hoạt Ca 1 hoặc Ca 2 tùy bố trí phân xưởng)
+    // Thợ 4: Phùng Công Thắng (NV00219 - Ca 1)
     {
       workDate,
       shiftType: 'Ca 1',
       stt: 6,
-      workerName: 'Phạm Văn Sam',
+      workerName: 'Phùng Công Thắng',
       customer: 'TFG',
       spId: 'PO-2026-015',
       productName: 'Pattern Drawing No 2CG00382',
@@ -1924,18 +1926,89 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Tiện đứng chi tiết lớn',
       plannedQty: 6,
       machineName: 'Máy tiện đứng T1516',
-      note: 'Thợ linh hoạt Ca 1 / Ca 2',
+      note: 'Máy chính',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Phùng Công Thắng - Tăng ca 2h sau ca 1
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 7,
+      workerName: 'Phùng Công Thắng',
+      customer: 'TFG',
+      spId: 'PO-2026-015',
+      productName: 'Pattern Drawing No 2CG00382',
+      ncId: 'NC005',
+      opName: 'Tiện đứng hoàn thiện gá phôi',
+      plannedQty: 2,
+      machineName: 'Máy tiện đứng T1516',
+      note: '🔥 Tăng ca 2h (14:00 - 16:00)',
+      isOvertime: true,
+      overtimeHours: 2,
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+
+    // ========== LUÂN CHUYỂN CA 1 & CA 2 ==========
+    // Thợ 5: Phùng Đình Hùng (NV00282 - Thợ luân chuyển Ca 1 & Ca 2 tùy bố trí xưởng)
+    {
+      workDate,
+      shiftType: 'Ca 1',
+      stt: 8,
+      workerName: 'Phùng Đình Hùng',
+      customer: 'Win-Win',
+      spId: 'PO475-03',
+      productName: 'ISHIZUEOMEGA S216.3-550',
+      ncId: 'NC004',
+      opName: 'Tiện bán tinh chi tiết',
+      plannedQty: 12,
+      machineName: 'Máy tiện OKUMA',
+      note: 'Thợ luân chuyển Ca 1 & Ca 2 theo điều động xưởng',
       actualQty: 0,
       status: 'PLANNED',
     },
 
     // ========== CA 2 (14:00 - 22:00) ==========
-    // Thợ 1: Phùng Đình Hùng (NV00282 - Ghép 2 máy: Tiện CNC 2 + Cắt Dây 24/24)
+    // Thợ 1: Trần Văn Dũng (NV00266 - Trưởng ca 2, chuyên máy Phay CNC 2, ghép Phay OKK2)
     {
       workDate,
       shiftType: 'Ca 2',
-      stt: 7,
-      workerName: 'Phùng Đình Hùng',
+      stt: 9,
+      workerName: 'Trần Văn Dũng',
+      customer: 'Win-Win',
+      spId: 'PO475-04',
+      productName: 'ISHIZUEOMEGA S216.3-650',
+      ncId: 'NC007',
+      opName: 'Phay mặt phẳng & hốc sâu',
+      plannedQty: 12,
+      machineName: 'Máy Phay CNC2',
+      note: 'Trưởng ca 2 - Chuyên máy Phay CNC 2',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 10,
+      workerName: 'Trần Văn Dũng',
+      customer: 'Win-Win',
+      spId: 'PO475-05',
+      productName: 'ISHIZUEOMEGA S267.4-700',
+      ncId: 'NC008',
+      opName: 'Phay cơ khoan lỗ định vị',
+      plannedQty: 8,
+      machineName: 'Máy phay OKK2',
+      note: 'Ghép 2 máy (+0.33) - Phay OKK2',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 2: Nguyễn Văn Thanh (NV00216 - Ca 2, ghép Tiện CNC 2 + Cắt Dây 24/24)
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 11,
+      workerName: 'Nguyễn Văn Thanh',
       customer: 'Win-Win',
       spId: 'PO475-03',
       productName: 'ISHIZUEOMEGA S216.3-550',
@@ -1950,8 +2023,8 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
     {
       workDate,
       shiftType: 'Ca 2',
-      stt: 8,
-      workerName: 'Phùng Đình Hùng',
+      stt: 12,
+      workerName: 'Nguyễn Văn Thanh',
       customer: 'Vico - Nội bộ',
       spId: 'PO485-01',
       productName: 'ALKTOP 1342 M',
@@ -1959,48 +2032,15 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'G/c cắt dây mài hoàn thiện',
       plannedQty: 10,
       machineName: 'Máy Cắt Dây DK7745 - 1',
-      note: 'Ghép 2 máy (+0.33) - Cắt dây 24/24',
+      note: 'Ghép 2 máy (+0.33) - Cắt dây tự động 24/24',
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 2: Phùng Gia Phúc (NV00267 - Ghép 2 máy phay dài + ngắn)
+    // Thợ 3: Vũ Tiến Thuận (NV00283 - Ca 2)
     {
       workDate,
       shiftType: 'Ca 2',
-      stt: 9,
-      workerName: 'Phùng Gia Phúc',
-      customer: 'Win-Win',
-      spId: 'PO475-04',
-      productName: 'ISHIZUEOMEGA S216.3-650',
-      ncId: 'NC007',
-      opName: 'Phay mặt phẳng & hốc sâu',
-      plannedQty: 12,
-      machineName: 'Máy Phay CNC2',
-      note: 'Máy chính',
-      actualQty: 0,
-      status: 'PLANNED',
-    },
-    {
-      workDate,
-      shiftType: 'Ca 2',
-      stt: 10,
-      workerName: 'Phùng Gia Phúc',
-      customer: 'Win-Win',
-      spId: 'PO475-05',
-      productName: 'ISHIZUEOMEGA S267.4-700',
-      ncId: 'NC008',
-      opName: 'Phay cơ khoan lỗ định vị',
-      plannedQty: 8,
-      machineName: 'Máy phay OKK2',
-      note: 'Ghép 2 máy (+0.33)',
-      actualQty: 0,
-      status: 'PLANNED',
-    },
-    // Thợ 3: Vũ Tiến Thuận (NV00283 - Cố định Ca 2)
-    {
-      workDate,
-      shiftType: 'Ca 2',
-      stt: 11,
+      stt: 13,
       workerName: 'Vũ Tiến Thuận',
       customer: 'Win-Win',
       spId: 'PO487-03',
@@ -2009,16 +2049,35 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Tiện CNC 2 trục hoàn thiện',
       plannedQty: 15,
       machineName: 'Máy tiện FUJI',
-      note: 'Đứng máy chính',
+      note: 'Máy chính',
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 4: Đinh Văn Nhận (NV00279 - Định biên cố định Ca 2 vì lý do đặc biệt)
+    // Vũ Tiến Thuận - Tăng ca 2h sau ca 2
     {
       workDate,
       shiftType: 'Ca 2',
-      stt: 12,
-      workerName: 'Đinh Văn Nhận',
+      stt: 14,
+      workerName: 'Vũ Tiến Thuận',
+      customer: 'Win-Win',
+      spId: 'PO487-03',
+      productName: 'ALKTOP II 1950H',
+      ncId: 'NC009',
+      opName: 'Tiện hoàn thiện lô gấp',
+      plannedQty: 4,
+      machineName: 'Máy tiện FUJI',
+      note: '🔥 Tăng ca 2h (22:00 - 24:00)',
+      isOvertime: true,
+      overtimeHours: 2,
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 4: Đặng Ngọc Long (NV00261 - Hiện đang cố định Ca 2 theo yêu cầu)
+    {
+      workDate,
+      shiftType: 'Ca 2',
+      stt: 15,
+      workerName: 'Đặng Ngọc Long',
       customer: 'Hùng HD - XM Hoàng Thạch',
       spId: 'PO-2026-088',
       productName: 'Thanh đập đá vôi',
@@ -2026,18 +2085,35 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       opName: 'Phay vạn năng làm sạch mặt gá',
       plannedQty: 7,
       machineName: 'Máy phay YM',
-      note: 'Định biên cố định Ca 2 theo thỏa thuận',
+      note: 'Định biên cố định Ca 2',
       actualQty: 0,
       status: 'PLANNED',
     },
 
     // ========== CA 3 (22:00 - 06:00 Lights-out) ==========
-    // Thợ 1: Nguyễn Trung Đông (NV00218 - Ghép Tiện CNC 1 + Cắt dây 24/24)
+    // Thợ 1: Phùng Gia Phúc (NV00267 - Trưởng ca 3, chạy tự động Phay CNC1 qua đêm)
     {
       workDate,
       shiftType: 'Ca 3',
-      stt: 13,
-      workerName: 'Nguyễn Trung Đông',
+      stt: 16,
+      workerName: 'Phùng Gia Phúc',
+      customer: 'Win-Win',
+      spId: 'PO475-01',
+      productName: 'ISHIZUE 267.4-700',
+      ncId: 'NC002',
+      opName: 'Phay chạy tự động qua đêm',
+      plannedQty: 10,
+      machineName: 'Máy Phay CNC1',
+      note: 'Trưởng ca 3 - Ca đêm Lights-out',
+      actualQty: 0,
+      status: 'PLANNED',
+    },
+    // Thợ 2: Phạm Văn Sam (NV00265 - Ca 3, ghép Tiện CNC 1 + Cắt dây 24/24)
+    {
+      workDate,
+      shiftType: 'Ca 3',
+      stt: 17,
+      workerName: 'Phạm Văn Sam',
       customer: 'Win-Win',
       spId: 'PO471-1',
       productName: 'SFP216',
@@ -2052,8 +2128,8 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
     {
       workDate,
       shiftType: 'Ca 3',
-      stt: 14,
-      workerName: 'Nguyễn Trung Đông',
+      stt: 18,
+      workerName: 'Phạm Văn Sam',
       customer: 'Vico - Nội bộ',
       spId: 'PO485-01',
       productName: 'ALKTOP 1342 M',
@@ -2065,34 +2141,17 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       actualQty: 0,
       status: 'PLANNED',
     },
-    // Thợ 2: Nguyễn Văn Thanh (NV00216 - Ca 3 đêm)
+    // Thợ 3: Đinh Văn Nhận (NV00279 - Ca 3)
     {
       workDate,
       shiftType: 'Ca 3',
-      stt: 15,
-      workerName: 'Nguyễn Văn Thanh',
-      customer: 'Win-Win',
-      spId: 'PO475-01',
-      productName: 'ISHIZUE 267.4-700',
-      ncId: 'NC002',
-      opName: 'Phay chạy tự động qua đêm',
-      plannedQty: 10,
-      machineName: 'Máy Phay CNC1',
-      note: 'Ca đêm Lights-out',
-      actualQty: 0,
-      status: 'PLANNED',
-    },
-    // Thợ 3: Đặng Ngọc Long (NV00261 - Ca 3 đêm)
-    {
-      workDate,
-      shiftType: 'Ca 3',
-      stt: 16,
-      workerName: 'Đặng Ngọc Long',
+      stt: 19,
+      workerName: 'Đinh Văn Nhận',
       customer: 'Win-Win',
       spId: 'PO475-03',
       productName: 'ISHIZUEOMEGA S216.3-550',
       ncId: 'NC004',
-      opName: 'Tiện tự động chi tiết lô lớn',
+      opName: 'Tiện tự động chi tiết lô lớn qua đêm',
       plannedQty: 14,
       machineName: 'Máy Tiện CNC 2',
       note: 'Ca đêm Lights-out',
@@ -2181,6 +2240,8 @@ export function getFallbackAndonLive(): AndonLivePayload {
     let isBottleneck = false;
     let loadPct = 0;
     let isDualMachine = false;
+    let isOvertime = false;
+    let overtimeHours = 0;
 
     // Check if machine is broken / maintenance
     if (m.status === 'STOPPED' || m.status === 'MAINTENANCE' || m.stopReason) {
@@ -2195,6 +2256,15 @@ export function getFallbackAndonLive(): AndonLivePayload {
       currentNcId = topRow.ncId || null;
       currentProductName = topRow.productName || null;
       currentOpName = topRow.opName || null;
+
+      // Check if machine/worker has overtime
+      for (const r of planRowsForMachine) {
+        if (r.isOvertime || (r.note && /tăng ca|ot/i.test(r.note))) {
+          isOvertime = true;
+          overtimeHours = r.overtimeHours || 2;
+          break;
+        }
+      }
 
       // Check if worker runs >= 2 machines
       if (currentWorkerName) {
@@ -2235,6 +2305,8 @@ export function getFallbackAndonLive(): AndonLivePayload {
       stopReason = null;
       loadPct = 0;
       isDualMachine = false;
+      isOvertime = false;
+      overtimeHours = 0;
     }
 
     return {
@@ -2252,6 +2324,8 @@ export function getFallbackAndonLive(): AndonLivePayload {
       loadPct,
       isBottleneck,
       isDualMachine,
+      isOvertime,
+      overtimeHours,
       shiftType: currentShift,
     };
   });
@@ -2262,6 +2336,7 @@ export function getFallbackAndonLive(): AndonLivePayload {
     (m) => m.status === 'STOPPED' || (m.status as string) === 'MAINTENANCE'
   ).length;
   const idleCount = machines.length - runningCount - setupCount - stoppedCount;
+  const overtimeCount = machines.filter((m) => m.isOvertime).length;
   const spindleRunPct =
     machines.length > 0 ? Math.round(((runningCount + setupCount) / machines.length) * 100) : 0;
 
@@ -2345,6 +2420,16 @@ export function getFallbackAndonLive(): AndonLivePayload {
     }));
 
   const alertsTicker: string[] = [];
+  if (overtimeCount > 0) {
+    const otWorkers = Array.from(
+      new Set(
+        machines
+          .filter((m) => m.isOvertime && m.currentWorkerName)
+          .map((m) => m.currentWorkerName)
+      )
+    ).join(', ');
+    alertsTicker.push(`🔥 TĂNG CA (OT): Đang có ${overtimeCount} vị trí máy chạy tăng ca (Thợ: ${otWorkers})`);
+  }
   for (const m of machines) {
     if (m.status === 'STOPPED') {
       alertsTicker.push(`🚨 SỰ CỐ / DỪNG MÁY: ${m.name} (${m.stopReason || 'Kiểm tra kỹ thuật'})`);
@@ -2373,6 +2458,7 @@ export function getFallbackAndonLive(): AndonLivePayload {
       setupCount,
       stoppedCount,
       idleCount,
+      overtimeCount,
       todayOkQty,
       todayScrapQty,
     },

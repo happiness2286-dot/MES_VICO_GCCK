@@ -430,6 +430,8 @@ export interface DailyPlanRow {
   actualQty?: number;
   drawingUrl?: string;
   status?: string;
+  isOvertime?: boolean;
+  overtimeHours?: number;
 }
 
 export interface WeeklyProposalItem {
@@ -807,6 +809,7 @@ export interface AndonLivePayload {
     idleCount: number;
     todayOkQty: number;
     todayScrapQty: number;
+    overtimeCount?: number;
   };
   machines: Array<{
     id: string;
@@ -823,6 +826,8 @@ export interface AndonLivePayload {
     loadPct: number;
     isBottleneck: boolean;
     isDualMachine?: boolean;
+    isOvertime?: boolean;
+    overtimeHours?: number;
     shiftType?: string;
   }>;
   urgentOrders: Array<{
