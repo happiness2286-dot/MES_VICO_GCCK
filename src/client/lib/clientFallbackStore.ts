@@ -161,6 +161,13 @@ function initFallbackOrders(): PurchaseOrderInfo[] {
           for (const st of stored) {
             if (st && st.poId) {
               const existing = map.get(st.poId.toLowerCase());
+              // Auto-cap any previously over-delivered orders (e.g. 13/12, 4/3, 111/110)
+              if (Number(st.deliveredQty || 0) > Number(st.qtyPo || 0)) {
+                st.deliveredQty = Number(st.qtyPo || 0);
+                st.stockQty = Math.max(0, Number(st.finishedQty || 0) - st.deliveredQty);
+                st.remainQty = 0;
+                st.status = '✅ Đã giao đủ';
+              }
               if (existing) {
                 map.set(st.poId.toLowerCase(), { ...existing, ...st });
               } else {
@@ -345,8 +352,14 @@ export function clearAllClientStoredLogs(): void {
 export function saveClientStoredLog(log: any): void {
   try {
     const existing = getClientStoredLogs();
-    existing.unshift(log);
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 100)));
+    const key = String(log.recordUid || log.id);
+    const idx = existing.findIndex((e) => String(e.recordUid || e.id) === key);
+    if (idx >= 0) {
+      existing[idx] = { ...existing[idx], ...log };
+    } else {
+      existing.unshift(log);
+    }
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 200)));
   } catch {
     // ignore
   }
@@ -1030,8 +1043,17 @@ export function deliverFallbackOrder(
   const po = FALLBACK_ORDERS.find((o) => o.poId.toLowerCase() === poId.toLowerCase());
   if (!po) return { success: false, message: `Không tìm thấy PO ${poId}` };
 
-  const qty = Math.max(1, Math.round(qtyDeliver));
-  po.deliveredQty = (po.deliveredQty || 0) + qty;
+  if (po.remainQty <= 0 || po.deliveredQty >= po.qtyPo) {
+    return {
+      success: false,
+      item: po,
+      message: `Đơn hàng ${po.poId} đã giao đủ toàn bộ (${po.deliveredQty}/${po.qtyPo} SP). Không cần xuất giao thêm!`,
+    };
+  }
+
+  const maxCanDeliver = Math.max(0, po.remainQty);
+  const qty = Math.min(maxCanDeliver, Math.max(1, Math.round(qtyDeliver)));
+  po.deliveredQty = Math.min(po.qtyPo, (po.deliveredQty || 0) + qty);
   po.stockQty = Math.max(0, (po.finishedQty || 0) - po.deliveredQty);
   po.remainQty = Math.max(0, po.qtyPo - po.deliveredQty);
 

@@ -440,10 +440,13 @@ export function OrdersAndTravelerTab({
 
   const openDeliverModal = (po: PurchaseOrderInfo) => {
     setDeliverTargetPo(po);
+    const maxCanDeliver = Math.max(0, po.remainQty);
     const defaultDeliver =
-      po.stockQty > 0
-        ? Math.min(po.stockQty, Math.max(1, po.remainQty))
-        : Math.max(1, po.remainQty || 1);
+      maxCanDeliver <= 0
+        ? 0
+        : po.stockQty > 0
+          ? Math.min(po.stockQty, maxCanDeliver)
+          : maxCanDeliver;
     setDeliverQty(defaultDeliver);
     setDeliverNote(
       `Phiếu xuất kho giao hàng đợt ${deliveries.filter((d) => d.poId === po.poId).length + 1}`
@@ -453,6 +456,11 @@ export function OrdersAndTravelerTab({
   const handleRecordDelivery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deliverTargetPo) return;
+    if (deliverTargetPo.remainQty <= 0) {
+      toast.info(`Đơn hàng ${deliverTargetPo.poId} đã hoàn tất giao đủ 100%, không cần xuất thêm.`);
+      setDeliverTargetPo(null);
+      return;
+    }
     if (deliverQty <= 0) {
       toast.warning('Số lượng xuất giao phải lớn hơn 0.');
       return;
@@ -861,15 +869,28 @@ export function OrdersAndTravelerTab({
 
                     <td className="px-3.5 py-2.5 text-right">
                       <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-                        <Button
-                          variant="success"
-                          size="sm"
-                          onClick={() => openDeliverModal(po)}
-                          title="Xuất kho giao hàng & Xem lịch sử đợt giao"
-                        >
-                          <Truck className="h-3.5 w-3.5" />
-                          🚚 Xuất Giao
-                        </Button>
+                        {po.remainQty <= 0 ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => openDeliverModal(po)}
+                            title="Đơn hàng đã hoàn tất xuất giao đủ 100% — Nhấn để xem lịch sử đợt giao"
+                            className="border-emerald-300 bg-emerald-50 text-emerald-850 hover:bg-emerald-100"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>Đã Giao Đủ</span>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="success"
+                            size="sm"
+                            onClick={() => openDeliverModal(po)}
+                            title="Xuất kho giao hàng & Xem lịch sử đợt giao"
+                          >
+                            <Truck className="h-3.5 w-3.5" />
+                            <span>🚚 Xuất Giao</span>
+                          </Button>
+                        )}
 
                         <Button
                           variant="secondary"
@@ -1416,14 +1437,23 @@ export function OrdersAndTravelerTab({
               </div>
             </div>
 
-            {deliverQty > deliverTargetPo.stockQty && deliverTargetPo.stockQty >= 0 && (
-              <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-amber-900">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            {deliverTargetPo.remainQty <= 0 ? (
+              <div className="flex items-center gap-2.5 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900">
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                 <span>
-                  Lưu ý: SL xuất giao ({deliverQty}) lớn hơn Tồn kho thành phẩm hiện ghi nhận ở công
-                  đoạn cuối ({deliverTargetPo.stockQty} SP). Vẫn cho phép xuất nếu lấy từ tồn đầu kỳ.
+                  Đơn hàng {deliverTargetPo.poId} đã hoàn tất giao đủ 100% ({deliverTargetPo.deliveredQty}/{deliverTargetPo.qtyPo} SP). Không cần xuất giao thêm!
                 </span>
               </div>
+            ) : (
+              deliverQty > deliverTargetPo.stockQty && deliverTargetPo.stockQty >= 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <span>
+                    Lưu ý: SL xuất giao ({deliverQty}) lớn hơn Tồn kho thành phẩm hiện ghi nhận ở công
+                    đoạn cuối ({deliverTargetPo.stockQty} SP). Vẫn cho phép xuất nếu lấy từ tồn đầu kỳ.
+                  </span>
+                </div>
+              )
             )}
 
             <form noValidate onSubmit={handleRecordDelivery} className="space-y-3">
@@ -1434,12 +1464,14 @@ export function OrdersAndTravelerTab({
                   </label>
                   <input
                     type="number"
-                    min={1}
+                    min={deliverTargetPo.remainQty <= 0 ? 0 : 1}
+                    max={deliverTargetPo.remainQty}
                     step="any"
                     required
+                    disabled={deliverTargetPo.remainQty <= 0}
                     value={deliverQty}
-                    onChange={(e) => setDeliverQty(Math.max(1, Number(e.target.value) || 1))}
-                    className="font-mono-num h-10 w-full rounded-xl border border-emerald-400 bg-white px-3 text-base font-extrabold text-emerald-700 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/15"
+                    onChange={(e) => setDeliverQty(Math.max(0, Number(e.target.value) || 0))}
+                    className="font-mono-num h-10 w-full rounded-xl border border-emerald-400 bg-white px-3 text-base font-extrabold text-emerald-700 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/15 disabled:bg-slate-100 disabled:text-slate-400"
                   />
                 </div>
                 <div className="sm:col-span-2">
@@ -1448,6 +1480,7 @@ export function OrdersAndTravelerTab({
                   </label>
                   <input
                     type="text"
+                    disabled={deliverTargetPo.remainQty <= 0}
                     value={deliverNote}
                     onChange={(e) => setDeliverNote(e.target.value)}
                     placeholder="VD: PXK-2610-09, Xe 15C-123.45 nhận hàng..."
@@ -1460,10 +1493,12 @@ export function OrdersAndTravelerTab({
                 <Button variant="secondary" onClick={() => setDeliverTargetPo(null)}>
                   Đóng
                 </Button>
-                <Button type="submit" variant="success" disabled={submittingDelivery}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  {submittingDelivery ? 'Đang ghi sổ kho...' : 'Xác Nhận Xuất Giao Kho'}
-                </Button>
+                {deliverTargetPo.remainQty > 0 && (
+                  <Button type="submit" variant="success" disabled={submittingDelivery || deliverQty <= 0}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    {submittingDelivery ? 'Đang ghi sổ kho...' : 'Xác Nhận Xuất Giao Kho'}
+                  </Button>
+                )}
               </div>
             </form>
 
@@ -1576,6 +1611,9 @@ export function OrdersAndTravelerTab({
                   onChange={(e) => setEditDeliveredQty(Math.max(0, Number(e.target.value) || 0))}
                   className={`${modalInputCls} font-mono-num font-bold text-blue-800`}
                 />
+                <p className="mt-1 text-[9.5px] text-blue-700 leading-tight">
+                  * Điền SL xuất tại đây hệ thống sẽ tự ghi sổ, không cần bấm thêm nút &quot;Xuất Giao&quot;.
+                </p>
               </div>
             </div>
 

@@ -27,7 +27,8 @@ import {
 import type { BootstrapPayload } from '@shared/types';
 import { matchesSearch } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { getFallbackBootstrap } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, saveClientStoredLog, getAllFallbackLogs } from '@client/lib/clientFallbackStore';
+import { isSupabaseConnected, fetchLogsFromSupabase } from '@client/lib/supabaseClient';
 import { formatDateVn, formatNumber } from '@client/lib/formatters';
 import { navigateTo } from '@client/lib/navigation';
 import {
@@ -131,6 +132,33 @@ export function AdminPortal() {
       setLoadError('');
       try {
         const data = await apiClient.get<BootstrapPayload>('/bootstrap');
+        if (isSupabaseConnected()) {
+          try {
+            const sbLogs = await fetchLogsFromSupabase();
+            if (sbLogs && sbLogs.length > 0) {
+              for (const l of sbLogs) {
+                saveClientStoredLog(l);
+              }
+              const mergedMap = new Map<string, any>();
+              for (const l of (data.recentLogs || [])) {
+                mergedMap.set(l.recordUid || String(l.id), l);
+              }
+              for (const l of getAllFallbackLogs()) {
+                mergedMap.set(l.recordUid || String(l.id), l);
+              }
+              for (const l of sbLogs) {
+                mergedMap.set(l.recordUid || String(l.id), l);
+              }
+              data.recentLogs = Array.from(mergedMap.values()).sort((a, b) => {
+                const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+                const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+                return tB - tA;
+              });
+            }
+          } catch (sbErr) {
+            console.warn('Supabase fetch logs error in AdminPortal:', sbErr);
+          }
+        }
         setBootstrap(data);
       } catch (err: any) {
         // Transparent fallback so user never gets stuck with server offline error

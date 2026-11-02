@@ -63,7 +63,8 @@ import {
   formatVnd,
 } from '../../lib/formatters';
 import { isStaticHost, navigateTo } from '../../lib/navigation';
-import { isSupabaseConnected, saveStoredSupabaseConfig } from '../../lib/supabaseClient';
+import { isSupabaseConnected, saveStoredSupabaseConfig, fetchLogsFromSupabase } from '../../lib/supabaseClient';
+import { saveClientStoredLog, getAllFallbackLogs } from '../../lib/clientFallbackStore';
 import {
   flushOfflineOutbox,
   generateIdempotentRecordUid,
@@ -287,6 +288,40 @@ export function WorkerPortal() {
       if (!silent) setLoadingBootstrap(true);
       try {
         const data = await apiClient.get<BootstrapPayload>('/bootstrap');
+
+        // Fetch Supabase cloud logs if connected
+        let cloudLogs: any[] = [];
+        if (isSupabaseConnected()) {
+          try {
+            const sbLogs = await fetchLogsFromSupabase();
+            if (sbLogs && sbLogs.length > 0) {
+              cloudLogs = sbLogs;
+              for (const l of sbLogs) {
+                saveClientStoredLog(l);
+              }
+            }
+          } catch (sbErr) {
+            console.warn('Supabase fetch logs error in WorkerPortal:', sbErr);
+          }
+        }
+
+        const mergedMap = new Map<string, any>();
+        for (const l of (data.recentLogs || [])) {
+          mergedMap.set(l.recordUid || String(l.id), l);
+        }
+        for (const l of getAllFallbackLogs()) {
+          mergedMap.set(l.recordUid || String(l.id), l);
+        }
+        for (const l of cloudLogs) {
+          mergedMap.set(l.recordUid || String(l.id), l);
+        }
+        const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
+          const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+          const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+          return tB - tA;
+        });
+
+        data.recentLogs = mergedList;
         setBootstrap(data);
         setTodayOverrideIncome(null);
 
@@ -374,6 +409,10 @@ export function WorkerPortal() {
 
   useEffect(() => {
     void loadBootstrapData(false);
+    const pollTimer = setInterval(() => {
+      void loadBootstrapData(true);
+    }, 25000);
+    return () => clearInterval(pollTimer);
   }, [loadBootstrapData, user?.workerId]);
 
   const ordersList = bootstrap?.ordersList ?? [];
@@ -1259,12 +1298,28 @@ export function WorkerPortal() {
       });
   }, [ordersList, ordersFilter, ordersSearch]);
 
-  // Tab 3 Personal Logs (strictly scoped to current logged-in worker when role === WORKER)
+  // Tab 3 Personal / Factory Logs
+  const isManagerOrLeader =
+    user?.appRole === 'ADMIN' ||
+    user?.appRole === 'DIRECTOR' ||
+    user?.appRole === 'SHIFT_LEADER' ||
+    user?.appRole === 'QC' ||
+    user?.workerId === 'NV00053' ||
+    user?.workerId === 'NV00266';
+  const [logViewMode, setLogViewMode] = useState<'MY' | 'ALL'>('MY');
+
   const myRecentLogs = useMemo(() => {
     const all = bootstrap?.recentLogs ?? [];
     if (!user) return [];
-    return all.filter((l) => l.workerId === user.workerId);
-  }, [bootstrap?.recentLogs, user]);
+    if (logViewMode === 'ALL') {
+      return all;
+    }
+    const myLogs = all.filter((l) => l.workerId === user.workerId);
+    if (myLogs.length === 0 && isManagerOrLeader) {
+      return all;
+    }
+    return myLogs;
+  }, [bootstrap?.recentLogs, user, logViewMode, isManagerOrLeader]);
 
   return (
     <div className="w-full max-w-full overflow-x-clip pb-24">
@@ -3081,21 +3136,67 @@ export function WorkerPortal() {
               </Card>
             )}
 
-            {/* Personal Recent Logs */}
+            {/* Personal / Factory Recent Logs */}
             <Card className="space-y-2.5 border-slate-200 bg-white p-3.5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
                   <History className="h-4 w-4 text-blue-600" />
-                  <span>Lịch Sử Báo Cáo Của Tôi</span>
+                  <span>
+                    {logViewMode === 'ALL' || (isManagerOrLeader && (bootstrap?.recentLogs ?? []).filter((l) => l.workerId === user?.workerId).length === 0)
+                      ? 'Lịch Sử Báo Cáo Toàn Xưởng'
+                      : 'Lịch Sử Báo Cáo Của Tôi'}
+                  </span>
                 </h3>
-                <span className="text-xs font-medium text-slate-500">
-                  {myRecentLogs.length} bản ghi
-                </span>
+                <div className="flex items-center gap-2">
+                  {isManagerOrLeader && (
+                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setLogViewMode('MY')}
+                        className={`rounded-md px-2 py-0.5 transition-colors ${
+                          logViewMode === 'MY' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Của tôi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLogViewMode('ALL')}
+                        className={`rounded-md px-2 py-0.5 transition-colors ${
+                          logViewMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Toàn xưởng
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void loadBootstrapData(false)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                    title="Tải lại báo cáo mới nhất từ Supabase Cloud"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    <span>Tải lại</span>
+                  </button>
+                  <span className="text-xs font-bold text-slate-600">
+                    {myRecentLogs.length} bản ghi
+                  </span>
+                </div>
               </div>
 
               {myRecentLogs.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-8 text-center text-xs text-slate-500">
-                  Chưa có phiếu báo cáo nào trong phiên của {user?.name || 'bạn'}.
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-8 text-center text-xs text-slate-500 space-y-2">
+                  <p>Chưa có phiếu báo cáo nào trong phiên của {user?.name || 'bạn'}.</p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void loadBootstrapData(false)}
+                    className="mx-auto"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Đồng bộ từ Cloud ngay
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -3105,11 +3206,16 @@ export function WorkerPortal() {
                       className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-3"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-1.5">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-mono-num text-xs font-bold text-blue-700">
                             {log.timeStr || log.workDate}
                           </span>
                           <Badge variant="neutral">{log.machineName}</Badge>
+                          {(log.workerName || log.workerId) && (
+                            <span className="text-[11px] font-bold text-slate-700 bg-slate-200/80 px-1.5 py-0.5 rounded">
+                              👤 {log.workerName || log.workerId}
+                            </span>
+                          )}
                         </div>
                         <span className="font-mono-num tabular-nums text-sm font-extrabold text-emerald-700">
                           +{formatVnd(log.income)}
