@@ -69,6 +69,177 @@ export const SCHEDULE_NOTE_PRESETS = [
   'Trưởng ca - Chỉ đạo sản xuất',
 ];
 
+export const FRACTIONAL_QTY_PRESETS = [
+  { label: '0.25 ca (¼)', shortLabel: '¼', val: 0.25, title: '0.25 ca (¼ ca) - Phôi dài / Chu kỳ nhiều ca' },
+  { label: '0.5 ca (½)', shortLabel: '½', val: 0.5, title: '0.5 ca (½ ca) - Bán thành phẩm nửa ca' },
+  { label: '0.75 ca (¾)', shortLabel: '¾', val: 0.75, title: '0.75 ca (¾ ca) - Sắp hoàn thành nguyên công' },
+  { label: '1.0 (Xong)', shortLabel: '1.0', val: 1.0, title: '1.0 ca / SP hoàn thành trong ca' },
+];
+
+export function formatPlannedQtyDisplay(qty: number): string {
+  if (qty === 0.25) return '0.25 (¼ ca)';
+  if (qty === 0.5) return '0.5 (½ ca)';
+  if (qty === 0.75) return '0.75 (¾ ca)';
+  if (qty === 0.33) return '0.33 (⅓ ca)';
+  return String(qty);
+}
+
+function PlannedQtyCell({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (val: number) => void;
+}) {
+  const [text, setText] = useState<string>(String(value ?? 0));
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  useEffect(() => {
+    setText(String(value ?? 0));
+  }, [value]);
+
+  const commitValue = (valStr: string) => {
+    const cleaned = valStr.replace(',', '.').trim();
+    const num = Number(cleaned);
+    if (!isNaN(num) && num >= 0) {
+      const rounded = Number(num.toFixed(2));
+      onChange(rounded);
+      setText(String(rounded));
+    } else {
+      setText(String(value ?? 0));
+    }
+  };
+
+  const handleBlur = () => {
+    commitValue(text);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-1 py-1">
+      <div className="relative flex items-center justify-center">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={text}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setText(raw);
+            const cleaned = raw.replace(',', '.').trim();
+            const num = Number(cleaned);
+            if (!isNaN(num) && num >= 0 && raw !== '' && !raw.endsWith('.') && !raw.endsWith(',')) {
+              onChange(num);
+            }
+          }}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          className="font-mono-num h-7 w-16 rounded border border-slate-300 bg-white px-1 text-center text-xs font-black text-blue-700 shadow-2xs focus:border-blue-600 focus:bg-blue-50/20 focus:outline-none"
+          title="Nhập số lượng KH (hỗ trợ số lẻ 0.25, 0.5, 0.75, 1...)"
+        />
+        <button
+          type="button"
+          onClick={() => setShowDropdown((v) => !v)}
+          className="ml-0.5 flex h-7 w-4.5 items-center justify-center rounded border border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-blue-700"
+          title="Bấm để chọn nhanh các mức phân đoạn ca hoặc sản lượng mẫu"
+        >
+          <ChevronDown className="h-3 w-3" />
+        </button>
+
+        {value > 0 && value < 1 && (
+          <span className="pointer-events-none absolute -top-2 left-0 rounded-full bg-emerald-600 px-1 py-0.2 text-[9px] font-black text-white shadow-2xs">
+            {value === 0.25 ? '¼' : value === 0.5 ? '½' : value === 0.75 ? '¾' : value === 0.33 ? '⅓' : String(value)}
+          </span>
+        )}
+
+        {showDropdown && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowDropdown(false)}
+            />
+            <div className="absolute top-8 left-0 z-50 max-h-56 w-48 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-left shadow-xl">
+              <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Phân đoạn ca (&lt; 1)
+              </div>
+              {FRACTIONAL_QTY_PRESETS.map((p) => (
+                <button
+                  key={p.val}
+                  type="button"
+                  onClick={() => {
+                    onChange(p.val);
+                    setText(String(p.val));
+                    setShowDropdown(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-xs font-bold transition-colors ${
+                    value === p.val
+                      ? 'bg-emerald-600 text-white'
+                      : 'text-emerald-800 hover:bg-emerald-50'
+                  }`}
+                >
+                  <span>{p.label}</span>
+                  <span className="font-mono text-[11px] opacity-80">{p.val}</span>
+                </button>
+              ))}
+              <div className="my-1 border-t border-slate-100" />
+              <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Số lượng chi tiết
+              </div>
+              {[2, 4, 6, 7, 8, 10, 12, 15, 16, 18, 40].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => {
+                    onChange(num);
+                    setText(String(num));
+                    setShowDropdown(false);
+                  }}
+                  className={`flex w-full items-center justify-between rounded px-2 py-1 text-xs font-bold transition-colors ${
+                    value === num
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
+                  }`}
+                >
+                  <span>{num} chi tiết</span>
+                  <span className="font-mono text-[11px] opacity-80">{num}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center gap-0.5">
+        {FRACTIONAL_QTY_PRESETS.map((preset) => {
+          const isActive = Number(value) === preset.val;
+          return (
+            <button
+              key={preset.val}
+              type="button"
+              onClick={() => {
+                onChange(preset.val);
+                setText(String(preset.val));
+              }}
+              title={preset.title}
+              className={`rounded px-1.5 py-0.5 text-[9px] font-mono font-bold transition-all shadow-2xs ${
+                isActive
+                  ? 'bg-emerald-600 text-white ring-1 ring-emerald-500 font-black'
+                  : 'border border-slate-200 bg-slate-50 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800'
+              }`}
+            >
+              {preset.shortLabel}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface DailyDateMeta {
   workDate: string;
   rowCount: number;
@@ -560,7 +731,7 @@ export function DailyWeeklyScheduleTab({
           const cust = r.customer ? `[${r.customer}] ` : '';
           const mach = r.machineName ? ` » ${r.machineName}` : '';
           const note = r.note ? ` (${r.note})` : '';
-          text += `   ${idx + 1}. ${cust}${r.productName || 'Chi tiết'} - ${r.opName || 'Theo bản vẽ'} | SL: ${r.plannedQty}${mach}${note}\n`;
+          text += `   ${idx + 1}. ${cust}${r.productName || 'Chi tiết'} - ${r.opName || 'Theo bản vẽ'} | SL: ${formatPlannedQtyDisplay(r.plannedQty)}${mach}${note}\n`;
         });
       });
     });
@@ -1276,7 +1447,7 @@ export function DailyWeeklyScheduleTab({
                           <th className="w-36 px-2 py-2">Khách Hàng (1)</th>
                           <th className="px-2 py-2">Sản Phẩm / Bản Vẽ (2)</th>
                           <th className="px-2 py-2">Công Đoạn HT (3)</th>
-                          <th className="w-20 px-2 py-2 text-center">Kế Hoạch</th>
+                          <th className="w-28 px-2 py-2 text-center">Kế Hoạch</th>
                           <th className="w-40 px-2 py-2">Máy / Ca</th>
                           <th className="w-32 px-2 py-2 text-center">🔥 Tăng Ca (OT)</th>
                           <th className="w-36 px-2 py-2">Ghi Chú</th>
@@ -1384,19 +1555,11 @@ export function DailyWeeklyScheduleTab({
 
                               {/* Kế Hoạch */}
                               <td className="px-2 py-1.5 text-center">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step="any"
+                                <PlannedQtyCell
                                   value={row.plannedQty}
-                                  onChange={(e) =>
-                                    handleRowChange(
-                                      originalIdx,
-                                      'plannedQty',
-                                      Number(e.target.value) || 0
-                                    )
+                                  onChange={(val) =>
+                                    handleRowChange(originalIdx, 'plannedQty', val)
                                   }
-                                  className="font-mono-num h-8 w-18 rounded-md border border-slate-300 px-1 text-center text-xs font-extrabold text-blue-700 focus:border-blue-600 focus:outline-none"
                                 />
                               </td>
 

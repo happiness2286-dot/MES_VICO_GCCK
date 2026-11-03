@@ -1578,6 +1578,108 @@ export function WorkerPortal() {
         {/* ==================== TAB 1: ⚡ BÁO CÁO SẢN XUẤT ==================== */}
         {activeTab === 'REPORT' && (
           <>
+            {/* 0. Banner Gợi ý Nhiệm vụ Kế hoạch Ngày */}
+            {myPlanRows.length > 0 && (
+              <div className="rounded-2xl border-2 border-blue-300 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 p-3 shadow-md">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white font-black text-xs">
+                      📋
+                    </span>
+                    <span className="text-xs font-black uppercase text-blue-900">
+                      Kế Hoạch Phân Công Ngày ({myPlanRows.length} nhiệm vụ)
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold text-blue-700 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full">
+                    ⚡ Chạm thẻ để tự động điền form
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {myPlanRows.map((plan, pIdx) => {
+                    const isCurrentSelected =
+                      (plan.machineName && machineName === plan.machineName) ||
+                      (plan.productName && selectedOp?.productName === plan.productName);
+
+                    const qtyDisplay =
+                      plan.plannedQty === 0.25
+                        ? '0.25 ca (¼)'
+                        : plan.plannedQty === 0.5
+                        ? '0.5 ca (½)'
+                        : plan.plannedQty === 0.75
+                        ? '0.75 ca (¾)'
+                        : plan.plannedQty === 0.33
+                        ? '0.33 ca (⅓)'
+                        : `${plan.plannedQty} SP`;
+
+                    return (
+                      <button
+                        key={plan.id || pIdx}
+                        type="button"
+                        onClick={() => applyPlanRowSelection(plan, false)}
+                        className={`flex flex-col text-left p-2.5 rounded-xl border-2 transition-all ${
+                          isCurrentSelected
+                            ? 'border-blue-600 bg-blue-600 text-white shadow-md scale-[1.01]'
+                            : 'border-blue-200 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/70 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 text-xs font-black">
+                          <span className="flex items-center gap-1.5 truncate">
+                            <span>⚙️ {plan.machineName || 'Chưa gán máy'}</span>
+                            {plan.note && /ghép 2 máy|\+0\.33/i.test(plan.note) && (
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
+                                  isCurrentSelected
+                                    ? 'bg-amber-400 text-slate-950'
+                                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                }`}
+                              >
+                                ⭐ Ghép (+0.33)
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded font-mono text-[11px] font-black ${
+                              isCurrentSelected
+                                ? 'bg-white/20 text-white'
+                                : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                            }`}
+                          >
+                            {qtyDisplay}
+                          </span>
+                        </div>
+                        <div
+                          className={`mt-1 text-xs truncate font-bold ${
+                            isCurrentSelected ? 'text-white' : 'text-blue-800'
+                          }`}
+                        >
+                          {plan.customer ? `[${plan.customer}] ` : ''}
+                          {plan.productName || 'Chi tiết theo bản vẽ'}
+                        </div>
+                        {plan.opName && (
+                          <div
+                            className={`text-[11px] truncate ${
+                              isCurrentSelected ? 'text-white/80' : 'text-slate-600'
+                            }`}
+                          >
+                            {plan.opName}
+                          </div>
+                        )}
+                        {plan.note && (
+                          <div
+                            className={`mt-1 text-[10px] italic truncate ${
+                              isCurrentSelected ? 'text-white/90' : 'text-slate-500'
+                            }`}
+                          >
+                            📝 {plan.note}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {/* 1. Hero QR Scan Button + Fast Search + 8-Step Guide + Quick Customer Filter */}
             <Card className="space-y-2.5 border-slate-200 bg-white p-3 sm:p-4">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
