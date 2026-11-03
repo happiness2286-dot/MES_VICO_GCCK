@@ -56,17 +56,17 @@ import { DailyQualityReportSection } from './DailyQualityReportSection';
 import type { AdminTabCommonProps } from '../types';
 
 export const SCHEDULE_NOTE_PRESETS = [
-  'M?y ch?nh',
-  'Gh?p 2 m?y (+0.33)',
-  '?? T?ng ca 2h (14:00 - 16:00)',
-  '?? T?ng ca 2h (22:00 - 24:00)',
-  'Th? lu?n chuy?n Ca 1 & Ca 2 theo ?i?u ??ng x??ng',
-  'Chuy?n m?y Phay CNC 1',
-  'Chuy?n m?y Phay CNC 2',
-  'Gh?p 2 m?y (+0.33) - C?t d?y t? ??ng 24/24',
-  'Ca ??m Lights-out - Chu k? d?i',
-  '??nh bi?n c? ??nh Ca 2',
-  'Tr??ng ca - Ch? ??o s?n xu?t',
+  'Máy chính',
+  'Ghép 2 máy (+0.33)',
+  '🔥 Tăng ca 2h (14:00 - 16:00)',
+  '🔥 Tăng ca 2h (22:00 - 24:00)',
+  'Thợ luân chuyển Ca 1 & Ca 2 theo điều động xưởng',
+  'Chuyên máy Phay CNC 1',
+  'Chuyên máy Phay CNC 2',
+  'Ghép 2 máy (+0.33) - Cắt dây tự động 24/24',
+  'Ca đêm Lights-out - Chu kỳ dài',
+  'Định biên cố định Ca 2',
+  'Trưởng ca - Chỉ đạo sản xuất',
 ];
 
 interface DailyDateMeta {
@@ -311,9 +311,9 @@ export function DailyWeeklyScheduleTab({
   // Add extra row for a worker with smart note defaults
   const handleAddWorkerRow = (workerName: string, shiftType: string) => {
     const existingCount = dailyRows.filter((r) => r.workerName === workerName).length;
-    let defaultNote = 'M?y ch?nh';
-    if (existingCount === 1) defaultNote = 'Gh?p 2 m?y (+0.33)';
-    else if (existingCount >= 2) defaultNote = '?? T?ng ca 2h (14:00 - 16:00)';
+    let defaultNote = 'Máy chính';
+    if (existingCount === 1) defaultNote = 'Ghép 2 máy (+0.33)';
+    else if (existingCount >= 2) defaultNote = '🔥 Tăng ca 2h (14:00 - 16:00)';
 
     setDailyRows((prev) => [
       ...prev,
@@ -328,8 +328,8 @@ export function DailyWeeklyScheduleTab({
         plannedQty: 0,
         machineName: '',
         note: defaultNote,
-        isOvertime: defaultNote.includes('T?ng ca'),
-        overtimeHours: defaultNote.includes('T?ng ca') ? 2 : undefined,
+        isOvertime: defaultNote.includes('Tăng ca'),
+        overtimeHours: defaultNote.includes('Tăng ca') ? 2 : undefined,
         actualQty: 0,
         status: 'PLANNED',
       },
@@ -485,9 +485,9 @@ export function DailyWeeklyScheduleTab({
     const newRows: DailyPlanRow[] = [];
     let nextStt = dailyRows.length > 0 ? Math.max(...dailyRows.map((r) => r.stt || 0)) + 1 : 1;
     for (let i = 0; i < count; i++) {
-      let defaultNote = 'M?y ch?nh';
-      if (i === 1) defaultNote = 'Gh?p 2 m?y (+0.33)';
-      else if (i >= 2) defaultNote = '?? T?ng ca 2h (14:00 - 16:00)';
+      let defaultNote = 'Máy chính';
+            if (i === 1) defaultNote = 'Ghép 2 máy (+0.33)';
+            else if (i >= 2) defaultNote = '🔥 Tăng ca 2h (14:00 - 16:00)';
       newRows.push({
         workDate: selectedDate,
         shiftType: shiftType || 'Ca 2',
@@ -499,8 +499,8 @@ export function DailyWeeklyScheduleTab({
         plannedQty: 0,
         machineName: '',
         note: defaultNote,
-        isOvertime: defaultNote.includes('T?ng ca'),
-        overtimeHours: defaultNote.includes('T?ng ca') ? 2 : undefined,
+        isOvertime: defaultNote.includes('Tăng ca'),
+        overtimeHours: defaultNote.includes('Tăng ca') ? 2 : undefined,
         actualQty: 0,
         status: 'PLANNED',
       });
@@ -1465,17 +1465,49 @@ export function DailyWeeklyScheduleTab({
                                 </div>
                               </td>
 
-                              {/* Ghi chú */}
-                              <td className="px-2 py-1.5">
-                                <input
-                                  type="text"
-                                  value={row.note || ''}
-                                  onChange={(e) =>
-                                    handleRowChange(originalIdx, 'note', e.target.value)
-                                  }
-                                  placeholder="Ghi chú / Tăng ca..."
-                                  className="h-8 w-full rounded-md border border-slate-300 px-2 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
-                                />
+                              {/* Ghi chú: Danh mục trỏ xuống trực quan + Tự động đồng bộ Tăng ca */}
+                              <td className="px-2 py-1.5 min-w-[210px]">
+                                <div className="space-y-1">
+                                  <select
+                                    value={SCHEDULE_NOTE_PRESETS.includes(row.note || '') ? (row.note || '') : (row.note ? '__CUSTOM__' : 'Máy chính')}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val === '__CUSTOM__') {
+                                        handleRowChange(originalIdx, 'note', row.note && !SCHEDULE_NOTE_PRESETS.includes(row.note) ? row.note : '');
+                                      } else {
+                                        handleRowChange(originalIdx, 'note', val);
+                                        if (val.includes('Tăng ca') && !row.isOvertime) {
+                                          handleRowChange(originalIdx, 'isOvertime', true);
+                                          if (!row.overtimeHours) handleRowChange(originalIdx, 'overtimeHours', 2);
+                                        }
+                                      }
+                                    }}
+                                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 pr-6 text-xs font-semibold text-slate-800 shadow-2xs hover:border-blue-500 focus:border-blue-600 focus:outline-none"
+                                  >
+                                    <option value="Máy chính">Máy chính</option>
+                                    <option value="Ghép 2 máy (+0.33)">Ghép 2 máy (+0.33)</option>
+                                    <option value="🔥 Tăng ca 2h (14:00 - 16:00)">🔥 Tăng ca 2h (14:00 - 16:00)</option>
+                                    <option value="🔥 Tăng ca 2h (22:00 - 24:00)">🔥 Tăng ca 2h (22:00 - 24:00)</option>
+                                    <option value="Thợ luân chuyển Ca 1 & Ca 2 theo điều động xưởng">Thợ luân chuyển Ca 1 &amp; Ca 2</option>
+                                    <option value="Định biên cố định Ca 2">Định biên cố định Ca 2</option>
+                                    <option value="Chuyên máy Phay CNC 1">Chuyên máy Phay CNC 1</option>
+                                    <option value="Chuyên máy Phay CNC 2">Chuyên máy Phay CNC 2</option>
+                                    <option value="Ghép 2 máy (+0.33) - Cắt dây tự động 24/24">Ghép 2 máy (+0.33) - Cắt dây 24/24</option>
+                                    <option value="Ca đêm Lights-out - Chu kỳ dài">Ca đêm Lights-out - Chu kỳ dài</option>
+                                    <option value="Trưởng ca - Chỉ đạo sản xuất">Trưởng ca - Chỉ đạo sản xuất</option>
+                                    <option value="__CUSTOM__">✍️ Ghi chú khác (Tự gõ)...</option>
+                                  </select>
+
+                                  {(!SCHEDULE_NOTE_PRESETS.includes(row.note || '') && row.note !== undefined && row.note !== 'Máy chính') && (
+                                    <input
+                                      type="text"
+                                      value={row.note || ''}
+                                      onChange={(e) => handleRowChange(originalIdx, 'note', e.target.value)}
+                                      placeholder="Nhập ghi chú tùy ý..."
+                                      className="h-7 w-full rounded border border-blue-400 bg-blue-50/50 px-2 text-xs font-medium text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
+                                    />
+                                  )}
+                                </div>
                               </td>
 
                               {/* Mã QR */}

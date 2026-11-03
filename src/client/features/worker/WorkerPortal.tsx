@@ -329,7 +329,7 @@ export function WorkerPortal() {
         const matchedShift = SHIFT_OPTIONS.find((s) => s.value.startsWith(planRow.shiftType));
         if (matchedShift) setShiftType(matchedShift.value);
       }
-      if (planRow.note && /gh?p 2 m?y|\+0\.33/i.test(planRow.note)) {
+      if (planRow.note && /ghép 2 máy|\+0\.33/i.test(planRow.note)) {
         setMachineMode('SECOND');
       } else {
         setMachineMode('FIRST');
@@ -342,7 +342,7 @@ export function WorkerPortal() {
 
       if (!silent) {
         toast.success(
-          `? ?? chuy?n sang: ${planRow.machineName || 'M?y'} ? ${planRow.productName || planRow.opName || 'K? ho?ch'}`
+          `⚡ Đã chuyển sang: ${planRow.machineName || 'Máy'} · ${planRow.productName || planRow.opName || 'Kế hoạch'}`
         );
       }
     },
