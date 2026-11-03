@@ -156,4 +156,77 @@ describe('attendanceParser — Real GCCK Codes, Dynamic Month Days, Meal Unifica
     expect(rows[0].scrapPenalty).toBe(50_000);
     expect(rows[0].netPay).toBeGreaterThan(9_500_000);
   });
+
+  it('applies VICO rule for P2 Attendance Bonus: A (full/half-day off)=250k, B (1 day off)=200k, >1 day off=0k', () => {
+    // Oct 2026: 31 days. Sundays are Oct 4, 11, 18, 25 (4 Sundays).
+    // Work days (standard days) = 31 - 4 = 27 days.
+    
+    // Case 1: Full attendance -> Grade A -> P2 = 250k
+    const fullDays = new Array(31).fill('');
+    for (let i = 0; i < 31; i++) {
+      const isSun = [4, 11, 18, 25].includes(i + 1);
+      if (!isSun) fullDays[i] = 'C1';
+    }
+    const fullSummary = computeEmployeeMonthlyStats(
+      { empId: 'NV01', name: 'Tho A1', workType: 'Công', defaultShift: 'Ca 1', yearDaysHist: [], days: fullDays },
+      2026, 10, DEFAULT_MEAL_CONFIG, '2026-10-31'
+    );
+    expect(fullSummary.grade).toBe('A');
+
+    // Case 2: Half-day off (nghỉ nửa ngày vẫn là A) -> Grade A -> P2 = 250k
+    const halfDayOff = [...fullDays];
+    halfDayOff[0] = 'C1/2'; // Oct 1 is Mon/Thu, worked half shift (0.5 day off)
+    const halfSummary = computeEmployeeMonthlyStats(
+      { empId: 'NV02', name: 'Tho A2', workType: 'Công', defaultShift: 'Ca 1', yearDaysHist: [], days: halfDayOff },
+      2026, 10, DEFAULT_MEAL_CONFIG, '2026-10-31'
+    );
+    expect(halfSummary.grade).toBe('A');
+
+    // Case 3: 1 day off (nghỉ 1 ngày là B) -> Grade B -> P2 = 200k
+    const oneDayOff = [...fullDays];
+    oneDayOff[0] = 'O'; // Oct 1 off with permission
+    const oneDaySummary = computeEmployeeMonthlyStats(
+      { empId: 'NV03', name: 'Tho B', workType: 'Công', defaultShift: 'Ca 1', yearDaysHist: [], days: oneDayOff },
+      2026, 10, DEFAULT_MEAL_CONFIG, '2026-10-31'
+    );
+    expect(oneDaySummary.grade).toBe('B');
+
+    // Case 4: > 1 day off (Quá 1 ngày là ko có gì) -> Grade C -> P2 = 0k
+    const twoDaysOff = [...fullDays];
+    twoDaysOff[0] = 'O';
+    twoDaysOff[1] = 'O'; // 2 days off
+    const twoDaysSummary = computeEmployeeMonthlyStats(
+      { empId: 'NV04', name: 'Tho C', workType: 'Công', defaultShift: 'Ca 1', yearDaysHist: [], days: twoDaysOff },
+      2026, 10, DEFAULT_MEAL_CONFIG, '2026-10-31'
+    );
+    expect(twoDaysSummary.grade).toBe('C (KP)');
+
+    // Case 5: 1 day KP (Nghỉ không phép) -> Grade C (KP) -> P2 = 0k
+    const kpDays = [...fullDays];
+    kpDays[0] = 'KP';
+    const kpSummary = computeEmployeeMonthlyStats(
+      { empId: 'NV05', name: 'Tho KP', workType: 'Công', defaultShift: 'Ca 1', yearDaysHist: [], days: kpDays },
+      2026, 10, DEFAULT_MEAL_CONFIG, '2026-10-31'
+    );
+    expect(kpSummary.grade).toBe('C (KP)');
+
+    // Verify 3P Payroll P2 bonuses
+    const payroll = computeMonthly3PPayroll(
+      [
+        { id: 'NV01', name: 'Tho A1', username: 'a1', role: 'CN', appRole: 'WORKER', title: 'Thợ', salaryMode: 'Khoán', baseSalary: 400000, costPerSec: 13.89, isLinked: false },
+        { id: 'NV02', name: 'Tho A2', username: 'a2', role: 'CN', appRole: 'WORKER', title: 'Thợ', salaryMode: 'Khoán', baseSalary: 400000, costPerSec: 13.89, isLinked: false },
+        { id: 'NV03', name: 'Tho B', username: 'b', role: 'CN', appRole: 'WORKER', title: 'Thợ', salaryMode: 'Khoán', baseSalary: 400000, costPerSec: 13.89, isLinked: false },
+        { id: 'NV04', name: 'Tho C', username: 'c', role: 'CN', appRole: 'WORKER', title: 'Thợ', salaryMode: 'Khoán', baseSalary: 400000, costPerSec: 13.89, isLinked: false },
+        { id: 'NV05', name: 'Tho KP', username: 'kp', role: 'CN', appRole: 'WORKER', title: 'Thợ', salaryMode: 'Khoán', baseSalary: 400000, costPerSec: 13.89, isLinked: false },
+      ],
+      [fullSummary, halfSummary, oneDaySummary, twoDaysSummary, kpSummary],
+      []
+    );
+
+    expect(payroll.find((p) => p.workerId === 'NV01')?.p2PersonBonus).toBe(250_000);
+    expect(payroll.find((p) => p.workerId === 'NV02')?.p2PersonBonus).toBe(250_000);
+    expect(payroll.find((p) => p.workerId === 'NV03')?.p2PersonBonus).toBe(200_000);
+    expect(payroll.find((p) => p.workerId === 'NV04')?.p2PersonBonus).toBe(0);
+    expect(payroll.find((p) => p.workerId === 'NV05')?.p2PersonBonus).toBe(0);
+  });
 });

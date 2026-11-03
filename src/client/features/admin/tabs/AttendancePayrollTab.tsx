@@ -1435,6 +1435,12 @@ export function AttendancePayrollTab({ deepLink }: AdminTabCommonProps) {
                     <strong>vẫn bảo lưu điểm chuyên cần A/B</strong> (VD: <code>X/2+O/2</code> tính
                     0.5 ngày nghỉ, không bị tính trùng thành 1.0!).
                   </li>
+                  <li className="rounded bg-blue-50/80 p-2 border border-blue-200 text-blue-900">
+                    🏆 <strong>Quy chế Thưởng Chuyên Cần P2:</strong>
+                    <br />• <strong>Loại A (250.000 đ)</strong>: Đủ số công trong tháng trừ Chủ nhật hoặc nghỉ tối đa nửa ngày (≤ 0.5 ngày).
+                    <br />• <strong>Loại B (200.000 đ)</strong>: Nghỉ 1 ngày công (0.5 &lt; ngày nghỉ ≤ 1.0 ngày).
+                    <br />• <strong>Quá 1 ngày nghỉ hoặc nghỉ KP (0 đ)</strong>: Không xét thưởng chuyên cần.
+                  </li>
                   <li>
                     <code className="rounded bg-rose-600 px-1 py-0.5 font-black text-white">KP</code>
                     : Nghỉ Không Phép — cảnh báo đỏ nổi bật trên bảng &amp; Radar, hạ xếp loại xuống{' '}
@@ -1654,7 +1660,7 @@ export function AttendancePayrollTab({ deepLink }: AdminTabCommonProps) {
 
                 <Card className="border-l-4 border-l-blue-600">
                   <div className="text-xs font-bold uppercase text-slate-500">
-                    Tổng P2 (Thưởng Chuyên Cần A/B)
+                    Tổng P2 (Chuyên Cần A: 250k • B: 200k)
                   </div>
                   <div className="font-mono-num mt-1 text-xl font-black text-blue-700">
                     {formatVnd(payrollRows.reduce((s, r) => s + r.p2PersonBonus, 0))}
@@ -1723,7 +1729,7 @@ export function AttendancePayrollTab({ deepLink }: AdminTabCommonProps) {
                           <th className="border-b border-slate-200 bg-slate-100/80 px-2.5 py-2.5 text-right text-slate-800">
                             P1: Vị Trí/Phép
                           </th>
-                          <th className="border-b border-slate-200 bg-blue-50/70 px-2.5 py-2.5 text-right text-blue-700">
+                          <th className="border-b border-slate-200 bg-blue-50/70 px-2.5 py-2.5 text-right text-blue-700" title="Chuyên cần VICO: Loại A = 250k (đủ công hoặc nghỉ ≤ 0.5 ngày), Loại B = 200k (nghỉ 1 ngày), Quá 1 ngày = 0đ">
                             P2: Thưởng {`A/B`}
                           </th>
                           <th className="border-b border-slate-200 bg-blue-50/70 px-2.5 py-2.5 text-right text-indigo-700">

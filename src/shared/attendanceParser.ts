@@ -192,6 +192,9 @@ export function parseAttendanceCell(
   return res;
 }
 
+export const ATTENDANCE_BONUS_GRADE_A = 250_000;
+export const ATTENDANCE_BONUS_GRADE_B = 200_000;
+
 export function computeEmployeeMonthlyStats(
   emp: AttendanceRow,
   year: number,
@@ -290,13 +293,24 @@ export function computeEmployeeMonthlyStats(
   const hours100 = Number(Math.max(0, regDays * 8.0 - lateHours).toFixed(2));
   const abDays = Math.floor((hours100 / 8.0 + pDays + abExtra) * 100) / 100;
 
-  const gradeThreshold = Math.min(20.0, activeWorkDaysInPeriod);
-  const grade: 'A' | 'B' | 'C (KP)' =
-    kpDays > 0
-      ? 'C (KP)'
-      : activeWorkDaysInPeriod > 0 && abDays >= gradeThreshold && errCount === 0
-        ? 'A'
-        : 'B';
+  // Quy tắc xếp loại A/B/C theo quy chế xưởng VICO:
+  // - Công chuẩn tháng = Số ngày trong tháng trừ các ngày Chủ nhật (activeWorkDaysInPeriod).
+  // - Loại A (250k): Đi làm đủ hoặc nghỉ <= 0.5 ngày (mở rộng nghỉ nửa ngày vẫn là A).
+  // - Loại B (200k): Nghỉ 1 ngày (0.5 < ngày nghỉ <= 1.0 ngày).
+  // - Loại C / KP (0k): Nghỉ quá 1 ngày (> 1.0 ngày) hoặc có vi phạm nghỉ Không Phép (KP).
+  const totalOffDays = Number((offDays + (lateHours / 8.0)).toFixed(2));
+  let grade: 'A' | 'B' | 'C (KP)' = 'B';
+  if (kpDays > 0) {
+    grade = 'C (KP)';
+  } else if (activeWorkDaysInPeriod > 0) {
+    if (totalOffDays <= 0.5 && errCount === 0) {
+      grade = 'A';
+    } else if (totalOffDays <= 1.0 && errCount === 0) {
+      grade = 'B';
+    } else {
+      grade = 'C (KP)';
+    }
+  }
 
   const badges: string[] = [];
   if (kpDays > 0) badges.push(`NGHỈ KP (${kpDays} ngày: ${kpDayList.join(',')})`);
@@ -322,7 +336,7 @@ export function computeEmployeeMonthlyStats(
   const usedLeaveDays = Number(pDays.toFixed(1));
   const remainingLeaveDays = Number(Math.max(0, annualLeaveQuota - usedLeaveDays).toFixed(1));
 
-  let yearRank = 'Đạt Chuẩn A (Thưởng 100%)';
+  let yearRank = 'Đạt Chuẩn A (Thưởng Chuyên Cần 250k)';
   if (kpDays > 0) {
     yearRank = 'Loại C - Vi phạm KP (Hạ thưởng)';
   } else if (regDays >= 21.0 && lateHours === 0) {
@@ -447,13 +461,14 @@ export function computeMonthly3PPayroll(
     }
 
     // P2: Attendance & Discipline Grade Bonus (A: 800k, B: 400k, C/KP: 0)
+    // P2: Thưởng Chuyên Cần A/B theo quy chế xưởng VICO (A: 250k, B: 200k, Quá 1 ngày/KP: 0)
     const p2PersonBonus =
       regDays <= 0 && logCount <= 0
         ? 0
         : grade === 'A'
-          ? 800_000
+          ? ATTENDANCE_BONUS_GRADE_A
           : grade === 'B'
-            ? 400_000
+            ? ATTENDANCE_BONUS_GRADE_B
             : 0;
 
     // Unified meal allowance: max of Attendance sheet vs Shift logs to avoid double counting
