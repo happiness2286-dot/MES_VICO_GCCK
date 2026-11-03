@@ -70,6 +70,7 @@ import {
   saveStoredSupabaseConfig,
   fetchLogsFromSupabase,
   fetchDailyPlanFromSupabase,
+  pushDailyPlanToSupabase,
   subscribeSupabaseDailyPlanChanges,
 } from '../../lib/supabaseClient';
 import { saveClientStoredLog, getAllFallbackLogs, getFallbackDailyPlan, saveFallbackDailyPlan } from '../../lib/clientFallbackStore';
@@ -251,14 +252,15 @@ export function WorkerPortal() {
   useEffect(() => {
     let active = true;
     async function loadPlan() {
+      let loadedRows: DailyPlanRow[] = [];
+
       // 1. Try Supabase cloud directly if connected (seamless real-time sync between PC & Mobile)
       if (isSupabaseConnected()) {
         try {
           const sbRows = await fetchDailyPlanFromSupabase(workDate);
           if (active && sbRows && sbRows.length > 0) {
-            setDailyPlanRows(sbRows);
+            loadedRows = sbRows;
             saveFallbackDailyPlan(workDate, sbRows);
-            return;
           }
         } catch (e) {
           console.warn('Supabase fetch daily plan error in WorkerPortal:', e);
@@ -266,20 +268,33 @@ export function WorkerPortal() {
       }
 
       // 2. Try apiClient endpoint
-      try {
-        const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
-          `/schedules/daily?date=${encodeURIComponent(workDate)}`
-        );
-        if (active && res.rows && res.rows.length > 0) {
-          setDailyPlanRows(res.rows);
-          return;
-        }
-      } catch {}
+      if (loadedRows.length === 0) {
+        try {
+          const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
+            `/schedules/daily?date=${encodeURIComponent(workDate)}`
+          );
+          if (active && res.rows && res.rows.length > 0) {
+            loadedRows = res.rows;
+          }
+        } catch {}
+      }
 
       // 3. Fallback to localStorage / default demo
-      if (active) {
+      if (loadedRows.length === 0 && active) {
         const fallback = getFallbackDailyPlan(workDate);
-        setDailyPlanRows(fallback);
+        if (fallback && fallback.length > 0) {
+          loadedRows = fallback;
+        }
+      }
+
+      // 4. CRITICAL AUTO-SEED TO SUPABASE:
+      // If we have local plan rows on this device but Supabase has 0 rows, auto-push to Supabase Cloud immediately!
+      if (loadedRows.length > 0 && isSupabaseConnected()) {
+        void pushDailyPlanToSupabase(workDate, loadedRows);
+      }
+
+      if (active) {
+        setDailyPlanRows(loadedRows);
       }
     }
     void loadPlan();
@@ -336,19 +351,77 @@ export function WorkerPortal() {
         setSelectedPoId(targetPoId);
         const poObj = ordList.find((p) => p.poId === targetPoId);
         if (poObj?.materialLot) setMaterialLot(poObj.materialLot);
+      } else {
+        setSelectedPoId('PO-THEO-KH');
       }
 
-      // 3. Operation:
-      const opList = bootstrap?.operations || [];
-      let matchedOp = planRow.ncId ? opList.find((o) => o.ncId === planRow.ncId) : undefined;
-      if (!matchedOp && planRow.opName) {
-        matchedOp = opList.find(
-          (o) =>
-            o.opName.toLowerCase() === planRow.opName.toLowerCase() ||
-            o.opName.toLowerCase().includes(planRow.opName.toLowerCase()) ||
-            planRow.opName.toLowerCase().includes(o.opName.toLowerCase())
+      // 2b. Product / Drawing (Set selectedSpId directly from matched product):
+      if (planRow.productName) {
+        const prodList = bootstrap?.products || [];
+        const cleanPName = planRow.productName.trim().toLowerCase();
+        const matchedProd = prodList.find(
+          (p) =>
+            p.productName.trim().toLowerCase() === cleanPName ||
+            p.productName.toLowerCase().includes(cleanPName) ||
+            cleanPName.includes(p.productName.toLowerCase())
         );
+        if (matchedProd) {
+          setSelectedSpId(matchedProd.spId);
+        }
       }
+
+      // 3. Operation (Match accurately by BOTH Product and Operation Name):
+      const opList = bootstrap?.operations || [];
+      let matchedOp: OperationMeta | undefined;
+
+      // 3a. Exact ncId match if specified in plan
+      if (planRow.ncId) {
+        matchedOp = opList.find((o) => o.ncId.toLowerCase() === planRow.ncId!.toLowerCase());
+      }
+
+      // 3b. Match BOTH productName AND opName (CRITICAL for multiple parts sharing same opName)
+      if (!matchedOp && planRow.productName) {
+        const cleanPlanProd = planRow.productName.trim().toLowerCase();
+        const cleanPlanOp = (planRow.opName || '').trim().toLowerCase();
+
+        // 1st: Exact product name + op
+        matchedOp = opList.find((o) => {
+          const oProd = (o.productName || '').trim().toLowerCase();
+          const oOp = (o.opName || '').trim().toLowerCase();
+          const prodExact = oProd === cleanPlanProd;
+          const opMatch = !cleanPlanOp || oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
+          return prodExact && opMatch;
+        });
+
+        // 2nd: Fuzzy product name + op
+        if (!matchedOp) {
+          matchedOp = opList.find((o) => {
+            const oProd = (o.productName || '').trim().toLowerCase();
+            const oOp = (o.opName || '').trim().toLowerCase();
+            const prodFuzzy = oProd.includes(cleanPlanProd) || cleanPlanProd.includes(oProd);
+            const opMatch = !cleanPlanOp || oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
+            return prodFuzzy && opMatch;
+          });
+        }
+
+        // 3rd: Any op for this product
+        if (!matchedOp) {
+          matchedOp = opList.find((o) => {
+            const oProd = (o.productName || '').trim().toLowerCase();
+            return oProd === cleanPlanProd || oProd.includes(cleanPlanProd) || cleanPlanProd.includes(oProd);
+          });
+        }
+      }
+
+      // 3c. Fallback to opName only
+      if (!matchedOp && planRow.opName) {
+        const cleanPlanOp = planRow.opName.trim().toLowerCase();
+        matchedOp = opList.find((o) => {
+          const oOp = (o.opName || '').trim().toLowerCase();
+          return oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
+        });
+      }
+
       if (matchedOp) {
         setSelectedNcId(matchedOp.ncId);
         if (matchedOp.spId) setSelectedSpId(matchedOp.spId);
@@ -387,7 +460,7 @@ export function WorkerPortal() {
         );
       }
     },
-    [bootstrap?.operations, bootstrap?.ordersList, toast]
+    [bootstrap?.operations, bootstrap?.ordersList, bootstrap?.products, myPlanRows, toast]
   );
 
   // Auto-fill from plan whenever worker logs in or date changes
@@ -1638,9 +1711,7 @@ export function WorkerPortal() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {myPlanRows.map((plan, pIdx) => {
-                    const isCurrentSelected =
-                      (plan.machineName && machineName === plan.machineName) ||
-                      (plan.productName && selectedOp?.productName === plan.productName);
+                    const isCurrentSelected = currentSelectedPlanIndex === pIdx;
 
                     const qtyDisplay =
                       plan.plannedQty === 0.25
@@ -1657,10 +1728,13 @@ export function WorkerPortal() {
                       <button
                         key={plan.id || pIdx}
                         type="button"
-                        onClick={() => applyPlanRowSelection(plan, false)}
-                        className={`flex flex-col text-left p-2.5 rounded-xl border-2 transition-all ${
+                        onClick={() => {
+                          setCurrentSelectedPlanIndex(pIdx);
+                          applyPlanRowSelection(plan, false);
+                        }}
+                        className={`flex flex-col text-left p-2.5 rounded-xl border-2 transition-all relative ${
                           isCurrentSelected
-                            ? 'border-blue-600 bg-blue-600 text-white shadow-md scale-[1.01]'
+                            ? 'border-blue-600 bg-blue-600 text-white shadow-md ring-2 ring-blue-300 scale-[1.01]'
                             : 'border-blue-200 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/70 shadow-xs'
                         }`}
                       >
@@ -1679,19 +1753,26 @@ export function WorkerPortal() {
                               </span>
                             )}
                           </span>
-                          <span
-                            className={`px-2 py-0.5 rounded font-mono text-[11px] font-black ${
-                              isCurrentSelected
-                                ? 'bg-white/20 text-white'
-                                : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                            }`}
-                          >
-                            {qtyDisplay}
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isCurrentSelected && (
+                              <span className="px-1.5 py-0.2 rounded bg-white text-blue-900 text-[10px] font-black">
+                                ✓ ĐANG CHỌN
+                              </span>
+                            )}
+                            <span
+                              className={`px-2 py-0.5 rounded font-mono text-[11px] font-black ${
+                                isCurrentSelected
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                              }`}
+                            >
+                              {qtyDisplay}
+                            </span>
+                          </div>
                         </div>
                         <div
                           className={`mt-1 text-xs truncate font-bold ${
-                            isCurrentSelected ? 'text-white' : 'text-blue-800'
+                            isCurrentSelected ? 'text-white' : 'text-blue-900'
                           }`}
                         >
                           {plan.customer ? `[${plan.customer}] ` : ''}
@@ -1700,7 +1781,7 @@ export function WorkerPortal() {
                         {plan.opName && (
                           <div
                             className={`text-[11px] truncate ${
-                              isCurrentSelected ? 'text-white/80' : 'text-slate-600'
+                              isCurrentSelected ? 'text-white/90 font-medium' : 'text-slate-600'
                             }`}
                           >
                             {plan.opName}
@@ -1709,7 +1790,7 @@ export function WorkerPortal() {
                         {plan.note && (
                           <div
                             className={`mt-1 text-[10px] italic truncate ${
-                              isCurrentSelected ? 'text-white/90' : 'text-slate-500'
+                              isCurrentSelected ? 'text-white/80' : 'text-slate-500'
                             }`}
                           >
                             📝 {plan.note}
