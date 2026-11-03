@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { ProductionLogDto } from '@shared/types';
+import type { ProductionLogDto, DailyPlanRow } from '@shared/types';
 import bundledCloudConfig from '../config/cloudConfig.json';
 
 const STORAGE_KEY_URL = 'GCCK_SUPABASE_URL';
@@ -305,4 +305,185 @@ export function subscribeSupabaseLogChanges(onChange: () => void): (() => void) 
     return null;
   }
 }
+
+/**
+ * Push daily plan rows for a specific date to Supabase table `daily_schedule_rows`.
+ */
+export async function pushDailyPlanToSupabase(workDate: string, rows: DailyPlanRow[]): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb || !workDate) return false;
+
+  try {
+    // 1. Delete previous rows for this workDate
+    const { error: delError } = await sb
+      .from('daily_schedule_rows')
+      .delete()
+      .eq('work_date', workDate);
+    if (delError) {
+      console.warn('Supabase delete daily plan error:', delError);
+    }
+
+    if (!rows || rows.length === 0) return true;
+
+    // 2. Map rows to Supabase table schema
+    const dbRows = rows.map((r, idx) => ({
+      work_date: workDate,
+      shift_type: r.shiftType || 'Ca 2',
+      stt: Number(r.stt) || (idx + 1),
+      worker_name: (r.workerName || '').trim(),
+      customer: (r.customer || '').trim(),
+      sp_id: r.spId || '',
+      product_name: (r.productName || '').trim(),
+      nc_id: r.ncId || '',
+      op_name: (r.opName || '').trim(),
+      planned_qty: Number(r.plannedQty) || 0,
+      machine_name: (r.machineName || '').trim(),
+      note: (r.note || '').trim(),
+      actual_qty: Number(r.actualQty) || 0,
+      drawing_url: r.drawingUrl || '',
+      status: r.status || 'PLANNED',
+    }));
+
+    // Insert in batches of 50 to avoid payload limits
+    for (let i = 0; i < dbRows.length; i += 50) {
+      const batch = dbRows.slice(i, i + 50);
+      const { error: insError } = await sb.from('daily_schedule_rows').insert(batch);
+      if (insError) {
+        console.warn('Supabase insert daily plan batch error:', insError);
+        return false;
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('Failed to push daily plan to Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch daily plan rows from Supabase cloud table `daily_schedule_rows`.
+ */
+export async function fetchDailyPlanFromSupabase(workDate: string): Promise<DailyPlanRow[] | null> {
+  const sb = getSupabase();
+  if (!sb || !workDate) return null;
+
+  try {
+    const { data, error } = await sb
+      .from('daily_schedule_rows')
+      .select('*')
+      .eq('work_date', workDate)
+      .order('stt', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (error || !data || data.length === 0) return null;
+
+    return data.map((r: any) => ({
+      id: Number(r.id),
+      workDate: r.work_date,
+      shiftType: r.shift_type || 'Ca 2',
+      stt: Number(r.stt || 1),
+      workerName: r.worker_name || '',
+      customer: r.customer || '',
+      spId: r.sp_id || '',
+      productName: r.product_name || '',
+      ncId: r.nc_id || '',
+      opName: r.op_name || '',
+      plannedQty: Number(r.planned_qty || 0),
+      machineName: r.machine_name || '',
+      note: r.note || '',
+      actualQty: Number(r.actual_qty || 0),
+      drawingUrl: r.drawing_url || '',
+      status: r.status || 'PLANNED',
+      isOvertime: /tăng ca/i.test(r.note || ''),
+      overtimeHours: /tăng ca\s*(\d+)h/i.test(r.note || '')
+        ? Number(RegExp.$1)
+        : (/tăng ca/i.test(r.note || '') ? 2 : undefined),
+    }));
+  } catch (err) {
+    console.warn('Failed to fetch daily plan from Supabase:', err);
+    return null;
+  }
+}
+
+/**
+ * Fetch available dates that have daily schedules from Supabase.
+ */
+export async function fetchDailyDatesFromSupabase(): Promise<{ workDate: string; rowCount: number; workerCount: number }[] | null> {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  try {
+    const { data, error } = await sb
+      .from('daily_schedule_rows')
+      .select('work_date, worker_name')
+      .order('work_date', { ascending: false });
+
+    if (error || !data || data.length === 0) return null;
+
+    const dateMap = new Map<string, { rows: number; workers: Set<string> }>();
+    for (const row of data) {
+      const d = row.work_date;
+      if (!d) continue;
+      const entry = dateMap.get(d) || { rows: 0, workers: new Set<string>() };
+      entry.rows += 1;
+      if (row.worker_name) entry.workers.add(row.worker_name);
+      dateMap.set(d, entry);
+    }
+
+    return Array.from(dateMap.entries())
+      .map(([workDate, meta]) => ({
+        workDate,
+        rowCount: meta.rows,
+        workerCount: meta.workers.size,
+      }))
+      .sort((a, b) => b.workDate.localeCompare(a.workDate));
+  } catch (err) {
+    console.warn('Failed to fetch daily dates from Supabase:', err);
+    return null;
+  }
+}
+
+/**
+ * Delete daily plan for a specific date from Supabase.
+ */
+export async function deleteDailyPlanFromSupabase(workDate: string): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb || !workDate) return false;
+
+  try {
+    const { error } = await sb.from('daily_schedule_rows').delete().eq('work_date', workDate);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Subscribes to real-time additions/updates on `daily_schedule_rows`.
+ */
+export function subscribeSupabaseDailyPlanChanges(onChange: () => void): (() => void) | null {
+  const sb = getSupabase();
+  if (!sb) return null;
+
+  try {
+    const channel = sb
+      .channel('public:daily_schedule_rows')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'daily_schedule_rows' },
+        () => {
+          onChange();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void sb.removeChannel(channel);
+    };
+  } catch {
+    return null;
+  }
+}
+
 

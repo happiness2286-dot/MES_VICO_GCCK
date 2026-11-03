@@ -51,6 +51,13 @@ import {
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
 import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan } from '@client/lib/clientFallbackStore';
+import {
+  isSupabaseConnected,
+  pushDailyPlanToSupabase,
+  fetchDailyPlanFromSupabase,
+  fetchDailyDatesFromSupabase,
+  deleteDailyPlanFromSupabase,
+} from '@client/lib/supabaseClient';
 import { DEFAULT_DRIVE_FOLDER_URL } from '@shared/driveHelper';
 import { DailyQualityReportSection } from './DailyQualityReportSection';
 import type { AdminTabCommonProps } from '../types';
@@ -335,15 +342,37 @@ export function DailyWeeklyScheduleTab({
   const loadDailyRows = async (date: string) => {
     setLoadingDaily(true);
     try {
+      // 1. Try Supabase cloud first (seamless multi-device sync between PC & Mobile)
+      if (isSupabaseConnected()) {
+        try {
+          const sbRows = await fetchDailyPlanFromSupabase(date);
+          if (sbRows && sbRows.length > 0) {
+            setDailyRows(sbRows);
+            saveFallbackDailyPlan(date, sbRows);
+            return;
+          }
+        } catch (e) {
+          console.warn('Supabase fetch error in loadDailyRows:', e);
+        }
+      }
+
       const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
         `/schedules/daily?date=${encodeURIComponent(date)}`
       );
       if (res.rows && res.rows.length > 0) {
         setDailyRows(res.rows);
+        // Auto-seed Supabase Cloud from local if Supabase is connected
+        if (isSupabaseConnected()) {
+          void pushDailyPlanToSupabase(date, res.rows);
+        }
       } else {
         const fallback = getFallbackDailyPlan(date);
         if (fallback && fallback.length > 0) {
           setDailyRows(fallback);
+          // Auto-seed Supabase Cloud from local fallback if Supabase is connected
+          if (isSupabaseConnected()) {
+            void pushDailyPlanToSupabase(date, fallback);
+          }
         } else {
           // Generate blank 3-rows template for the 13 active workers if completely empty
           const activeWorkers = (bootstrap.workers || []).filter((w) => w.isActive !== 0);
@@ -385,13 +414,31 @@ export function DailyWeeklyScheduleTab({
   const loadAvailableDates = async () => {
     setLoadingDates(true);
     try {
+      let cloudDates: DailyDateMeta[] = [];
+      if (isSupabaseConnected()) {
+        try {
+          const sbDates = await fetchDailyDatesFromSupabase();
+          if (sbDates && sbDates.length > 0) {
+            cloudDates = sbDates;
+          }
+        } catch (e) {
+          console.warn('Supabase fetch dates error:', e);
+        }
+      }
+
       const res = await apiClient.get<{ success: boolean; dates: DailyDateMeta[] }>(
         '/schedules/daily-dates'
       );
-      if (res.dates) {
-        setAvailableDates(res.dates);
-        if (res.dates.length > 0 && !sourceCopyDate) {
-          setSourceCopyDate(res.dates[0].workDate);
+      const mergedMap = new Map<string, DailyDateMeta>();
+      for (const d of cloudDates) mergedMap.set(d.workDate, d);
+      for (const d of (res.dates || [])) {
+        if (!mergedMap.has(d.workDate)) mergedMap.set(d.workDate, d);
+      }
+      const combined = Array.from(mergedMap.values()).sort((a, b) => b.workDate.localeCompare(a.workDate));
+      if (combined.length > 0) {
+        setAvailableDates(combined);
+        if (!sourceCopyDate) {
+          setSourceCopyDate(combined[0].workDate);
         }
       }
     } catch (err) {
@@ -520,7 +567,16 @@ export function DailyWeeklyScheduleTab({
         workDate: selectedDate,
         rows: dailyRows,
       });
-      toast.success(`Đã lưu thành công ${dailyRows.length} dòng kế hoạch ngày ${selectedDate}!`);
+      if (isSupabaseConnected()) {
+        const pushed = await pushDailyPlanToSupabase(selectedDate, dailyRows);
+        if (pushed) {
+          toast.success(`Đã lưu ${dailyRows.length} dòng và đồng bộ tức thì lên Supabase Cloud cho điện thoại công nhân!`);
+        } else {
+          toast.warning(`Đã lưu thành công ${dailyRows.length} dòng vào bộ nhớ máy.`);
+        }
+      } else {
+        toast.success(`Đã lưu thành công ${dailyRows.length} dòng kế hoạch ngày ${selectedDate}!`);
+      }
       await loadAvailableDates();
       await onRefreshBootstrap();
     } catch (err: any) {
@@ -634,6 +690,9 @@ export function DailyWeeklyScheduleTab({
     }
     try {
       await apiClient.delete(`/schedules/daily?date=${encodeURIComponent(selectedDate)}`);
+      if (isSupabaseConnected()) {
+        void deleteDailyPlanFromSupabase(selectedDate);
+      }
       toast.success(`Đã xóa kế hoạch ngày ${selectedDate}!`);
       const updatedDates = availableDates.filter((d) => d.workDate !== selectedDate);
       setAvailableDates(updatedDates);
@@ -1088,6 +1147,34 @@ export function DailyWeeklyScheduleTab({
               >
                 <Trash2 className="h-4 w-4" />
                 Xóa Ngày
+              </Button>
+            )}
+            {isSupabaseConnected() && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={async () => {
+                  setSavingDaily(true);
+                  try {
+                    const pushed = await pushDailyPlanToSupabase(selectedDate, dailyRows);
+                    if (pushed) {
+                      toast.success(`Đã đồng bộ ${dailyRows.length} nhiệm vụ ngày ${selectedDate} lên Cloud! Điện thoại công nhân đã cập nhật.`);
+                    } else {
+                      toast.error('Lỗi khi gửi lên Supabase Cloud.');
+                    }
+                  } catch (e: any) {
+                    toast.error(e?.message || 'Không thể đồng bộ Cloud.');
+                  } finally {
+                    setSavingDaily(false);
+                  }
+                }}
+                disabled={savingDaily}
+                className="font-bold text-sky-800 bg-sky-50 border-sky-300 hover:bg-sky-100 shadow-sm"
+                title="Đồng bộ kế hoạch này lên Supabase Cloud để điện thoại công nhân nhận ngay lập tức"
+              >
+                <Share2 className="h-4 w-4 text-sky-600" />
+                Đồng Bộ Cloud
               </Button>
             )}
             <Button

@@ -21,7 +21,8 @@ import {
 import type { AndonLivePayload } from '@shared/types';
 import { removeVietnameseTones } from '@shared/vnSearch';
 import { apiClient } from '../../lib/apiClient';
-import { getFallbackAndonLive } from '../../lib/clientFallbackStore';
+import { getFallbackAndonLive, saveFallbackDailyPlan } from '../../lib/clientFallbackStore';
+import { isSupabaseConnected, fetchDailyPlanFromSupabase, subscribeSupabaseDailyPlanChanges } from '../../lib/supabaseClient';
 import { formatDateVn, formatNumber } from '../../lib/formatters';
 import { navigateTo } from '../../lib/navigation';
 import { Badge } from '../../components/ui/IndustrialPrimitives';
@@ -134,6 +135,13 @@ export function AndonTvBoard() {
     async (silent = true, overrideShift?: 'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3') => {
       if (!silent) setLoading(true);
       try {
+        if (isSupabaseConnected()) {
+          const vDate = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+          const sbRows = await fetchDailyPlanFromSupabase(vDate);
+          if (sbRows && sbRows.length > 0) {
+            saveFallbackDailyPlan(vDate, sbRows);
+          }
+        }
         const curShift = overrideShift !== undefined ? overrideShift : viewShift;
         const url =
           curShift !== 'AUTO'
@@ -150,13 +158,21 @@ export function AndonTvBoard() {
     [viewShift]
   );
 
-  // Poll /andon/live every 10s
+  // Poll /andon/live every 10s and subscribe to cloud plan changes
   useEffect(() => {
     void fetchAndon(false, viewShift);
     const pollId = window.setInterval(() => {
       void fetchAndon(true, viewShift);
     }, 10000);
-    return () => window.clearInterval(pollId);
+
+    const unsub = subscribeSupabaseDailyPlanChanges(() => {
+      void fetchAndon(true, viewShift);
+    });
+
+    return () => {
+      window.clearInterval(pollId);
+      if (unsub) unsub();
+    };
   }, [fetchAndon, viewShift]);
 
   // Digital 1s clock

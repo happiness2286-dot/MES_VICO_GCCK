@@ -49,6 +49,11 @@ import {
   FALLBACK_TOOLS,
 } from './clientFallbackStore';
 import { isStaticHost } from './navigation';
+import {
+  isSupabaseConnected,
+  pushDailyPlanToSupabase,
+  deleteDailyPlanFromSupabase,
+} from './supabaseClient';
 
 export const AUTH_TOKEN_STORAGE_KEY = 'GCCK_SESSION_TOKEN';
 
@@ -286,6 +291,9 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       const urlParams = new URLSearchParams(path.split('?')[1] || '');
       const date = urlParams.get('date') || '';
       deleteFallbackDailyPlan(date);
+      if (isSupabaseConnected()) {
+        void deleteDailyPlanFromSupabase(date);
+      }
       return { success: true, workDate: date } as unknown as T;
     }
     if (options.method === 'POST') {
@@ -293,6 +301,9 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       const workDate = body?.workDate || body?.date || '2026-11-02';
       const rows = Array.isArray(body?.rows) ? body.rows : [];
       saveFallbackDailyPlan(workDate, rows);
+      if (isSupabaseConnected()) {
+        void pushDailyPlanToSupabase(workDate, rows);
+      }
       return { success: true, workDate, count: rows.length } as unknown as T;
     }
     const urlParams = new URLSearchParams(path.split('?')[1] || '');

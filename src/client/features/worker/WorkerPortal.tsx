@@ -65,8 +65,14 @@ import {
   formatVnd,
 } from '../../lib/formatters';
 import { isStaticHost, navigateTo } from '../../lib/navigation';
-import { isSupabaseConnected, saveStoredSupabaseConfig, fetchLogsFromSupabase } from '../../lib/supabaseClient';
-import { saveClientStoredLog, getAllFallbackLogs, getFallbackDailyPlan } from '../../lib/clientFallbackStore';
+import {
+  isSupabaseConnected,
+  saveStoredSupabaseConfig,
+  fetchLogsFromSupabase,
+  fetchDailyPlanFromSupabase,
+  subscribeSupabaseDailyPlanChanges,
+} from '../../lib/supabaseClient';
+import { saveClientStoredLog, getAllFallbackLogs, getFallbackDailyPlan, saveFallbackDailyPlan } from '../../lib/clientFallbackStore';
 import {
   flushOfflineOutbox,
   generateIdempotentRecordUid,
@@ -245,6 +251,21 @@ export function WorkerPortal() {
   useEffect(() => {
     let active = true;
     async function loadPlan() {
+      // 1. Try Supabase cloud directly if connected (seamless real-time sync between PC & Mobile)
+      if (isSupabaseConnected()) {
+        try {
+          const sbRows = await fetchDailyPlanFromSupabase(workDate);
+          if (active && sbRows && sbRows.length > 0) {
+            setDailyPlanRows(sbRows);
+            saveFallbackDailyPlan(workDate, sbRows);
+            return;
+          }
+        } catch (e) {
+          console.warn('Supabase fetch daily plan error in WorkerPortal:', e);
+        }
+      }
+
+      // 2. Try apiClient endpoint
       try {
         const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
           `/schedules/daily?date=${encodeURIComponent(workDate)}`
@@ -254,14 +275,23 @@ export function WorkerPortal() {
           return;
         }
       } catch {}
+
+      // 3. Fallback to localStorage / default demo
       if (active) {
         const fallback = getFallbackDailyPlan(workDate);
         setDailyPlanRows(fallback);
       }
     }
     void loadPlan();
+
+    // Auto-reload plan on worker's phone when manager updates plan on PC
+    const unsub = subscribeSupabaseDailyPlanChanges(() => {
+      void loadPlan();
+    });
+
     return () => {
       active = false;
+      if (unsub) unsub();
     };
   }, [workDate]);
 
