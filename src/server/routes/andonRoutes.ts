@@ -252,7 +252,108 @@ export function createAndonRoutes(db: DatabaseSync): Router {
       alertsTicker.push('✅ Xưởng GCCK Thắng Lợi vận hành ổn định — Tuân thủ tự kiểm ★ và 5S cuối ca.');
     }
 
+    // 7. Build 13 personnel live status for the shift
+    const CREW_13 = [
+      { workerId: 'NV00053', name: 'Hoàng Ngọc Hà', role: 'QĐ', title: 'Quản đốc xưởng' },
+      { workerId: 'NV00214', name: 'Trần Văn Quỳnh', role: 'KT', title: 'Phó QĐ / Kỹ thuật' },
+      { workerId: 'NV00215', name: 'Phạm Văn Tráng', role: 'TC', title: 'Trưởng Ca (Tổ Tráng)' },
+      { workerId: 'NV00218', name: 'Nguyễn Trung Đông', role: 'Thợ', title: 'Thợ tiện CNC (Tổ Tráng)' },
+      { workerId: 'NV00219', name: 'Phùng Công Thắng', role: 'Thợ', title: 'Thợ tiện đứng (Tổ Tráng)' },
+      { workerId: 'NV00266', name: 'Trần Văn Dũng', role: 'TC', title: 'Trưởng Ca (Tổ Dũng)' },
+      { workerId: 'NV00216', name: 'Nguyễn Văn Thanh', role: 'Thợ', title: 'Thợ tiện/cắt dây (Tổ Dũng)' },
+      { workerId: 'NV00283', name: 'Vũ Tiến Thuận', role: 'Thợ', title: 'Thợ tiện FUJI (Tổ Dũng)' },
+      { workerId: 'NV00267', name: 'Phùng Gia Phúc', role: 'TC', title: 'Trưởng Ca (Tổ Phúc)' },
+      { workerId: 'NV00265', name: 'Phạm Văn Sam', role: 'Thợ', title: 'Thợ tiện/cắt dây (Tổ Phúc)' },
+      { workerId: 'NV00279', name: 'Đinh Văn Nhận', role: 'Thợ', title: 'Thợ tiện CNC (Tổ Phúc)' },
+      { workerId: 'NV00261', name: 'Đặng Ngọc Long', role: 'Thợ', title: 'Thợ phay (Cố định Ca 2)' },
+      { workerId: 'NV00282', name: 'Phùng Đình Hùng', role: 'Thợ', title: 'Thợ tiện OKUMA (Luân chuyển)' },
+    ];
+
+    const findWorkerShiftInPlan = (name: string): string | null => {
+      const row = planRows.find((r) => String(r.worker_name || '').trim().toLowerCase() === name.toLowerCase());
+      return row ? String(row.shift_type) : null;
+    };
+
+    const trangShift = findWorkerShiftInPlan('Phạm Văn Tráng') || findWorkerShiftInPlan('Nguyễn Trung Đông') || findWorkerShiftInPlan('Phùng Công Thắng') || 'Ca 1';
+    const dungShift = findWorkerShiftInPlan('Trần Văn Dũng') || findWorkerShiftInPlan('Nguyễn Văn Thanh') || findWorkerShiftInPlan('Vũ Tiến Thuận') || 'Ca 2';
+    const phucShift = findWorkerShiftInPlan('Phùng Gia Phúc') || findWorkerShiftInPlan('Phạm Văn Sam') || findWorkerShiftInPlan('Đinh Văn Nhận') || 'Ca 3';
+
+    const getAssignedShift = (wId: string, wName: string): 'Ca 1' | 'Ca 2' | 'Ca 3' | 'Hành chính' | 'Luân chuyển' => {
+      if (wId === 'NV00053') return 'Hành chính';
+      if (wId === 'NV00261') return 'Ca 2';
+      if (wId === 'NV00282') return 'Luân chuyển';
+      if (['Phạm Văn Tráng', 'Nguyễn Trung Đông', 'Phùng Công Thắng'].includes(wName)) return trangShift as any;
+      if (['Trần Văn Dũng', 'Nguyễn Văn Thanh', 'Vũ Tiến Thuận'].includes(wName)) return dungShift as any;
+      if (['Phùng Gia Phúc', 'Phạm Văn Sam', 'Đinh Văn Nhận'].includes(wName)) return phucShift as any;
+      return (findWorkerShiftInPlan(wName) || 'Ca 1') as any;
+    };
+
+    const workersStatus = CREW_13.map((w) => {
+      const assignedShift = getAssignedShift(w.workerId, w.name);
+      const isSupervisor = w.workerId === 'NV00053';
+      const isShiftActive = !isSupervisor && (assignedShift === currentShift || (assignedShift === 'Luân chuyển' && Boolean(findWorkerShiftInPlan(w.name) === currentShift)));
+      const rowsForWorker = shiftPlanRows.filter((r) => String(r.worker_name || '').trim().toLowerCase() === w.name.toLowerCase());
+
+      let status: 'ACTIVE' | 'OFF' | 'OVERTIME' | 'OFF_SHIFT' | 'SUPERVISOR' = 'OFF_SHIFT';
+      let statusLabel = `💤 Nghỉ ca (${assignedShift})`;
+      let primaryMachine: string | null = null;
+      let secondaryMachine: string | null = null;
+      let productName: string | null = null;
+      let opName: string | null = null;
+      let plannedQty = 0;
+      let note = '';
+
+      if (isSupervisor) {
+        status = 'SUPERVISOR';
+        statusLabel = '👔 Chỉ đạo 3 ca (Không đứng máy)';
+      } else if (isShiftActive) {
+        if (rowsForWorker.length > 0) {
+          const firstRow = rowsForWorker[0];
+          primaryMachine = String(firstRow.machine_name || '');
+          productName = String(firstRow.product_name || '');
+          opName = String(firstRow.op_name || '');
+          plannedQty = Number(firstRow.planned_qty || 0);
+          note = String(firstRow.note || '');
+
+          if (rowsForWorker.length > 1) {
+            const secondRow = rowsForWorker[1];
+            secondaryMachine = String(secondRow.machine_name || '');
+          }
+
+          const hasOt = rowsForWorker.some((r) => r.is_overtime || (r.note && /tăng ca|ot/i.test(r.note)));
+          if (hasOt) {
+            status = 'OVERTIME';
+            statusLabel = '🔥 Tăng ca';
+          } else {
+            status = 'ACTIVE';
+            statusLabel = '🟢 Đang làm việc';
+          }
+        } else {
+          status = 'OFF';
+          statusLabel = '⚪ Báo nghỉ / Chưa gán máy';
+        }
+      }
+
+      return {
+        workerId: w.workerId,
+        name: w.name,
+        role: w.role,
+        title: w.title,
+        assignedShift,
+        isCurrentShiftActive: isShiftActive,
+        status,
+        statusLabel,
+        primaryMachine,
+        secondaryMachine,
+        productName,
+        opName,
+        plannedQty,
+        note,
+      };
+    });
+
     const payload: AndonLivePayload = {
+      workersStatus,
       serverTime: new Date().toISOString(),
       vietnamDate,
       spindleRunPct,

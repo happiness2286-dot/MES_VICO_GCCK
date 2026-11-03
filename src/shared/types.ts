@@ -797,7 +797,25 @@ export interface HandoverSlipRow {
   createdAt: string;
 }
 
+export interface AndonWorkerStatus {
+  workerId: string;
+  name: string;
+  role: string;
+  title?: string;
+  assignedShift: 'Ca 1' | 'Ca 2' | 'Ca 3' | 'Hành chính' | 'Luân chuyển';
+  isCurrentShiftActive: boolean;
+  status: 'ACTIVE' | 'OFF' | 'OVERTIME' | 'OFF_SHIFT' | 'SUPERVISOR';
+  statusLabel: string;
+  primaryMachine?: string | null;
+  secondaryMachine?: string | null;
+  productName?: string | null;
+  opName?: string | null;
+  plannedQty?: number;
+  note?: string;
+}
+
 export interface AndonLivePayload {
+  workersStatus?: AndonWorkerStatus[];
   serverTime: string;
   vietnamDate: string;
   spindleRunPct: number;

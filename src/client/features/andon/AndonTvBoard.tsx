@@ -14,6 +14,9 @@ import {
   PlayCircle,
   RefreshCw,
   Trophy,
+  Users,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import type { AndonLivePayload } from '@shared/types';
 import { removeVietnameseTones } from '@shared/vnSearch';
@@ -109,7 +112,7 @@ function resolveMachineVisualState(m: AndonLivePayload['machines'][number]): {
   }
 
   return {
-    badgeLabel: '⚪ ĐANG NGHỈ',
+    badgeLabel: '⚪ KHÔNG HOẠT ĐỘNG',
     cardCls: 'border-slate-200 border-l-4 border-l-slate-300 bg-white shadow-sm',
     pillCls: 'border-slate-200 bg-slate-100 text-slate-600',
     dotCls: 'bg-slate-400',
@@ -125,6 +128,7 @@ export function AndonTvBoard() {
   const [slidePinned, setSlidePinned] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [viewShift, setViewShift] = useState<'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3'>('AUTO');
+  const [crewFilter, setCrewFilter] = useState<'SHIFT_ONLY' | 'ALL_13'>('SHIFT_ONLY');
 
   const fetchAndon = useCallback(
     async (silent = true, overrideShift?: 'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3') => {
@@ -496,12 +500,151 @@ export function AndonTvBoard() {
 
           <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-slate-400 bg-white px-3.5 py-2 shadow-sm">
             <div>
-              <div className="text-[11px] font-bold uppercase text-slate-600">Đang nghỉ</div>
-              <div className="text-xs font-semibold text-slate-600">⚪ Chờ điều độ</div>
+              <div className="text-[11px] font-bold uppercase text-slate-600">Không hoạt động</div>
+              <div className="text-xs font-semibold text-slate-600">⚪ Chưa bố trí thợ</div>
             </div>
             <span className="font-mono-num text-2xl font-black text-slate-700">
               {data?.summary?.idleCount ?? 0}
             </span>
+          </div>
+        </section>
+
+        {/* ==================== BẢNG ĐIỀU HÀNH 13 NHÂN SỰ & PHÂN CA REALTIME ==================== */}
+        <section
+          aria-label="Giám sát 13 nhân sự và phân ca xưởng"
+          className="rounded-2xl border-2 border-blue-300 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/80 p-3.5 shadow-sm space-y-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 pb-2">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-blue-700" />
+              <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 sm:text-base">
+                Giám Sát 13 Nhân Sự &amp; Điều Phối Máy Chính / Máy Phụ ({shiftLabel})
+              </h2>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setCrewFilter('SHIFT_ONLY')}
+                className={`px-3 py-1.5 rounded-lg border transition-all ${
+                  crewFilter === 'SHIFT_ONLY'
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                Tổ Ca Đang Trực ({shiftLabel.split('·')[0].trim()})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCrewFilter('ALL_13')}
+                className={`px-3 py-1.5 rounded-lg border transition-all ${
+                  crewFilter === 'ALL_13'
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                }`}
+              >
+                Xem Toàn Bộ 13 Nhân Sự (Cả 3 Ca)
+              </button>
+            </div>
+          </div>
+
+          {/* Workers Grid */}
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+            {(data?.workersStatus || [])
+              .filter((w) => (crewFilter === 'SHIFT_ONLY' ? w.isCurrentShiftActive || w.status === 'SUPERVISOR' : true))
+              .map((w) => {
+                const isWorking = w.status === 'ACTIVE' || w.status === 'OVERTIME';
+                const isOffInShift = w.status === 'OFF';
+                const isSupervisor = w.status === 'SUPERVISOR';
+
+                const cardCls = isWorking
+                  ? 'border-emerald-300 bg-emerald-50/50 shadow-xs ring-1 ring-emerald-400/30'
+                  : isOffInShift
+                  ? 'border-amber-300 bg-amber-50/60 shadow-xs'
+                  : isSupervisor
+                  ? 'border-blue-300 bg-blue-50/70 shadow-xs'
+                  : 'border-slate-200 bg-white/70 text-slate-500 opacity-80';
+
+                const badgeCls = isWorking
+                  ? 'bg-emerald-600 text-white'
+                  : isOffInShift
+                  ? 'bg-amber-500 text-slate-950 font-black'
+                  : isSupervisor
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-200 text-slate-700';
+
+                return (
+                  <div
+                    key={w.workerId}
+                    className={`flex flex-col justify-between rounded-xl border p-2.5 transition-all ${cardCls}`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-slate-900 flex items-center gap-1.5">
+                            <span>{w.name}</span>
+                            <span className="font-mono text-[10px] font-bold text-slate-500">({w.workerId})</span>
+                          </div>
+                          <div className="truncate text-[11px] font-bold text-slate-600">
+                            {w.title || w.role} {w.assignedShift ? `• ${w.assignedShift}` : ''}
+                          </div>
+                        </div>
+
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-black shrink-0 ${badgeCls}`}>
+                          {w.status === 'ACTIVE'
+                            ? '🟢 ĐANG LÀM'
+                            : w.status === 'OVERTIME'
+                            ? '🔥 TĂNG CA'
+                            : w.status === 'OFF'
+                            ? '⚪ BÁO NGHỈ / CHƯA GÁN'
+                            : w.status === 'SUPERVISOR'
+                            ? '👔 QUẢN ĐỐC'
+                            : '💤 NGHỈ CA'}
+                        </span>
+                      </div>
+
+                      {/* Machine assignment details */}
+                      {isWorking && (
+                        <div className="mt-2 space-y-1 text-xs">
+                          {w.primaryMachine && (
+                            <div className="truncate font-extrabold text-emerald-800 bg-white px-2 py-1 rounded border border-emerald-200">
+                              ⚙️ Máy chính: <strong>{w.primaryMachine}</strong>
+                            </div>
+                          )}
+                          {w.secondaryMachine && (
+                            <div className="truncate font-black text-amber-900 bg-amber-100/80 px-2 py-1 rounded border border-amber-300">
+                              ⭐ Ghép máy phụ (+0.33): <strong>{w.secondaryMachine}</strong>
+                            </div>
+                          )}
+                          {w.productName && (
+                            <div className="truncate text-[11px] font-semibold text-slate-700 pt-0.5">
+                              SP: {w.productName} {w.opName ? `· ${w.opName}` : ''}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {isOffInShift && (
+                        <div className="mt-2 rounded bg-amber-100/70 p-1.5 text-[11px] font-semibold text-amber-900 border border-amber-200">
+                          ⚠️ Chưa phân công máy hoặc công nhân báo nghỉ ca hôm nay.
+                        </div>
+                      )}
+
+                      {isSupervisor && (
+                        <div className="mt-2 rounded bg-blue-100/60 p-1.5 text-[11px] font-semibold text-blue-900 border border-blue-200">
+                          Chỉ đạo điều hành sản xuất 3 ca xưởng cơ khí, không trực tiếp vận hành máy.
+                        </div>
+                      )}
+
+                      {w.status === 'OFF_SHIFT' && (
+                        <div className="mt-2 text-[11px] italic text-slate-500">
+                          Nghỉ ca theo lịch luân chuyển, chờ đến ca trực.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         </section>
 
@@ -544,7 +687,7 @@ export function AndonTvBoard() {
                     🟣 Chờ phôi / Đêm
                   </span>
                   <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-700">
-                    ⚪ Nghỉ: {data?.summary?.idleCount ?? 0}
+                    ⚪ Không hoạt động: {data?.summary?.idleCount ?? 0}
                   </span>
                 </div>
               </div>
@@ -617,7 +760,7 @@ export function AndonTvBoard() {
                           </div>
                         ) : (
                           <div className="mt-2 text-[11px] italic text-slate-400">
-                            ⚪ Nghỉ theo kế hoạch ca
+                            ⚪ Không hoạt động (Chưa bố trí thợ)
                           </div>
                         )}
 
