@@ -288,6 +288,26 @@ export function LogsQcTraceTab({
   };
 
   // ==================== SUB-VIEW D: HANDOVER BM.GC.01.02 STATE ====================
+const HANDOVER_SENDER_OPTIONS = [
+  'Hoàng Ngọc Hà',
+  'Lê Trung Hải',
+  'Nguyễn Văn Duy',
+  'Trần Văn Quỳnh',
+  'Trần Văn Dũng',
+  'Phạm Văn Tráng',
+  'Phùng Gia Phúc',
+];
+
+const HANDOVER_RECEIVER_OPTIONS = [
+  'Phùng Gia Phúc',
+  'Phạm Văn Tráng',
+  'Trần Văn Dũng',
+  'Lê Trung Hải',
+  'Nguyễn Văn Duy',
+  'Hoàng Ngọc Hà',
+  'Trần Văn Quỳnh',
+];
+
   const [handovers, setHandovers] = useState<HandoverSlipRow[]>(() => getFallbackHandovers());
   const [hoSearch, setHoSearch] = useState('');
   const [hoDateFilter, setHoDateFilter] = useState('');
@@ -311,7 +331,9 @@ export function LogsQcTraceTab({
   const [hoRawQtyMissing, setHoRawQtyMissing] = useState(0);
   const [hoNote, setHoNote] = useState('');
   const [hoReceiver, setHoReceiver] = useState('Trần Văn Dũng');
-  const [hoSender, setHoSender] = useState(user?.name || 'Trần Văn Dũng');
+  const [hoSender, setHoSender] = useState(user?.name || 'Hoàng Ngọc Hà');
+  const [customSenderMode, setCustomSenderMode] = useState(false);
+  const [customReceiverMode, setCustomReceiverMode] = useState(false);
   const [submittingHo, setSubmittingHo] = useState(false);
 
   const reloadHandovers = async () => {
@@ -339,8 +361,12 @@ export function LogsQcTraceTab({
     setHoRawQtyDefect(row.rawQtyDefect || 0);
     setHoRawQtyMissing(row.rawQtyMissing || 0);
     setHoNote(row.note || '');
-    setHoReceiver(row.receiverName || '');
-    setHoSender(row.senderName || user?.name || '');
+    const rec = row.receiverName || 'Trần Văn Dũng';
+    const snd = row.senderName || user?.name || 'Hoàng Ngọc Hà';
+    setHoReceiver(rec);
+    setHoSender(snd);
+    setCustomReceiverMode(Boolean(rec && !HANDOVER_RECEIVER_OPTIONS.includes(rec)));
+    setCustomSenderMode(Boolean(snd && !HANDOVER_SENDER_OPTIONS.includes(snd)));
     setHoModalOpen(true);
   };
 
@@ -365,7 +391,9 @@ export function LogsQcTraceTab({
     setHoRawQtyMissing(Math.max(0, poQty - rawQty));
     setHoNote('');
     setHoReceiver('Trần Văn Dũng');
-    setHoSender(user?.name || 'Trần Văn Quỳnh');
+    setHoSender(user?.name || 'Hoàng Ngọc Hà');
+    setCustomSenderMode(false);
+    setCustomReceiverMode(false);
     setHoModalOpen(true);
   };
 
@@ -2249,22 +2277,84 @@ export function LogsQcTraceTab({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block font-bold text-slate-700">Người Giao</label>
-              <input
-                type="text"
-                value={hoSender}
-                onChange={(e) => setHoSender(e.target.value)}
+              <label className="mb-1 block font-bold text-slate-700">
+                Người Giao <span className="text-blue-600 font-normal text-xs">(Chọn từ danh sách)</span>
+              </label>
+              <select
+                value={HANDOVER_SENDER_OPTIONS.includes(hoSender) ? hoSender : (customSenderMode ? '__CUSTOM__' : hoSender)}
+                onChange={(e) => {
+                  if (e.target.value === '__CUSTOM__') {
+                    setCustomSenderMode(true);
+                    setHoSender('');
+                  } else {
+                    setCustomSenderMode(false);
+                    setHoSender(e.target.value);
+                  }
+                }}
                 className={modalInputCls}
-              />
+              >
+                <option value="Hoàng Ngọc Hà">Hoàng Ngọc Hà (Quản đốc)</option>
+                <option value="Lê Trung Hải">Lê Trung Hải</option>
+                <option value="Nguyễn Văn Duy">Nguyễn Văn Duy</option>
+                <option value="Trần Văn Dũng">Trần Văn Dũng (Trưởng Ca 2)</option>
+                <option value="Phạm Văn Tráng">Phạm Văn Tráng (Trưởng Ca 1)</option>
+                <option value="Phùng Gia Phúc">Phùng Gia Phúc (Trưởng Ca 3)</option>
+                <option value="Trần Văn Quỳnh">Trần Văn Quỳnh (Kỹ thuật)</option>
+                {!HANDOVER_SENDER_OPTIONS.includes(hoSender) && hoSender && (
+                  <option value={hoSender}>{hoSender}</option>
+                )}
+                <option value="__CUSTOM__">-- Nhập tên khác... --</option>
+              </select>
+              {customSenderMode && (
+                <input
+                  type="text"
+                  placeholder="Nhập họ tên người giao..."
+                  value={hoSender}
+                  onChange={(e) => setHoSender(e.target.value)}
+                  className={`mt-1.5 ${modalInputCls}`}
+                  autoFocus
+                />
+              )}
             </div>
             <div>
-              <label className="mb-1 block font-bold text-slate-700">Người Nhận</label>
-              <input
-                type="text"
-                value={hoReceiver}
-                onChange={(e) => setHoReceiver(e.target.value)}
+              <label className="mb-1 block font-bold text-slate-700">
+                Người Nhận <span className="text-emerald-600 font-normal text-xs">(Chọn từ danh sách)</span>
+              </label>
+              <select
+                value={HANDOVER_RECEIVER_OPTIONS.includes(hoReceiver) ? hoReceiver : (customReceiverMode ? '__CUSTOM__' : hoReceiver)}
+                onChange={(e) => {
+                  if (e.target.value === '__CUSTOM__') {
+                    setCustomReceiverMode(true);
+                    setHoReceiver('');
+                  } else {
+                    setCustomReceiverMode(false);
+                    setHoReceiver(e.target.value);
+                  }
+                }}
                 className={modalInputCls}
-              />
+              >
+                <option value="Phùng Gia Phúc">Phùng Gia Phúc (Trưởng Ca 3)</option>
+                <option value="Phạm Văn Tráng">Phạm Văn Tráng (Trưởng Ca 1)</option>
+                <option value="Trần Văn Dũng">Trần Văn Dũng (Trưởng Ca 2)</option>
+                <option value="Lê Trung Hải">Lê Trung Hải</option>
+                <option value="Nguyễn Văn Duy">Nguyễn Văn Duy</option>
+                <option value="Hoàng Ngọc Hà">Hoàng Ngọc Hà (Quản đốc)</option>
+                <option value="Trần Văn Quỳnh">Trần Văn Quỳnh (Kỹ thuật)</option>
+                {!HANDOVER_RECEIVER_OPTIONS.includes(hoReceiver) && hoReceiver && (
+                  <option value={hoReceiver}>{hoReceiver}</option>
+                )}
+                <option value="__CUSTOM__">-- Nhập tên khác... --</option>
+              </select>
+              {customReceiverMode && (
+                <input
+                  type="text"
+                  placeholder="Nhập họ tên người nhận..."
+                  value={hoReceiver}
+                  onChange={(e) => setHoReceiver(e.target.value)}
+                  className={`mt-1.5 ${modalInputCls}`}
+                  autoFocus
+                />
+              )}
             </div>
           </div>
 
