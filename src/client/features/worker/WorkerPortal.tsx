@@ -239,6 +239,7 @@ export function WorkerPortal() {
 
 // ==================== DAILY PLAN AUTO-SUGGESTION FOR ACTIVE WORKER ====================
   const [dailyPlanRows, setDailyPlanRows] = useState<DailyPlanRow[]>([]);
+  const [currentSelectedPlanIndex, setCurrentSelectedPlanIndex] = useState<number>(0);
   const lastAutoSelectedWorkerRef = useRef<string>('');
 
   useEffect(() => {
@@ -276,6 +277,14 @@ export function WorkerPortal() {
       );
     });
   }, [user?.name, dailyPlanRows]);
+
+  const primaryPlanRow = useMemo(() => {
+    return myPlanRows.find((r) => !r.note || !/ghép 2 máy|\+0\.33/i.test(r.note)) || myPlanRows[0];
+  }, [myPlanRows]);
+
+  const secondaryPlanRow = useMemo(() => {
+    return myPlanRows.find((r) => r.note && /ghép 2 máy|\+0\.33/i.test(r.note)) || (myPlanRows.length > 1 ? myPlanRows[1] : null);
+  }, [myPlanRows]);
 
   const applyPlanRowSelection = useCallback(
     (planRow: DailyPlanRow, silent = false) => {
@@ -339,6 +348,8 @@ export function WorkerPortal() {
       if (planRow.plannedQty > 0) {
         setOkQty(planRow.plannedQty);
       }
+      const pIdx = myPlanRows.indexOf(planRow);
+      if (pIdx >= 0) setCurrentSelectedPlanIndex(pIdx);
 
       if (!silent) {
         toast.success(
@@ -2005,7 +2016,12 @@ export function WorkerPortal() {
               <div className="grid grid-cols-2 gap-2 pt-0.5">
                 <button
                   type="button"
-                  onClick={() => setMachineMode('FIRST')}
+                  onClick={() => {
+                    setMachineMode('FIRST');
+                    if (primaryPlanRow && primaryPlanRow.machineName && machineName !== primaryPlanRow.machineName) {
+                      setMachineName(primaryPlanRow.machineName);
+                    }
+                  }}
                   className={`flex min-h-[48px] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition-colors ${
                     machineMode === 'FIRST'
                       ? 'border-emerald-400 bg-emerald-50 text-emerald-800 shadow-sm'
@@ -2017,7 +2033,12 @@ export function WorkerPortal() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMachineMode('SECOND')}
+                  onClick={() => {
+                    setMachineMode('SECOND');
+                    if (secondaryPlanRow && secondaryPlanRow.machineName && machineName !== secondaryPlanRow.machineName) {
+                      setMachineName(secondaryPlanRow.machineName);
+                    }
+                  }}
                   className={`flex min-h-[48px] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition-colors ${
                     machineMode === 'SECOND' || effectivePayroll.effectiveMachineMode === 'SECOND'
                       ? 'border-violet-400 bg-violet-50 text-violet-800 shadow-sm'
@@ -2028,6 +2049,56 @@ export function WorkerPortal() {
                   <span className="truncate">Ghép máy 2 (0.33)</span>
                 </button>
               </div>
+
+              {/* Tích hợp thông tin Máy phụ khi Ghép máy 2 */}
+              {machineMode === 'SECOND' && (
+                <div className="rounded-xl border border-violet-300 bg-violet-50/90 p-2.5 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-violet-950">
+                    <span className="flex items-center gap-1.5">
+                      <Layers className="h-4 w-4 text-violet-600" />
+                      <span>ĐANG VẬN HÀNH MÁY PHỤ (+0.33 HỆ SỐ LƯƠNG KHOÁN)</span>
+                    </span>
+                    <span className="bg-violet-200 text-violet-900 text-[10px] px-2 py-0.5 rounded-full font-black border border-violet-300">
+                      +33% Lương
+                    </span>
+                  </div>
+                  <div className="text-xs text-violet-900">
+                    Máy phụ ghi nhận: <strong className="text-violet-950 font-black text-sm">{machineName}</strong>
+                    {secondaryPlanRow && (
+                      <span className="ml-2 font-bold text-violet-700">
+                        (Chi tiết: {secondaryPlanRow.productName || secondaryPlanRow.opName})
+                      </span>
+                    )}
+                  </div>
+                  {primaryPlanRow && secondaryPlanRow && primaryPlanRow.machineName !== secondaryPlanRow.machineName && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-violet-200/80">
+                      <span className="text-[11px] font-bold text-slate-600">Đổi nhanh máy:</span>
+                      <button
+                        type="button"
+                        onClick={() => applyPlanRowSelection(primaryPlanRow, false)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                          machineName === primaryPlanRow.machineName
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        ⚙️ Máy chính: {primaryPlanRow.machineName}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyPlanRowSelection(secondaryPlanRow, false)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                          machineName === secondaryPlanRow.machineName
+                            ? 'bg-violet-600 text-white shadow-xs'
+                            : 'bg-white border border-violet-300 text-violet-800 hover:bg-violet-100'
+                        }`}
+                      >
+                        ⭐ Máy phụ: {secondaryPlanRow.machineName} (+0.33)
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </Card>
 
             {/* 4. Tech Spec Card + Tool Crib Lookup + Self-Check ★ */}
