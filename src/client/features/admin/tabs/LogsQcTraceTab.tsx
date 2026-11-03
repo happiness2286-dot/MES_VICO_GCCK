@@ -350,16 +350,19 @@ export function LogsQcTraceTab({
     setHoFromDept('PX_GIA_CONG');
     setHoToDept('PX_NHIET_LUYEN');
     const firstPo = bootstrap.ordersList[0];
+    const poQty = firstPo?.qtyPo || 0;
+    const btpQty = firstPo?.finishedQty || 0;
+    const rawQty = firstPo?.wipQty && firstPo.wipQty > 0 ? firstPo.wipQty : poQty;
     setHoSelectedPo(firstPo?.poId || '');
     setHoProdName(firstPo?.productName || '');
     setHoCustomer(firstPo?.customer || '');
     setHoUnit('Cái');
-    setHoProdQtyTransferred(firstPo?.finishedQty || 0);
+    setHoProdQtyTransferred(btpQty);
     setHoProdQtyDefect(0);
-    setHoProdQtyMissing(0);
-    setHoRawQtyTransferred(firstPo?.qtyPo || 0);
+    setHoProdQtyMissing(Math.max(0, poQty - btpQty));
+    setHoRawQtyTransferred(rawQty);
     setHoRawQtyDefect(0);
-    setHoRawQtyMissing(0);
+    setHoRawQtyMissing(Math.max(0, poQty - rawQty));
     setHoNote('');
     setHoReceiver('Trần Văn Dũng');
     setHoSender(user?.name || 'Trần Văn Quỳnh');
@@ -384,8 +387,15 @@ export function LogsQcTraceTab({
     if (po) {
       setHoProdName(po.productName);
       setHoCustomer(po.customer);
-      setHoProdQtyTransferred(po.finishedQty || 0);
-      setHoRawQtyTransferred(po.qtyPo || 0);
+      const poQty = po.qtyPo || 0;
+      const btpQty = po.finishedQty || 0;
+      const rawQty = po.wipQty && po.wipQty > 0 ? po.wipQty : poQty;
+      setHoProdQtyTransferred(btpQty);
+      setHoProdQtyDefect(0);
+      setHoProdQtyMissing(Math.max(0, poQty - btpQty));
+      setHoRawQtyTransferred(rawQty);
+      setHoRawQtyDefect(0);
+      setHoRawQtyMissing(Math.max(0, poQty - rawQty));
     }
   };
 
@@ -1924,7 +1934,15 @@ export function LogsQcTraceTab({
                             {row.prodQtyDefect > 0 ? row.prodQtyDefect : '—'}
                           </td>
                           <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
-                            {row.prodQtyMissing > 0 ? row.prodQtyMissing : '—'}
+                            {(() => {
+                              if (row.prodQtyMissing > 0) return row.prodQtyMissing;
+                              const po = bootstrap.ordersList.find((p) => (row.poId && p.poId.toLowerCase() === row.poId.toLowerCase()) || (row.productName && p.productName.trim().toLowerCase() === row.productName.trim().toLowerCase()));
+                              if (po && po.qtyPo > 0) {
+                                const calc = Math.max(0, po.qtyPo - (row.prodQtyTransferred || 0) - (row.prodQtyDefect || 0));
+                                if (calc > 0) return calc;
+                              }
+                              return '—';
+                            })()}
                           </td>
                           <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-blue-700 bg-blue-50/30 text-sm">
                             {row.rawQtyTransferred || 0}
@@ -1933,7 +1951,15 @@ export function LogsQcTraceTab({
                             {row.rawQtyDefect > 0 ? row.rawQtyDefect : '—'}
                           </td>
                           <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
-                            {row.rawQtyMissing > 0 ? row.rawQtyMissing : '—'}
+                            {(() => {
+                              if (row.rawQtyMissing > 0) return row.rawQtyMissing;
+                              const po = bootstrap.ordersList.find((p) => (row.poId && p.poId.toLowerCase() === row.poId.toLowerCase()) || (row.productName && p.productName.trim().toLowerCase() === row.productName.trim().toLowerCase()));
+                              if (po && po.qtyPo > 0) {
+                                const calc = Math.max(0, po.qtyPo - (row.rawQtyTransferred || 0) - (row.rawQtyDefect || 0));
+                                if (calc > 0) return calc;
+                              }
+                              return '—';
+                            })()}
                           </td>
                           <td className="border-r border-slate-200 p-2.5 text-xs">
                             <div className="font-bold text-slate-800">
@@ -2109,7 +2135,14 @@ export function LogsQcTraceTab({
                   type="number"
                   min="0"
                   value={hoProdQtyTransferred}
-                  onChange={(e) => setHoProdQtyTransferred(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setHoProdQtyTransferred(val);
+                    const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
+                    if (po && po.qtyPo > 0) {
+                      setHoProdQtyMissing(Math.max(0, po.qtyPo - val - hoProdQtyDefect));
+                    }
+                  }}
                   className={modalInputCls}
                 />
               </div>
@@ -2119,12 +2152,19 @@ export function LogsQcTraceTab({
                   type="number"
                   min="0"
                   value={hoProdQtyDefect}
-                  onChange={(e) => setHoProdQtyDefect(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setHoProdQtyDefect(val);
+                    const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
+                    if (po && po.qtyPo > 0) {
+                      setHoProdQtyMissing(Math.max(0, po.qtyPo - hoProdQtyTransferred - val));
+                    }
+                  }}
                   className={modalInputCls}
                 />
               </div>
               <div>
-                <label className="mb-1 block font-bold text-amber-700">Số Thiếu</label>
+                <label className="mb-1 block font-bold text-amber-700">Số Thiếu (Khấu trừ còn lại)</label>
                 <input
                   type="number"
                   min="0"
@@ -2134,6 +2174,15 @@ export function LogsQcTraceTab({
                 />
               </div>
             </div>
+            {(() => {
+              const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
+              if (!po) return null;
+              return (
+                <div className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                  💡 SL Đặt: <strong>{po.qtyPo}</strong> — Khấu trừ còn lại chuyển tiếp: <strong>{Math.max(0, po.qtyPo - hoProdQtyTransferred - hoProdQtyDefect)} SP</strong>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Transfer Quantities: Raw Material (Phôi) */}
@@ -2143,12 +2192,19 @@ export function LogsQcTraceTab({
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="mb-1 block font-bold text-blue-800">Số Chuyển</label>
+                <label className="mb-1 block font-bold text-blue-800">Số Chuyển (Phôi nhận)</label>
                 <input
                   type="number"
                   min="0"
                   value={hoRawQtyTransferred}
-                  onChange={(e) => setHoRawQtyTransferred(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setHoRawQtyTransferred(val);
+                    const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
+                    if (po && po.qtyPo > 0) {
+                      setHoRawQtyMissing(Math.max(0, po.qtyPo - val - hoRawQtyDefect));
+                    }
+                  }}
                   className={modalInputCls}
                 />
               </div>
@@ -2158,7 +2214,14 @@ export function LogsQcTraceTab({
                   type="number"
                   min="0"
                   value={hoRawQtyDefect}
-                  onChange={(e) => setHoRawQtyDefect(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setHoRawQtyDefect(val);
+                    const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
+                    if (po && po.qtyPo > 0) {
+                      setHoRawQtyMissing(Math.max(0, po.qtyPo - hoRawQtyTransferred - val));
+                    }
+                  }}
                   className={modalInputCls}
                 />
               </div>
@@ -2173,6 +2236,15 @@ export function LogsQcTraceTab({
                 />
               </div>
             </div>
+            {(() => {
+              const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
+              if (!po) return null;
+              return (
+                <div className="text-[11px] font-semibold text-blue-800 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                  💡 SL Đặt: <strong>{po.qtyPo}</strong> — Phôi còn thiếu: <strong>{Math.max(0, po.qtyPo - hoRawQtyTransferred - hoRawQtyDefect)} phôi</strong> (Ghi nhận phôi nhận vào WIP: <strong>{hoRawQtyTransferred}</strong>)
+                </div>
+              );
+            })()}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

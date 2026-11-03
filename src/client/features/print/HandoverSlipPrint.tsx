@@ -4,7 +4,7 @@ import type { HandoverSlipRow } from '@shared/types';
 import { apiClient } from '../../lib/apiClient';
 import { navigateTo } from '../../lib/navigation';
 import { VicoLogo } from '../../components/VicoLogo';
-import { getFallbackHandovers } from '../../lib/clientFallbackStore';
+import { getFallbackHandovers, FALLBACK_ORDERS } from '../../lib/clientFallbackStore';
 
 export function HandoverSlipPrint() {
   const [dateStr, setDateStr] = useState<string>(() => {
@@ -170,6 +170,26 @@ export function HandoverSlipPrint() {
               <tbody>
                 {paddedRows.map((row, idx) => {
                   const hasData = Boolean(row.productName);
+                  const matchingPo = hasData
+                    ? FALLBACK_ORDERS.find(
+                        (o) =>
+                          (row.poId && o.poId.toLowerCase() === row.poId.toLowerCase()) ||
+                          (row.productName && o.productName.trim().toLowerCase() === row.productName.trim().toLowerCase())
+                      )
+                    : null;
+                  const printProdMissing =
+                    row.prodQtyMissing > 0
+                      ? row.prodQtyMissing
+                      : matchingPo && matchingPo.qtyPo > 0
+                      ? Math.max(0, matchingPo.qtyPo - (row.prodQtyTransferred || 0) - (row.prodQtyDefect || 0)) || ''
+                      : '';
+                  const printRawMissing =
+                    row.rawQtyMissing > 0
+                      ? row.rawQtyMissing
+                      : matchingPo && matchingPo.qtyPo > 0
+                      ? Math.max(0, matchingPo.qtyPo - (row.rawQtyTransferred || 0) - (row.rawQtyDefect || 0)) || ''
+                      : '';
+
                   return (
                     <tr
                       key={row.id || idx}
@@ -190,7 +210,7 @@ export function HandoverSlipPrint() {
                         {hasData && row.prodQtyDefect > 0 ? row.prodQtyDefect : ''}
                       </td>
                       <td className="border-r border-black p-1.5 font-mono-num text-amber-700 font-bold">
-                        {hasData && row.prodQtyMissing > 0 ? row.prodQtyMissing : ''}
+                        {hasData ? (printProdMissing || '') : ''}
                       </td>
                       <td className="border-r border-black p-1.5 font-mono-num font-bold">
                         {hasData && row.rawQtyTransferred > 0 ? row.rawQtyTransferred : ''}
@@ -199,7 +219,7 @@ export function HandoverSlipPrint() {
                         {hasData && row.rawQtyDefect > 0 ? row.rawQtyDefect : ''}
                       </td>
                       <td className="border-r border-black p-1.5 font-mono-num text-amber-700 font-bold">
-                        {hasData && row.rawQtyMissing > 0 ? row.rawQtyMissing : ''}
+                        {hasData ? (printRawMissing || '') : ''}
                       </td>
                       <td className="border-r border-black p-1.5 text-left text-[11px]">
                         {row.note}

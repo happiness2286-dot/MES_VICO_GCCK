@@ -226,11 +226,24 @@ export function queryPurchaseOrders(db: DatabaseSync): PurchaseOrderInfo[] {
 
   const rows = db
     .prepare(
-      `SELECT po.po_id, po.customer, po.sp_id, po.product_name, po.qty_po, po.due_date, po.wip_qty, po.finished_qty,
-              po.delivered_qty, po.stock_qty, po.remain_qty, po.status, po.material_lot, po.supplier_name, po.cast_date, po.priority, po.note,
+      `SELECT po.po_id, po.customer, po.sp_id, po.product_name, po.qty_po, po.due_date,
+              MAX(po.wip_qty, COALESCE(ho.max_raw, 0)) AS wip_qty,
+              MAX(po.finished_qty, COALESCE(ho.max_prod, 0)) AS finished_qty,
+              po.delivered_qty,
+              MAX(0, MAX(po.finished_qty, COALESCE(ho.max_prod, 0)) - po.delivered_qty) AS stock_qty,
+              MAX(0, po.qty_po - po.delivered_qty) AS remain_qty,
+              po.status, po.material_lot, po.supplier_name, po.cast_date, po.priority, po.note,
               COALESCE(p.drawing_url, '') AS drawing_url,
               COALESCE(p.tech_doc_url, '') AS tech_doc_url
        FROM purchase_orders po
+       LEFT JOIN (
+         SELECT po_id,
+                MAX(raw_qty_transferred) AS max_raw,
+                MAX(prod_qty_transferred) AS max_prod
+         FROM handover_slips
+         WHERE po_id IS NOT NULL AND TRIM(po_id) != ''
+         GROUP BY po_id
+       ) ho ON LOWER(ho.po_id) = LOWER(po.po_id)
        LEFT JOIN products p ON (p.sp_id = po.sp_id OR (po.sp_id IS NULL AND p.customer = po.customer AND p.product_name = po.product_name))
        ORDER BY po.rowid ASC`
     )

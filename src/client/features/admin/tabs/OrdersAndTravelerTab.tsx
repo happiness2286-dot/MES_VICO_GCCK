@@ -25,6 +25,7 @@ import {
   fileToUint8Array,
   type MasterPurchaseOrderImportRow,
 } from '@client/lib/excelService';
+import { getFallbackHandovers } from '@client/lib/clientFallbackStore';
 import { formatDateVn, formatNumber } from '@client/lib/formatters';
 import { navigateTo } from '@client/lib/navigation';
 import {
@@ -60,6 +61,20 @@ export function OrdersAndTravelerTab({
   const [searchQuery, setSearchQuery] = useState(deepLink?.ordersSearch || '');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+
+  const handoverRawMap = useMemo(() => {
+    const map = new Map<string, number>();
+    try {
+      const list = getFallbackHandovers();
+      for (const h of list) {
+        if (h.poId && Number(h.rawQtyTransferred || 0) > 0) {
+          const k = h.poId.trim().toLowerCase();
+          map.set(k, Math.max(map.get(k) || 0, Number(h.rawQtyTransferred)));
+        }
+      }
+    } catch {}
+    return map;
+  }, [orders, bootstrap.ordersList]);
 
   // Create New PO Modal State
   const [createOpen, setCreateOpen] = useState(false);
@@ -703,7 +718,7 @@ export function OrdersAndTravelerTab({
                 <th className="px-3 py-2.5">Khách Hàng</th>
                 <th className="px-3 py-2.5">Sản Phẩm &amp; Quy Trình</th>
                 <th className="px-2.5 py-2.5 text-center">SL Đặt</th>
-                <th className="px-2.5 py-2.5 text-center">Đang SX (WIP)</th>
+                <th className="px-2.5 py-2.5 text-center" title="Số lượng phôi đã nhận vào xưởng để gia công (WIP)">Đang SX (Phôi nhận/WIP)</th>
                 <th className="px-2.5 py-2.5 text-center">Xong CK (End)</th>
                 <th className="px-2.5 py-2.5 text-center">Tồn Kho TP</th>
                 <th className="px-2.5 py-2.5 text-center">Đã Giao</th>
@@ -818,13 +833,19 @@ export function OrdersAndTravelerTab({
                     <td className="font-mono-num px-2.5 py-2.5 text-center font-bold text-slate-900">
                       {formatNumber(po.qtyPo)}
                     </td>
-                    <td
-                      className={`font-mono-num px-2.5 py-2.5 text-center ${
-                        po.wipQty > 0 ? 'font-semibold text-amber-700' : 'text-slate-400'
-                      }`}
-                    >
-                      {formatNumber(po.wipQty)}
-                    </td>
+                    {(() => {
+                      const displayWip = Math.max(Number(po.wipQty || 0), handoverRawMap.get(po.poId.trim().toLowerCase()) || 0);
+                      return (
+                        <td
+                          className={`font-mono-num px-2.5 py-2.5 text-center ${
+                            displayWip > 0 ? 'font-bold text-amber-700 bg-amber-50/40' : 'text-slate-400'
+                          }`}
+                          title={displayWip > 0 ? `Đã nhận ${displayWip} phôi vào gia công` : 'Chưa nhận phôi'}
+                        >
+                          {formatNumber(displayWip)}
+                        </td>
+                      );
+                    })()}
                     <td
                       className={`font-mono-num px-2.5 py-2.5 text-center ${
                         po.finishedQty > 0 ? 'font-bold text-emerald-700' : 'text-slate-400'

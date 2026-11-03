@@ -2319,6 +2319,43 @@ export function createAdminRoutes(db: DatabaseSync): Router {
       ? payload.id
       : `HO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
+    const targetPoId = String(payload.poId || '').trim();
+    let prodQtyMissing = Number(payload.prodQtyMissing || 0);
+    let rawQtyMissing = Number(payload.rawQtyMissing || 0);
+    const prodQtyTransferred = Number(payload.prodQtyTransferred || 0);
+    const prodQtyDefect = Number(payload.prodQtyDefect || 0);
+    const rawQtyTransferred = Number(payload.rawQtyTransferred || 0);
+    const rawQtyDefect = Number(payload.rawQtyDefect || 0);
+
+    // Auto calculate missing quantities and update PO wip/finished
+    if (targetPoId) {
+      const existingPo = db.prepare('SELECT * FROM purchase_orders WHERE LOWER(po_id) = LOWER(?)').get(targetPoId) as Record<string, any> | undefined;
+      if (existingPo) {
+        const qtyPo = Number(existingPo.qty_po || 0);
+        if (prodQtyMissing <= 0 && qtyPo > 0) {
+          prodQtyMissing = Math.max(0, qtyPo - prodQtyTransferred - prodQtyDefect);
+        }
+        if (rawQtyMissing <= 0 && qtyPo > 0) {
+          rawQtyMissing = Math.max(0, qtyPo - rawQtyTransferred - rawQtyDefect);
+        }
+        const curWip = Number(existingPo.wip_qty || 0);
+        const curFin = Number(existingPo.finished_qty || 0);
+        const curDel = Number(existingPo.delivered_qty || 0);
+
+        const newWip = rawQtyTransferred > 0 ? Math.max(curWip, rawQtyTransferred) : curWip;
+        const newFin = prodQtyTransferred > 0 ? Math.max(curFin, prodQtyTransferred) : curFin;
+        const newStock = Math.max(0, newFin - curDel);
+        const newRemain = Math.max(0, qtyPo - curDel);
+        const newStatus = derivePoStatus(qtyPo, newWip, newFin, curDel);
+
+        db.prepare(`
+          UPDATE purchase_orders
+          SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?
+          WHERE LOWER(po_id) = LOWER(?)
+        `).run(newWip, newFin, newStock, newRemain, newStatus, targetPoId);
+      }
+    }
+
     const row = {
       id,
       handoverDate: String(payload.handoverDate || new Date().toISOString().slice(0, 10)),
@@ -2329,12 +2366,12 @@ export function createAdminRoutes(db: DatabaseSync): Router {
       productName: String(payload.productName).trim(),
       customer: String(payload.customer || '').trim(),
       unit: String(payload.unit || 'Cái').trim(),
-      prodQtyTransferred: Number(payload.prodQtyTransferred || 0),
-      prodQtyDefect: Number(payload.prodQtyDefect || 0),
-      prodQtyMissing: Number(payload.prodQtyMissing || 0),
-      rawQtyTransferred: Number(payload.rawQtyTransferred || 0),
-      rawQtyDefect: Number(payload.rawQtyDefect || 0),
-      rawQtyMissing: Number(payload.rawQtyMissing || 0),
+      prodQtyTransferred,
+      prodQtyDefect,
+      prodQtyMissing,
+      rawQtyTransferred,
+      rawQtyDefect,
+      rawQtyMissing,
       note: String(payload.note || '').trim(),
       receiverName: String(payload.receiverName || '').trim(),
       senderName: String(payload.senderName || '').trim(),
@@ -2447,6 +2484,36 @@ export function createAdminRoutes(db: DatabaseSync): Router {
       isConfirmed: isConfirming,
       confirmedAt,
     };
+
+    // Auto sync updated handover to purchase orders
+    const targetPoId = String(updated.poId || '').trim();
+    if (targetPoId) {
+      const existingPo = db.prepare('SELECT * FROM purchase_orders WHERE LOWER(po_id) = LOWER(?)').get(targetPoId) as Record<string, any> | undefined;
+      if (existingPo) {
+        const qtyPo = Number(existingPo.qty_po || 0);
+        if (Number(updated.prodQtyMissing || 0) <= 0 && qtyPo > 0) {
+          updated.prodQtyMissing = Math.max(0, qtyPo - Number(updated.prodQtyTransferred || 0) - Number(updated.prodQtyDefect || 0));
+        }
+        if (Number(updated.rawQtyMissing || 0) <= 0 && qtyPo > 0) {
+          updated.rawQtyMissing = Math.max(0, qtyPo - Number(updated.rawQtyTransferred || 0) - Number(updated.rawQtyDefect || 0));
+        }
+        const curWip = Number(existingPo.wip_qty || 0);
+        const curFin = Number(existingPo.finished_qty || 0);
+        const curDel = Number(existingPo.delivered_qty || 0);
+
+        const newWip = Number(updated.rawQtyTransferred || 0) > 0 ? Math.max(curWip, Number(updated.rawQtyTransferred)) : curWip;
+        const newFin = Number(updated.prodQtyTransferred || 0) > 0 ? Math.max(curFin, Number(updated.prodQtyTransferred)) : curFin;
+        const newStock = Math.max(0, newFin - curDel);
+        const newRemain = Math.max(0, qtyPo - curDel);
+        const newStatus = derivePoStatus(qtyPo, newWip, newFin, curDel);
+
+        db.prepare(`
+          UPDATE purchase_orders
+          SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?
+          WHERE LOWER(po_id) = LOWER(?)
+        `).run(newWip, newFin, newStock, newRemain, newStatus, targetPoId);
+      }
+    }
 
     insertHandoverSlip(db, updated);
     res.json({ success: true, item: updated });

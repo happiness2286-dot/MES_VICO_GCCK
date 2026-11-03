@@ -849,6 +849,44 @@ const LOCAL_HANDOVERS_KEY = 'GCCK_LOCAL_HANDOVERS_V2';
 
 export const INITIAL_HANDOVERS: HandoverSlipRow[] = [];
 
+export function syncOrdersWithHandovers(): void {
+  try {
+    const handovers = getFallbackHandovers();
+    if (!handovers || handovers.length === 0) return;
+    let changed = false;
+    for (const h of handovers) {
+      const cleanPoId = (h.poId || '').trim().toLowerCase();
+      const po = FALLBACK_ORDERS.find(
+        (o) => (cleanPoId && o.poId.toLowerCase() === cleanPoId) ||
+               (h.productName && o.productName.trim().toLowerCase() === h.productName.trim().toLowerCase())
+      );
+      if (po) {
+        const rawTransferred = Number(h.rawQtyTransferred || 0);
+        const prodTransferred = Number(h.prodQtyTransferred || 0);
+        if (rawTransferred > Number(po.wipQty || 0)) {
+          po.wipQty = rawTransferred;
+          changed = true;
+        }
+        if (prodTransferred > Number(po.finishedQty || 0)) {
+          po.finishedQty = prodTransferred;
+          po.stockQty = Math.max(0, po.finishedQty - (po.deliveredQty || 0));
+          po.remainQty = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
+          changed = true;
+        }
+        if ((po.wipQty > 0 || po.finishedQty > 0) && po.status === '⏳ Đang chờ SX') {
+          po.status = '⚙️ Đang gia công';
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      saveFallbackOrdersToStorage();
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export function getFallbackHandovers(dateStr?: string): HandoverSlipRow[] {
   try {
     // Clear old sample cache if present
@@ -875,6 +913,22 @@ export function clearAllFallbackHandovers(): void {
 
 export function saveFallbackHandover(row: HandoverSlipRow): void {
   try {
+    const cleanPoId = (row.poId || '').trim().toLowerCase();
+    const matchingPo = FALLBACK_ORDERS.find(
+      (o) => (cleanPoId && o.poId.toLowerCase() === cleanPoId) ||
+             (row.productName && o.productName.trim().toLowerCase() === row.productName.trim().toLowerCase())
+    );
+
+    // Auto-calculate missing quantities if 0 based on matching PO
+    if (matchingPo && matchingPo.qtyPo > 0) {
+      if (!row.prodQtyMissing || row.prodQtyMissing <= 0) {
+        row.prodQtyMissing = Math.max(0, matchingPo.qtyPo - (row.prodQtyTransferred || 0) - (row.prodQtyDefect || 0));
+      }
+      if (!row.rawQtyMissing || row.rawQtyMissing <= 0) {
+        row.rawQtyMissing = Math.max(0, matchingPo.qtyPo - (row.rawQtyTransferred || 0) - (row.rawQtyDefect || 0));
+      }
+    }
+
     const list = getFallbackHandovers();
     const idx = list.findIndex((h) => h.id === row.id);
     if (idx >= 0) {
@@ -883,6 +937,26 @@ export function saveFallbackHandover(row: HandoverSlipRow): void {
       list.unshift(row);
     }
     localStorage.setItem(LOCAL_HANDOVERS_KEY, JSON.stringify(list));
+
+    // Synchronize received phôi and finished BTP to matching PO
+    if (matchingPo) {
+      if (Number(row.rawQtyTransferred || 0) > 0) {
+        matchingPo.wipQty = Math.max(matchingPo.wipQty || 0, Number(row.rawQtyTransferred));
+      }
+      if (Number(row.prodQtyTransferred || 0) > 0) {
+        matchingPo.finishedQty = Math.max(matchingPo.finishedQty || 0, Number(row.prodQtyTransferred));
+      }
+      matchingPo.stockQty = Math.max(0, (matchingPo.finishedQty || 0) - (matchingPo.deliveredQty || 0));
+      matchingPo.remainQty = Math.max(0, matchingPo.qtyPo - (matchingPo.deliveredQty || 0));
+      if (matchingPo.deliveredQty >= matchingPo.qtyPo) {
+        matchingPo.status = '✅ Đã giao đủ';
+      } else if (matchingPo.finishedQty >= matchingPo.qtyPo) {
+        matchingPo.status = '📦 Xong CK - Chờ giao';
+      } else if ((matchingPo.wipQty || 0) > 0 || (matchingPo.finishedQty || 0) > 0) {
+        matchingPo.status = '⚙️ Đang gia công';
+      }
+      saveFallbackOrdersToStorage();
+    }
   } catch {
     // ignore
   }
@@ -916,6 +990,7 @@ export function deleteFallbackHandover(id: string): void {
 }
 
 export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): BootstrapPayload {
+  syncOrdersWithHandovers();
   const user = currentUser || getFallbackUser('NV00214');
   const combinedLogs = getAllFallbackLogs();
 
