@@ -35,6 +35,7 @@ import {
   Timer,
   Trash2,
   Wrench,
+  Flame,
 } from 'lucide-react';
 import type {
   BootstrapPayload,
@@ -43,6 +44,7 @@ import type {
   PurchaseOrderInfo,
   ReportSubmitPayload,
   SystemPayrollConfig,
+  DailyPlanRow,
 } from '@shared/types';
 import {
   calculateTurnPayroll,
@@ -64,7 +66,7 @@ import {
 } from '../../lib/formatters';
 import { isStaticHost, navigateTo } from '../../lib/navigation';
 import { isSupabaseConnected, saveStoredSupabaseConfig, fetchLogsFromSupabase } from '../../lib/supabaseClient';
-import { saveClientStoredLog, getAllFallbackLogs } from '../../lib/clientFallbackStore';
+import { saveClientStoredLog, getAllFallbackLogs, getFallbackDailyPlan } from '../../lib/clientFallbackStore';
 import {
   flushOfflineOutbox,
   generateIdempotentRecordUid,
@@ -234,6 +236,129 @@ export function WorkerPortal() {
   const [photoBase64, setPhotoBase64] = useState<string>('');
   const [compressingPhoto, setCompressingPhoto] = useState<boolean>(false);
   const [materialLot, setMaterialLot] = useState<string>('');
+
+// ==================== DAILY PLAN AUTO-SUGGESTION FOR ACTIVE WORKER ====================
+  const [dailyPlanRows, setDailyPlanRows] = useState<DailyPlanRow[]>([]);
+  const lastAutoSelectedWorkerRef = useRef<string>('');
+
+  useEffect(() => {
+    let active = true;
+    async function loadPlan() {
+      try {
+        const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
+          `/schedules/daily?date=${encodeURIComponent(workDate)}`
+        );
+        if (active && res.rows && res.rows.length > 0) {
+          setDailyPlanRows(res.rows);
+          return;
+        }
+      } catch {}
+      if (active) {
+        const fallback = getFallbackDailyPlan(workDate);
+        setDailyPlanRows(fallback);
+      }
+    }
+    void loadPlan();
+    return () => {
+      active = false;
+    };
+  }, [workDate]);
+
+  const myPlanRows = useMemo(() => {
+    if (!user?.name || dailyPlanRows.length === 0) return [];
+    const cleanUser = user.name.trim().toLowerCase();
+    return dailyPlanRows.filter((r) => {
+      const wName = (r.workerName || '').trim().toLowerCase();
+      return (
+        wName === cleanUser ||
+        cleanUser.includes(wName) ||
+        wName.includes(cleanUser)
+      );
+    });
+  }, [user?.name, dailyPlanRows]);
+
+  const applyPlanRowSelection = useCallback(
+    (planRow: DailyPlanRow, silent = false) => {
+      // 1. Machine:
+      if (planRow.machineName) {
+        setMachineName(planRow.machineName);
+      }
+
+      // 2. PO:
+      let targetPoId = planRow.spId || '';
+      const ordList = bootstrap?.ordersList || [];
+      if (!targetPoId && planRow.productName) {
+        const matchedPo = ordList.find(
+          (p) => p.productName.toLowerCase() === planRow.productName.toLowerCase()
+        );
+        if (matchedPo) targetPoId = matchedPo.poId;
+      }
+      if (targetPoId) {
+        setSelectedPoId(targetPoId);
+        const poObj = ordList.find((p) => p.poId === targetPoId);
+        if (poObj?.materialLot) setMaterialLot(poObj.materialLot);
+      }
+
+      // 3. Operation:
+      const opList = bootstrap?.operations || [];
+      let matchedOp = planRow.ncId ? opList.find((o) => o.ncId === planRow.ncId) : undefined;
+      if (!matchedOp && planRow.opName) {
+        matchedOp = opList.find(
+          (o) =>
+            o.opName.toLowerCase() === planRow.opName.toLowerCase() ||
+            o.opName.toLowerCase().includes(planRow.opName.toLowerCase()) ||
+            planRow.opName.toLowerCase().includes(o.opName.toLowerCase())
+        );
+      }
+      if (matchedOp) {
+        setSelectedNcId(matchedOp.ncId);
+        if (matchedOp.spId) setSelectedSpId(matchedOp.spId);
+        if (matchedOp.toolCode) setToolCode(matchedOp.toolCode);
+        setToolEdgesState(
+          syncAutoToolEdges(
+            { edgesUsed: 0, isEdgesDirty: false },
+            planRow.plannedQty > 0 ? planRow.plannedQty : 1,
+            matchedOp.stdEdgesPerPcs,
+            true
+          )
+        );
+      }
+
+      // 4. Shift & Machine Mode:
+      if (planRow.shiftType) {
+        const matchedShift = SHIFT_OPTIONS.find((s) => s.value.startsWith(planRow.shiftType));
+        if (matchedShift) setShiftType(matchedShift.value);
+      }
+      if (planRow.note && /gh?p 2 m?y|\+0\.33/i.test(planRow.note)) {
+        setMachineMode('SECOND');
+      } else {
+        setMachineMode('FIRST');
+      }
+
+      // 5. Quantity:
+      if (planRow.plannedQty > 0) {
+        setOkQty(planRow.plannedQty);
+      }
+
+      if (!silent) {
+        toast.success(
+          `? ?? chuy?n sang: ${planRow.machineName || 'M?y'} ? ${planRow.productName || planRow.opName || 'K? ho?ch'}`
+        );
+      }
+    },
+    [bootstrap?.operations, bootstrap?.ordersList, toast]
+  );
+
+  // Auto-fill from plan whenever worker logs in or date changes
+  useEffect(() => {
+    if (myPlanRows.length > 0 && user?.workerId) {
+      const key = `${user.workerId}_${workDate}_${myPlanRows.length}`;
+      if (lastAutoSelectedWorkerRef.current !== key) {
+        lastAutoSelectedWorkerRef.current = key;
+        applyPlanRowSelection(myPlanRows[0], true);
+      }
+    }
+  }, [myPlanRows, user?.workerId, workDate, applyPlanRowSelection]);
   const [handoverNote, setHandoverNote] = useState<string>('');
 
   // Server Live Preview, Submit Idempotency & Tab 2 Filter

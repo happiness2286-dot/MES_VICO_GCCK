@@ -55,6 +55,20 @@ import { DEFAULT_DRIVE_FOLDER_URL } from '@shared/driveHelper';
 import { DailyQualityReportSection } from './DailyQualityReportSection';
 import type { AdminTabCommonProps } from '../types';
 
+export const SCHEDULE_NOTE_PRESETS = [
+  'M?y ch?nh',
+  'Gh?p 2 m?y (+0.33)',
+  '?? T?ng ca 2h (14:00 - 16:00)',
+  '?? T?ng ca 2h (22:00 - 24:00)',
+  'Th? lu?n chuy?n Ca 1 & Ca 2 theo ?i?u ??ng x??ng',
+  'Chuy?n m?y Phay CNC 1',
+  'Chuy?n m?y Phay CNC 2',
+  'Gh?p 2 m?y (+0.33) - C?t d?y t? ??ng 24/24',
+  'Ca ??m Lights-out - Chu k? d?i',
+  '??nh bi?n c? ??nh Ca 2',
+  'Tr??ng ca - Ch? ??o s?n xu?t',
+];
+
 interface DailyDateMeta {
   workDate: string;
   rowCount: number;
@@ -294,8 +308,13 @@ export function DailyWeeklyScheduleTab({
     });
   };
 
-  // Add extra row for a worker
+  // Add extra row for a worker with smart note defaults
   const handleAddWorkerRow = (workerName: string, shiftType: string) => {
+    const existingCount = dailyRows.filter((r) => r.workerName === workerName).length;
+    let defaultNote = 'M?y ch?nh';
+    if (existingCount === 1) defaultNote = 'Gh?p 2 m?y (+0.33)';
+    else if (existingCount >= 2) defaultNote = '?? T?ng ca 2h (14:00 - 16:00)';
+
     setDailyRows((prev) => [
       ...prev,
       {
@@ -308,7 +327,9 @@ export function DailyWeeklyScheduleTab({
         opName: '',
         plannedQty: 0,
         machineName: '',
-        note: '',
+        note: defaultNote,
+        isOvertime: defaultNote.includes('T?ng ca'),
+        overtimeHours: defaultNote.includes('T?ng ca') ? 2 : undefined,
         actualQty: 0,
         status: 'PLANNED',
       },
@@ -464,6 +485,9 @@ export function DailyWeeklyScheduleTab({
     const newRows: DailyPlanRow[] = [];
     let nextStt = dailyRows.length > 0 ? Math.max(...dailyRows.map((r) => r.stt || 0)) + 1 : 1;
     for (let i = 0; i < count; i++) {
+      let defaultNote = 'M?y ch?nh';
+      if (i === 1) defaultNote = 'Gh?p 2 m?y (+0.33)';
+      else if (i >= 2) defaultNote = '?? T?ng ca 2h (14:00 - 16:00)';
       newRows.push({
         workDate: selectedDate,
         shiftType: shiftType || 'Ca 2',
@@ -474,7 +498,9 @@ export function DailyWeeklyScheduleTab({
         opName: '',
         plannedQty: 0,
         machineName: '',
-        note: '',
+        note: defaultNote,
+        isOvertime: defaultNote.includes('T?ng ca'),
+        overtimeHours: defaultNote.includes('T?ng ca') ? 2 : undefined,
         actualQty: 0,
         status: 'PLANNED',
       });
@@ -1237,7 +1263,12 @@ export function DailyWeeklyScheduleTab({
                   </div>
 
                   {/* 3-Tier Cascade Table */}
-                  <div className="overflow-x-auto">
+                  <datalist id="schedule-note-presets-list">
+                      {SCHEDULE_NOTE_PRESETS.map((preset) => (
+                        <option key={preset} value={preset} />
+                      ))}
+                    </datalist>
+                    <div className="overflow-x-auto">
                     <table className="w-full min-w-[950px] border-collapse text-left text-xs text-slate-900">
                       <thead>
                         <tr className="border-b border-slate-200 bg-slate-100/70 text-[11px] font-extrabold uppercase text-slate-700">
