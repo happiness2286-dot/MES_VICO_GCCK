@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Calculator,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Coins,
   Download,
   ExternalLink,
@@ -59,6 +61,32 @@ export function CostingPnlTab({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [exporting, setExporting] = useState(false);
+
+  // Trạng thái Thu Lên / Trải Xuống cho cả 4 mục P&L
+  const [expandedByFilterMode, setExpandedByFilterMode] = useState<Record<CostingFilterMode, boolean>>({
+    ALL: true,
+    ACTUAL: true,
+    LOSS: true,
+    PROFIT: true,
+    WIP_ONLY: true,
+  });
+
+  const toggleFilterModeExpanded = (mode: CostingFilterMode) => {
+    setExpandedByFilterMode((prev) => ({
+      ...prev,
+      [mode]: !prev[mode],
+    }));
+  };
+
+  const toggleAllModes = (expanded: boolean) => {
+    setExpandedByFilterMode({
+      ALL: expanded,
+      ACTUAL: expanded,
+      LOSS: expanded,
+      PROFIT: expanded,
+      WIP_ONLY: expanded,
+    });
+  };
 
   // Shopfloor pricing model: Default to All-in Machine Rate (800k/shift = 100k/h)
   const [costingModel, setCostingModel] = useState<CostingModelMode>('ALL_IN');
@@ -281,13 +309,43 @@ export function CostingPnlTab({
 
   return (
     <div className="space-y-4">
-      {/* ==================== 4 P&L SUMMARY CARDS ==================== */}
+      {/* ==================== 4 P&L SUMMARY CARDS (BẤM VÀO ĐỂ LỌC VÀ THU LÊN / TRẢI XUỐNG) ==================== */}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-l-4 border-l-blue-600">
+        {/* THẺ 1: TỔNG MÃ THÀNH PHẨM */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (filterMode === 'ALL') {
+              toggleFilterModeExpanded('ALL');
+            } else {
+              setFilterMode('ALL');
+              setPage(1);
+              setExpandedByFilterMode((p) => ({ ...p, ALL: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (filterMode === 'ALL') {
+                toggleFilterModeExpanded('ALL');
+              } else {
+                setFilterMode('ALL');
+                setPage(1);
+                setExpandedByFilterMode((p) => ({ ...p, ALL: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc toàn bộ 396 mã thành phẩm và thu lên / trải xuống danh sách"
+          className={`cursor-pointer border-l-4 border-l-blue-600 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            filterMode === 'ALL'
+              ? 'ring-2 ring-blue-500 ring-offset-2 bg-blue-50/40'
+              : 'hover:border-blue-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Tổng Mã Thành Phẩm (Gộp NC)
+                1. Tổng Mã Thành Phẩm (Gộp NC)
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-slate-900">
                 {formatNumber(summary.totalProducts)}{' '}
@@ -299,6 +357,16 @@ export function CostingPnlTab({
                 Đang WIP:{' '}
                 <strong className="font-mono-num text-amber-700">{summary.wipOnlyCount}</strong>
               </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {filterMode === 'ALL' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-blue-900">
+                    {expandedByFilterMode.ALL ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{expandedByFilterMode.ALL ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-blue-700">🔍 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
               <Calculator className="h-6 w-6" />
@@ -306,11 +374,41 @@ export function CostingPnlTab({
           </div>
         </Card>
 
-        <Card className="border-l-4 border-l-emerald-600">
+        {/* THẺ 2: SỐ MÃ ĐẠT ĐỊNH MỨC / LÃI */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (filterMode === 'PROFIT') {
+              toggleFilterModeExpanded('PROFIT');
+            } else {
+              setFilterMode('PROFIT');
+              setPage(1);
+              setExpandedByFilterMode((p) => ({ ...p, PROFIT: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (filterMode === 'PROFIT') {
+                toggleFilterModeExpanded('PROFIT');
+              } else {
+                setFilterMode('PROFIT');
+                setPage(1);
+                setExpandedByFilterMode((p) => ({ ...p, PROFIT: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc riêng các mã đạt định mức / có lãi và thu lên / trải xuống danh sách"
+          className={`cursor-pointer border-l-4 border-l-emerald-600 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            filterMode === 'PROFIT'
+              ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50/50'
+              : 'hover:border-emerald-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Số Mã Đạt Định Mức / Lãi
+                2. Số Mã Đạt Định Mức / Lãi
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-emerald-700">
                 {formatNumber(summary.profitCount)}{' '}
@@ -319,6 +417,16 @@ export function CostingPnlTab({
               <div className="mt-1.5 text-xs font-medium text-emerald-700">
                 Báo giá ≥ Giá máy trọn gói ({summary.breakEvenCount} mã chuẩn hòa vốn ca)
               </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {filterMode === 'PROFIT' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900">
+                    {expandedByFilterMode.PROFIT ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{expandedByFilterMode.PROFIT ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-emerald-700">🟢 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600">
               <TrendingUp className="h-6 w-6" />
@@ -326,11 +434,41 @@ export function CostingPnlTab({
           </div>
         </Card>
 
-        <Card className="border-l-4 border-l-rose-500">
+        {/* THẺ 3: SỐ MÃ CẢNH BÁO THIẾU / LỖ */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (filterMode === 'LOSS') {
+              toggleFilterModeExpanded('LOSS');
+            } else {
+              setFilterMode('LOSS');
+              setPage(1);
+              setExpandedByFilterMode((p) => ({ ...p, LOSS: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (filterMode === 'LOSS') {
+                toggleFilterModeExpanded('LOSS');
+              } else {
+                setFilterMode('LOSS');
+                setPage(1);
+                setExpandedByFilterMode((p) => ({ ...p, LOSS: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc riêng các mã cảnh báo thiếu/lỗ và thu lên / trải xuống danh sách"
+          className={`cursor-pointer border-l-4 border-l-rose-500 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            filterMode === 'LOSS'
+              ? 'ring-2 ring-rose-500 ring-offset-2 bg-rose-50/50'
+              : 'hover:border-rose-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Số Mã Cảnh Báo Thiếu / Lỗ
+                3. Số Mã Cảnh Báo Thiếu / Lỗ
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-rose-700">
                 {formatNumber(summary.lossCount)}{' '}
@@ -339,6 +477,16 @@ export function CostingPnlTab({
               <div className="mt-1.5 text-xs font-medium text-rose-700">
                 Cần rà soát định mức hoặc nâng giá báo
               </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {filterMode === 'LOSS' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-rose-900 font-extrabold">
+                    {expandedByFilterMode.LOSS ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{expandedByFilterMode.LOSS ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-rose-700 font-extrabold animate-pulse">🔴 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600">
               <TrendingDown className="h-6 w-6" />
@@ -346,17 +494,57 @@ export function CostingPnlTab({
           </div>
         </Card>
 
-        <Card className="border-l-4 border-l-amber-500">
+        {/* THẺ 4: TỔNG LỢI NHUẬN RÒNG THỰC TẾ */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (filterMode === 'ACTUAL') {
+              toggleFilterModeExpanded('ACTUAL');
+            } else {
+              setFilterMode('ACTUAL');
+              setPage(1);
+              setExpandedByFilterMode((p) => ({ ...p, ACTUAL: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (filterMode === 'ACTUAL') {
+                toggleFilterModeExpanded('ACTUAL');
+              } else {
+                setFilterMode('ACTUAL');
+                setPage(1);
+                setExpandedByFilterMode((p) => ({ ...p, ACTUAL: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc riêng các mã đã có sản lượng gia công thực tế và thu lên / trải xuống danh sách"
+          className={`cursor-pointer border-l-4 border-l-amber-500 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            filterMode === 'ACTUAL'
+              ? 'ring-2 ring-amber-500 ring-offset-2 bg-amber-50/50'
+              : 'hover:border-amber-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Tổng Lợi Nhuận Ròng Thực Tế
+                4. Tổng Lợi Nhuận Ròng Thực Tế
               </div>
               <div className="font-mono-num mt-1.5 text-2xl font-black text-emerald-700">
                 {formatVnd(summary.totalNetProfit)}
               </div>
               <div className="mt-1.5 text-xs text-slate-600">
                 ({formatCompactVnd(summary.totalNetProfit)}) • Khử 100% lãi ảo bán TP
+              </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {filterMode === 'ACTUAL' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                    {expandedByFilterMode.ACTUAL ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{expandedByFilterMode.ACTUAL ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-amber-800">⚡ Bấm lọc &amp; mở</span>
+                )}
               </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-600">
@@ -373,7 +561,7 @@ export function CostingPnlTab({
             <div className="flex items-center gap-2">
               <h2 className="text-base font-extrabold uppercase tracking-wide text-slate-900">
                 💰 Bảng Báo Giá Thành Phẩm &amp; Đối Soát Giá Vốn Định Mức vs Giá Thành Thực Tế (
-                {items.length} SP)
+                {filteredItems.length}/{items.length} SP)
               </h2>
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
@@ -382,6 +570,56 @@ export function CostingPnlTab({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Nút Thu Lên / Trải Xuống cụ thể của mục đang chọn */}
+            <button
+              type="button"
+              onClick={() => toggleFilterModeExpanded(filterMode)}
+              title={
+                expandedByFilterMode[filterMode]
+                  ? `Bấm để thu gọn danh sách ${filteredItems.length} sản phẩm mục này`
+                  : `Bấm để trải xuống xem chi tiết ${filteredItems.length} sản phẩm mục này`
+              }
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black shadow-2xs transition-all active:scale-[0.98] ${
+                expandedByFilterMode[filterMode]
+                  ? 'border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100'
+                  : 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              {expandedByFilterMode[filterMode] ? (
+                <>
+                  <ChevronUp className="h-4 w-4 text-blue-700" />
+                  <span>▲ Thu Lên</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 text-emerald-700" />
+                  <span>▼ Trải Xuống ({filteredItems.length} SP)</span>
+                </>
+              )}
+            </button>
+
+            {/* Nút Thu Lên / Trải Xuống Tất Cả Cả 4 Mục */}
+            <div className="flex items-center gap-1 border-l border-slate-300 pl-2">
+              <button
+                type="button"
+                onClick={() => toggleAllModes(false)}
+                title="Thu lên toàn bộ cả 4 mục"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100"
+              >
+                <ChevronUp className="h-3 w-3 text-slate-600" />
+                <span>Thu cả 4 mục</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleAllModes(true)}
+                title="Trải xuống toàn bộ cả 4 mục"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100"
+              >
+                <ChevronDown className="h-3 w-3 text-slate-600" />
+                <span>Trải cả 4 mục</span>
+              </button>
+            </div>
+
             {/* Costing Method Switch */}
             <div className="flex items-center rounded-xl border border-slate-300 bg-slate-100 p-1">
               <button
@@ -434,52 +672,76 @@ export function CostingPnlTab({
           </div>
         </div>
 
-        {/* Filter & Search Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/80 px-4 py-2.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(
-              [
-                ['ALL', `Tất cả (${summary.totalProducts})`],
-                ['ACTUAL', `🔥 Đã có SX thực tế (${summary.actualCount})`],
-                ['LOSS', `🔴 Cảnh báo thiếu/lỗ (${summary.lossCount})`],
-                ['PROFIT', `🟢 Đạt ĐM / Có Lãi (${summary.profitCount})`],
-                ['WIP_ONLY', `⏳ Đang dở dang WIP (${summary.wipOnlyCount})`],
-              ] as Array<[CostingFilterMode, string]>
-            ).map(([k, lbl]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => {
-                  setFilterMode(k);
-                  setPage(1);
-                }}
-                className={`rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
-                  filterMode === k
-                    ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
-                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                {lbl}
-              </button>
-            ))}
+        {/* Nội dung bảng: Thu gọn thành thanh biểu ngữ HOẶC Trải xuống chi tiết */}
+        {!expandedByFilterMode[filterMode] ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleFilterModeExpanded(filterMode)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') toggleFilterModeExpanded(filterMode);
+            }}
+            className="flex cursor-pointer items-center justify-between bg-slate-50/90 px-4 py-3.5 text-xs font-bold text-slate-700 hover:bg-blue-50/70 hover:text-blue-900 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <ChevronDown className="h-4 w-4 text-blue-600" />
+              <span>
+                Bảng chi tiết báo giá và đối soát lãi/lỗ của <strong>{filteredItems.length}</strong> sản phẩm mục này đang được <strong>thu gọn</strong> để tối ưu không gian làm việc.
+              </span>
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-black text-blue-800 shadow-2xs hover:bg-blue-50">
+              <span>Bấm để trải xuống ({filteredItems.length} SP)</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </span>
           </div>
+        ) : (
+          <>
+            {/* Filter & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/80 px-4 py-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    ['ALL', `Tất cả (${summary.totalProducts})`],
+                    ['ACTUAL', `🔥 Đã có SX thực tế (${summary.actualCount})`],
+                    ['LOSS', `🔴 Cảnh báo thiếu/lỗ (${summary.lossCount})`],
+                    ['PROFIT', `🟢 Đạt ĐM / Có Lãi (${summary.profitCount})`],
+                    ['WIP_ONLY', `⏳ Đang dở dang WIP (${summary.wipOnlyCount})`],
+                  ] as Array<[CostingFilterMode, string]>
+                ).map(([k, lbl]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => {
+                      setFilterMode(k);
+                      setPage(1);
+                    }}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                      filterMode === k
+                        ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
 
-          <div className="relative min-w-[260px] flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Gõ Mã SP (VD: SP095, SP002 Đĩa búa), Tên SP, Khách hàng..."
-              className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/15"
-            />
-          </div>
-        </div>
+              <div className="relative min-w-[260px] flex-1 sm:max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Gõ Mã SP (VD: SP095, SP002 Đĩa búa), Tên SP, Khách hàng..."
+                  className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-xs text-slate-900 placeholder:text-slate-500 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/15"
+                />
+              </div>
+            </div>
 
-        <div className="max-h-[580px] overflow-auto">
+            <div className="max-h-[580px] overflow-auto">
           {loading ? (
             <div className="p-8 text-center text-sm text-slate-500">
               Đang tính toán giá vốn định mức &amp; giá thành thực tế 334+ sản phẩm...
@@ -748,6 +1010,8 @@ export function CostingPnlTab({
             }}
           />
         </div>
+          </>
+        )}
       </Card>
 
       {/* ==================== MODAL: CHI TIẾT ĐỊNH GIÁ & BẢN VẼ ==================== */}
