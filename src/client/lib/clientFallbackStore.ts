@@ -131,7 +131,7 @@ function initFallbackOperations(): OperationMeta[] {
             if (st && st.ncId) {
               const existing = map.get(st.ncId.toLowerCase());
               if (existing) {
-                map.set(st.ncId.toLowerCase(), { ...existing, ...st });
+                map.set(st.ncId.toLowerCase(), { ...existing, ...st, spId: existing.spId });
               } else {
                 map.set(st.ncId.toLowerCase(), st);
               }
