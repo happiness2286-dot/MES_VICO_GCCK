@@ -151,7 +151,8 @@ export function CostingPnlTab({
       const effectiveProfit = quoteVal - effectiveUnitCost;
       const effectiveMargin = quoteVal > 0 ? Number(((effectiveProfit / quoteVal) * 100).toFixed(1)) : 0;
       const effectiveBatchProfit = c.hasActual ? effectiveProfit * c.finishedQty : 0;
-      const quota8h = c.shiftQuota8h || (c.totalSec > 0 ? Math.floor(28800 / c.totalSec) : 8);
+      const rawQuota = c.totalSec > 0 ? 28800 / c.totalSec : 8;
+      const quota8h = rawQuota >= 1 ? Math.floor(rawQuota) : Number(rawQuota.toFixed(1));
 
       return {
         ...c,
@@ -924,10 +925,21 @@ export function CostingPnlTab({
                       {/* 8h Shift Quota & Quick Evaluator */}
                       <td className="px-2.5 py-2.5 text-center font-mono-num">
                         <div className="font-extrabold text-slate-800">
-                          {c.quota8h} SP <span className="text-[10px] font-semibold text-slate-500">/ ca 8h</span>
+                          {c.quota8h >= 1 ? (
+                            <>
+                              {c.quota8h} SP <span className="text-[10px] font-semibold text-slate-500">/ ca 8h</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-amber-700">{c.quota8h} SP</span> <span className="text-[10px] font-semibold text-slate-500">/ ca</span>
+                              <div className="text-[10px] font-bold text-slate-500">
+                                (~{(c.totalSec / 28800).toFixed(1)} ca / SP)
+                              </div>
+                            </>
+                          )}
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          ({formatNumber(c.quota8h * (Number(quoteVal) || 100000))} đ)
+                          ({formatNumber(Math.round((28800 / Math.max(1, c.totalSec)) * (Number(quoteVal) || 100000)))} đ)
                         </div>
                         <button
                           type="button"

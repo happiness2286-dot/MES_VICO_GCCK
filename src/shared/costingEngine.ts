@@ -106,7 +106,7 @@ export function computeProductCosting(
 
   // Real-world All-in Machine Rate (600k/ca for Cưa & OKUMA, 800k/ca for CNC)
   const allInMachineCost = Math.round(allInMachineCostSum) + rawMaterialCost + outsourceCost;
-  const shiftQuota8h = totalSec > 0 ? Math.floor(28800 / totalSec) : 0;
+  const shiftQuota8h = totalSec > 0 ? (28800 >= totalSec ? Math.floor(28800 / totalSec) : Number((28800 / totalSec).toFixed(1))) : 0;
 
   if (options?.costingModel === 'ALL_IN_MACHINE') {
     totalStdCost = allInMachineCost;
