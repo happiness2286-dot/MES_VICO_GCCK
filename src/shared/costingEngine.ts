@@ -15,6 +15,58 @@ import type {
  *   stdOpUnitCost (including 10% overhead) for that step to prevent fake profit.
  * - Real-world Shopfloor support: All-in Machine Rate (800k/ca 8h = 100k/h) & 8h Shift Quota.
  */
+/**
+ * Determines the machine shift rate (VND/ca 8h) and hourly rate (VND/h)
+ * Default: CNC standard = 800.000 đ/ca (100.000 đ/h)
+ * Specific shopfloor rates:
+ * - Máy cưa (máy cưa băng, cưa phôi...): 600.000 đ/ca (75.000 đ/h)
+ * - Máy tiện OKUMA: 600.000 đ/ca (75.000 đ/h)
+ */
+export function getMachineShiftAndHourlyRate(
+  machineName?: string,
+  productName?: string,
+  defaultRatePerHour = 100000
+): { shiftRate: number; hourRate: number } {
+  const normMach = (machineName || '').trim().toLowerCase();
+  const normProd = (productName || '').trim().toLowerCase();
+
+  // Máy cưa (máy cưa băng, cưa phôi...) hoặc Máy tiện OKUMA -> 600k/ca = 75k/h
+  if (
+    normMach.includes('cưa') ||
+    normMach.includes('cua') ||
+    normMach.includes('okuma')
+  ) {
+    return { shiftRate: 600000, hourRate: 75000 };
+  }
+
+  // Nếu là chi tiết gán vào máy tiện OKUMA theo Win-Win routing
+  if (
+    normMach.includes('tiện') ||
+    normMach.includes('tien') ||
+    !normMach
+  ) {
+    if (
+      normProd.startsWith('alktop 1') ||
+      normProd.startsWith('alktop ii 1') ||
+      normProd.startsWith('alktop 2 1') ||
+      normProd.includes('1130') ||
+      normProd.includes('1135') ||
+      normProd.includes('1335') ||
+      normProd.includes('1342') ||
+      normProd.includes('1031') ||
+      normProd.includes('1640') ||
+      normProd.includes('1645') ||
+      normProd.includes('1950')
+    ) {
+      return { shiftRate: 600000, hourRate: 75000 };
+    }
+  }
+
+  // Máy CNC chuẩn: 800k/ca = 100.000 đ/h
+  const baseHour = Math.max(1, defaultRatePerHour);
+  return { shiftRate: baseHour * 8, hourRate: baseHour };
+}
+
 export function computeProductCosting(
   product: ProductMeta,
   ops: OperationMeta[],
@@ -30,12 +82,20 @@ export function computeProductCosting(
   let stdMach = 0;
   let stdTool = 0;
   let totalSec = 0;
+  let allInMachineCostSum = 0;
+
+  const defaultBaseHour = Math.max(1, Number(options?.allInRatePerHour) || 100000);
 
   for (const op of sortedOps) {
     stdLabor += Math.round(Number(op.stdLaborCost) || 0);
     stdMach += Math.round(Number(op.stdMachCost) || 0);
     stdTool += Math.round(Number(op.stdToolCost) || 0);
-    totalSec += Math.round(Number(op.stdSeconds) || 0);
+    const opSec = Math.round(Number(op.stdSeconds) || 0);
+    totalSec += opSec;
+
+    // All-in rate by machine (600k/ca for Cưa & OKUMA, 800k/ca for others)
+    const { hourRate } = getMachineShiftAndHourlyRate(op.defaultMachine, product.productName, defaultBaseHour);
+    allInMachineCostSum += (opSec / 3600) * hourRate;
   }
 
   const machiningBase = stdLabor + stdMach + stdTool;
@@ -44,9 +104,8 @@ export function computeProductCosting(
   const outsourceCost = Math.round(Number(product.outsourceCost) || 0);
   let totalStdCost = machiningBase + stdOverhead + rawMaterialCost + outsourceCost;
 
-  // Real-world All-in Machine Rate (800k/ca 8h = 100k/h)
-  const allInRatePerHour = Math.max(1, Number(options?.allInRatePerHour) || 100000);
-  const allInMachineCost = Math.round((totalSec / 3600) * allInRatePerHour) + rawMaterialCost + outsourceCost;
+  // Real-world All-in Machine Rate (600k/ca for Cưa & OKUMA, 800k/ca for CNC)
+  const allInMachineCost = Math.round(allInMachineCostSum) + rawMaterialCost + outsourceCost;
   const shiftQuota8h = totalSec > 0 ? Math.floor(28800 / totalSec) : 0;
 
   if (options?.costingModel === 'ALL_IN_MACHINE') {
