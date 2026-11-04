@@ -3,9 +3,14 @@ import {
   Activity,
   AlertOctagon,
   AlertTriangle,
+  ArrowRight,
   ArrowRightLeft,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  FileText,
   Clock,
   Cpu,
   Flame,
@@ -80,6 +85,36 @@ export function CockpitAndLoadTab({
   const [machineQuery, setMachineQuery] = useState('');
   const [scheduleDateFilter, setScheduleDateFilter] = useState<string>('');
   const [busyScheduleId, setBusyScheduleId] = useState<number | null>(null);
+
+  type CockpitKpiFilter = 'OK' | 'REWORK' | 'SCRAP' | 'SPINDLE';
+  const [cockpitKpiFilter, setCockpitKpiFilter] = useState<CockpitKpiFilter>('OK');
+
+  // Trạng thái Thu Lên / Trải Xuống cho cả 4 mục KPI
+  const [kpiExpandedByFilter, setKpiExpandedByFilter] = useState<Record<CockpitKpiFilter, boolean>>({
+    OK: true,
+    REWORK: true,
+    SCRAP: true,
+    SPINDLE: true,
+  });
+
+  const toggleKpiExpanded = (mode: CockpitKpiFilter) => {
+    setKpiExpandedByFilter((prev) => ({
+      ...prev,
+      [mode]: !prev[mode],
+    }));
+  };
+
+  const toggleAllKpiModes = (expanded: boolean) => {
+    setKpiExpandedByFilter({
+      OK: expanded,
+      REWORK: expanded,
+      SCRAP: expanded,
+      SPINDLE: expanded,
+    });
+  };
+
+  const [isGembaAlertsExpanded, setIsGembaAlertsExpanded] = useState(true);
+  const [isMachineLoadExpanded, setIsMachineLoadExpanded] = useState(true);
 
   // Add Schedule Modal State
   const [addSchedOpen, setAddSchedOpen] = useState(false);
@@ -518,13 +553,41 @@ export function CockpitAndLoadTab({
 
   return (
     <div className="space-y-5">
-      {/* ==================== 1. 4 EXECUTIVE KPI CARDS ==================== */}
+      {/* ==================== 1. 4 EXECUTIVE KPI CARDS (BẤM ĐỂ LỌC & THU LÊN / TRẢI XUỐNG) ==================== */}
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-slate-200 border-l-4 border-l-emerald-500 bg-white shadow-card">
+        {/* CARD 1: TỔNG SẢN LƯỢNG ĐẠT */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (cockpitKpiFilter === 'OK') {
+              toggleKpiExpanded('OK');
+            } else {
+              setCockpitKpiFilter('OK');
+              setKpiExpandedByFilter((p) => ({ ...p, OK: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (cockpitKpiFilter === 'OK') {
+                toggleKpiExpanded('OK');
+              } else {
+                setCockpitKpiFilter('OK');
+                setKpiExpandedByFilter((p) => ({ ...p, OK: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc chi tiết sản lượng đạt & thu lên/trải xuống danh sách"
+          className={`cursor-pointer border-slate-200 border-l-4 border-l-emerald-500 bg-white shadow-card transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            cockpitKpiFilter === 'OK'
+              ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50/40'
+              : 'hover:border-emerald-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Tổng Sản Lượng Đạt (OK)
+                1. Tổng Sản Lượng Đạt (OK)
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-slate-900">
                 {formatNumber(kpi.totalOk)}{' '}
@@ -536,6 +599,16 @@ export function CockpitAndLoadTab({
                   <Badge variant="danger">🔥 {kpi.overdueOrders} PO trễ hạn</Badge>
                 )}
               </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {cockpitKpiFilter === 'OK' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900">
+                    {kpiExpandedByFilter.OK ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{kpiExpandedByFilter.OK ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-emerald-700">🟢 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-600">
               <CheckCircle2 className="h-6 w-6" />
@@ -543,11 +616,39 @@ export function CockpitAndLoadTab({
           </div>
         </Card>
 
-        <Card className="border-slate-200 border-l-4 border-l-amber-500 bg-white shadow-card">
+        {/* CARD 2: TỔNG HÀNG XỬ LÝ (REWORK) */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (cockpitKpiFilter === 'REWORK') {
+              toggleKpiExpanded('REWORK');
+            } else {
+              setCockpitKpiFilter('REWORK');
+              setKpiExpandedByFilter((p) => ({ ...p, REWORK: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (cockpitKpiFilter === 'REWORK') {
+                toggleKpiExpanded('REWORK');
+              } else {
+                setCockpitKpiFilter('REWORK');
+                setKpiExpandedByFilter((p) => ({ ...p, REWORK: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc chi tiết hàng sửa lại & thu lên/trải xuống danh sách"
+          className={`cursor-pointer border-slate-200 border-l-4 border-l-amber-500 bg-white shadow-card transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            cockpitKpiFilter === 'REWORK'
+              ? 'ring-2 ring-amber-500 ring-offset-2 bg-amber-50/50'
+              : 'hover:border-amber-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Tổng Hàng Xử Lý (Rework)
+                2. Tổng Hàng Xử Lý (Rework)
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-slate-900">
                 {formatNumber(kpi.totalRework)}{' '}
@@ -557,6 +658,16 @@ export function CockpitAndLoadTab({
                 Tỷ lệ sửa hàng:{' '}
                 <strong className="font-mono-num text-amber-700">{reworkRatePct}%</strong> tổng phôi
               </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {cockpitKpiFilter === 'REWORK' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                    {kpiExpandedByFilter.REWORK ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{kpiExpandedByFilter.REWORK ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-amber-800">⚡ Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-200 bg-amber-50 text-amber-600">
               <Wrench className="h-6 w-6" />
@@ -564,11 +675,39 @@ export function CockpitAndLoadTab({
           </div>
         </Card>
 
-        <Card className="border-slate-200 border-l-4 border-l-rose-500 bg-white shadow-card">
+        {/* CARD 3: TỔNG PHẾ PHẨM HỦY (SCRAP NG) */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (cockpitKpiFilter === 'SCRAP') {
+              toggleKpiExpanded('SCRAP');
+            } else {
+              setCockpitKpiFilter('SCRAP');
+              setKpiExpandedByFilter((p) => ({ ...p, SCRAP: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (cockpitKpiFilter === 'SCRAP') {
+                toggleKpiExpanded('SCRAP');
+              } else {
+                setCockpitKpiFilter('SCRAP');
+                setKpiExpandedByFilter((p) => ({ ...p, SCRAP: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc chi tiết phế phẩm hủy & thu lên/trải xuống danh sách"
+          className={`cursor-pointer border-slate-200 border-l-4 border-l-rose-500 bg-white shadow-card transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            cockpitKpiFilter === 'SCRAP'
+              ? 'ring-2 ring-rose-500 ring-offset-2 bg-rose-50/50'
+              : 'hover:border-rose-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Tổng Phế Phẩm Hủy (Scrap NG)
+                3. Tổng Phế Phẩm Hủy (Scrap NG)
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-slate-900">
                 {formatNumber(kpi.totalScrap)}{' '}
@@ -578,13 +717,16 @@ export function CockpitAndLoadTab({
                 <span>
                   Tỷ lệ NG: <strong className="font-mono-num text-rose-700">{scrapRatePct}%</strong>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('logs_qc', { logsSubView: 'QC' })}
-                  className="font-semibold text-blue-600 underline hover:text-blue-800"
-                >
-                  Xem biên bản QC
-                </button>
+              </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {cockpitKpiFilter === 'SCRAP' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-rose-900 font-extrabold">
+                    {kpiExpandedByFilter.SCRAP ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{kpiExpandedByFilter.SCRAP ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-rose-700 font-extrabold animate-pulse">🔴 Bấm lọc &amp; mở</span>
+                )}
               </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600">
@@ -593,11 +735,39 @@ export function CockpitAndLoadTab({
           </div>
         </Card>
 
-        <Card className="border-slate-200 border-l-4 border-l-blue-600 bg-white shadow-card">
+        {/* CARD 4: DỪNG MÁY & TỶ LỆ CHẠY SPINDLE */}
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (cockpitKpiFilter === 'SPINDLE') {
+              toggleKpiExpanded('SPINDLE');
+            } else {
+              setCockpitKpiFilter('SPINDLE');
+              setKpiExpandedByFilter((p) => ({ ...p, SPINDLE: true }));
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              if (cockpitKpiFilter === 'SPINDLE') {
+                toggleKpiExpanded('SPINDLE');
+              } else {
+                setCockpitKpiFilter('SPINDLE');
+                setKpiExpandedByFilter((p) => ({ ...p, SPINDLE: true }));
+              }
+            }
+          }}
+          title="Bấm để lọc trạng thái dừng máy & tỷ lệ spindle và thu lên/trải xuống danh sách"
+          className={`cursor-pointer border-slate-200 border-l-4 border-l-blue-600 bg-white shadow-card transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+            cockpitKpiFilter === 'SPINDLE'
+              ? 'ring-2 ring-blue-500 ring-offset-2 bg-blue-50/40'
+              : 'hover:border-blue-300'
+          }`}
+        >
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Dừng Máy &amp; Tỷ Lệ Chạy Spindle
+                4. Dừng Máy &amp; Tỷ Lệ Chạy Spindle
               </div>
               <div className="font-mono-num mt-1.5 text-3xl font-black text-slate-900">
                 {formatNumber(kpi.totalStopMinutes)}{' '}
@@ -611,6 +781,16 @@ export function CockpitAndLoadTab({
                   <Badge variant="danger">🔴 {kpi.bottleneckMachines} máy cổ chai</Badge>
                 )}
               </div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {cockpitKpiFilter === 'SPINDLE' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-blue-900">
+                    {kpiExpandedByFilter.SPINDLE ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{kpiExpandedByFilter.SPINDLE ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-blue-700">⚡ Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600">
               <Activity className="h-6 w-6" />
@@ -618,6 +798,298 @@ export function CockpitAndLoadTab({
           </div>
         </Card>
       </div>
+
+      {/* ==================== COLLAPSIBLE KPI DRILLDOWN & ACTION CARD (CẢ 4 MỤC) ==================== */}
+      <Card noPadding className="overflow-hidden border-slate-200 bg-white">
+        {/* Switcher & Header Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-100/70 px-4 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5 font-bold">
+            <span className="text-slate-600">Xem mục:</span>
+            <button
+              type="button"
+              onClick={() => setCockpitKpiFilter('OK')}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                cockpitKpiFilter === 'OK'
+                  ? 'bg-emerald-600 text-white shadow-xs font-black'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>1. Sản Lượng Đạt (OK)</span>
+              <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                cockpitKpiFilter === 'OK' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {kpiExpandedByFilter.OK ? '▲ Mở' : '▼ Thu'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCockpitKpiFilter('REWORK')}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                cockpitKpiFilter === 'REWORK'
+                  ? 'bg-amber-600 text-white shadow-xs font-black'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>2. Hàng Sửa Lại</span>
+              <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                cockpitKpiFilter === 'REWORK' ? 'bg-amber-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {kpiExpandedByFilter.REWORK ? '▲ Mở' : '▼ Thu'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCockpitKpiFilter('SCRAP')}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                cockpitKpiFilter === 'SCRAP'
+                  ? 'bg-rose-600 text-white shadow-xs font-black'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>3. Phế Phẩm Hủy</span>
+              <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                cockpitKpiFilter === 'SCRAP' ? 'bg-rose-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {kpiExpandedByFilter.SCRAP ? '▲ Mở' : '▼ Thu'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCockpitKpiFilter('SPINDLE')}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                cockpitKpiFilter === 'SPINDLE'
+                  ? 'bg-blue-600 text-white shadow-xs font-black'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <span>4. Dừng Máy & Spindle</span>
+              <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                cockpitKpiFilter === 'SPINDLE' ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {kpiExpandedByFilter.SPINDLE ? '▲ Mở' : '▼ Thu'}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {/* Nút Thu Lên / Trải Xuống mục đang chọn */}
+            <button
+              type="button"
+              onClick={() => toggleKpiExpanded(cockpitKpiFilter)}
+              title={
+                kpiExpandedByFilter[cockpitKpiFilter]
+                  ? "Bấm để thu gọn chi tiết mục này"
+                  : "Bấm để trải xuống xem chi tiết mục này"
+              }
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black shadow-2xs transition-all active:scale-[0.98] ${
+                kpiExpandedByFilter[cockpitKpiFilter]
+                  ? 'border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100'
+                  : 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              {kpiExpandedByFilter[cockpitKpiFilter] ? (
+                <>
+                  <ChevronUp className="h-4 w-4 text-blue-700" />
+                  <span>▲ Thu Lên</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 text-emerald-700" />
+                  <span>▼ Trải Xuống</span>
+                </>
+              )}
+            </button>
+
+            {/* Master buttons for all 4 categories */}
+            <div className="flex items-center gap-1 border-l border-slate-300 pl-2">
+              <button
+                type="button"
+                onClick={() => toggleAllKpiModes(false)}
+                title="Thu lên toàn bộ cả 4 mục"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900"
+              >
+                <ChevronUp className="h-3 w-3 text-slate-600" />
+                <span>Thu cả 4 mục</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleAllKpiModes(true)}
+                title="Trải xuống toàn bộ cả 4 mục"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900"
+              >
+                <ChevronDown className="h-3 w-3 text-slate-600" />
+                <span>Trải cả 4 mục</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Body: Collapsed Banner OR Detailed Content */}
+        {!kpiExpandedByFilter[cockpitKpiFilter] ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => toggleKpiExpanded(cockpitKpiFilter)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') toggleKpiExpanded(cockpitKpiFilter);
+            }}
+            className="flex cursor-pointer items-center justify-between bg-slate-50/90 px-4 py-3 text-xs font-bold text-slate-700 hover:bg-blue-50/70 hover:text-blue-900 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <ChevronDown className="h-4 w-4 text-blue-600" />
+              <span>
+                Chi tiết dữ liệu của mục <strong>{cockpitKpiFilter === 'OK' ? '1. Sản Lượng Đạt (OK)' : cockpitKpiFilter === 'REWORK' ? '2. Hàng Sửa Lại (Rework)' : cockpitKpiFilter === 'SCRAP' ? '3. Phế Phẩm Hủy (Scrap NG)' : '4. Dừng Máy & Tỷ Lệ Spindle'}</strong> đang được <strong>thu gọn</strong>.
+              </span>
+            </div>
+            <span className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-xs font-black text-blue-800 shadow-2xs hover:bg-blue-50">
+              <span>Bấm để trải xuống xem chi tiết</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </span>
+          </div>
+        ) : (
+          <div className="p-4">
+            {cockpitKpiFilter === 'OK' && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span className="text-xs font-black uppercase text-slate-900">
+                      Danh Sách Các Đơn Hàng PO Đang Mở &amp; Sản Lượng Đạt ({bootstrap.ordersList.filter(o => o.status !== 'COMPLETED').length} PO)
+                    </span>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => onNavigateTab('orders')}
+                    title="Vào phân hệ Quản lý Đơn hàng PO"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    <span>Xem Phân Hệ Đơn Hàng PO</span>
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {bootstrap.ordersList.filter(o => o.status !== 'COMPLETED').slice(0, 6).map((po) => {
+                    const pct = po.qtyPo > 0 ? Math.min(100, Math.round(((po.finishedQty || 0) / po.qtyPo) * 100)) : 0;
+                    return (
+                      <div key={po.poId} className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 text-xs hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="text-blue-700">{po.poId}</span>
+                          <span className="text-slate-500 font-mono-num text-[11px]">{formatDateVn(po.dueDate)}</span>
+                        </div>
+                        <div className="font-extrabold text-slate-900 truncate mt-0.5">{po.productName}</div>
+                        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-600">
+                          <span>{po.customer}</span>
+                          <span className="font-mono-num font-bold text-emerald-700">{po.finishedQty || 0}/{po.qtyPo} SP ({pct}%)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {cockpitKpiFilter === 'REWORK' && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-amber-600" />
+                    <span className="text-xs font-black uppercase text-slate-900">
+                      Tình Trạng Hàng Sửa Lại (Rework: {kpi.totalRework} SP - Tỷ Lệ: {reworkRatePct}%)
+                    </span>
+                  </div>
+                  <Button
+                    variant="warning"
+                    size="sm"
+                    onClick={() => setAddSchedOpen(true)}
+                    title="Xếp lịch sửa hàng vào ca máy rảnh"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Xếp Lịch Sửa Hàng Lại</span>
+                  </Button>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3 text-xs text-amber-900">
+                  <div className="font-bold">Quy trình xử lý Rework:</div>
+                  <ul className="mt-1 list-disc pl-4 space-y-0.5 text-slate-700">
+                    <li>Hàng sửa lại cần được lập tức kiểm tra sai số kích thước FAI.</li>
+                    <li>Sắp xếp nguyên công sửa vào ca 2 hoặc máy rảnh để không ảnh hưởng tiến độ máy chính.</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {cockpitKpiFilter === 'SCRAP' && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <AlertOctagon className="h-4 w-4 text-rose-600" />
+                    <span className="text-xs font-black uppercase text-slate-900">
+                      Tình Trạng Phế Phẩm Hủy (Scrap NG: {kpi.totalScrap} SP - Tỷ Lệ: {scrapRatePct}%)
+                    </span>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => onNavigateTab('logs_qc', { logsSubView: 'QC' })}
+                    title="Mở phân hệ Nhật ký & Biên bản QC"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <span>Xem Biên Bản QC &amp; Hàng Hủy</span>
+                  </Button>
+                </div>
+                <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3 text-xs text-rose-950">
+                  <div className="font-bold">Cảnh báo phế phẩm:</div>
+                  <p className="mt-1 text-slate-700">
+                    Hàng hủy NG sẽ được tự động phân loại theo nguyên nhân khách quan (phôi rỗ nứt) hoặc chủ quan (cháy dao, sai code) để tính thưởng/phạt chính xác trong phân hệ Chấm công &amp; 3P.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {cockpitKpiFilter === 'SPINDLE' && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs font-black uppercase text-slate-900">
+                      Dừng Máy ({kpi.totalStopMinutes} phút) &amp; Tỷ Lệ Chạy ({kpi.runningMachines}/{bootstrap.machines.length} máy - {runPct}%)
+                    </span>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setAddSchedOpen(true)}
+                    title="Bố trí thêm lịch điều độ ca để lấp đầy máy rảnh"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Thêm Lịch Điều Độ Ca</span>
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-center text-xs">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-2.5">
+                    <div className="text-[11px] font-bold text-emerald-800 uppercase">Đang Chạy Live</div>
+                    <div className="font-mono-num text-xl font-black text-emerald-700">{kpi.runningMachines} Máy</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                    <div className="text-[11px] font-bold text-slate-600 uppercase">Máy Nghỉ / Rảnh</div>
+                    <div className="font-mono-num text-xl font-black text-slate-800">{bootstrap.machines.length - kpi.runningMachines} Máy</div>
+                  </div>
+                  <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-2.5">
+                    <div className="text-[11px] font-bold text-rose-800 uppercase">Máy Cổ Chai</div>
+                    <div className="font-mono-num text-xl font-black text-rose-700">{kpi.bottleneckMachines} Máy</div>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-2.5">
+                    <div className="text-[11px] font-bold text-amber-800 uppercase">Thời Gian Dừng</div>
+                    <div className="font-mono-num text-xl font-black text-amber-700">{kpi.totalStopMinutes} Phút</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* ==================== GEMBA SHIFT HANDOVER ALERTS ==================== */}
       {bootstrap.shiftHandoverAlerts.length > 0 && (
