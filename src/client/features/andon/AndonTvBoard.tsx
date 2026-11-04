@@ -129,7 +129,7 @@ export function AndonTvBoard() {
   const [slidePinned, setSlidePinned] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [viewShift, setViewShift] = useState<'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3'>('AUTO');
-  const [crewFilter, setCrewFilter] = useState<'SHIFT_ONLY' | 'ALL_13'>('SHIFT_ONLY');
+  const [crewFilter, setCrewFilter] = useState<'SHIFT_ONLY' | 'ALL_13'>('ALL_13');
 
   const fetchAndon = useCallback(
     async (silent = true, overrideShift?: 'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3') => {

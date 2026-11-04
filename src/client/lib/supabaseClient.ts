@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { ProductionLogDto, DailyPlanRow } from '@shared/types';
+import { mergePlanWithBaseline } from './baselinePlan';
 import bundledCloudConfig from '../config/cloudConfig.json';
 
 const STORAGE_KEY_URL = 'GCCK_SUPABASE_URL';
@@ -325,8 +326,11 @@ export async function pushDailyPlanToSupabase(workDate: string, rows: DailyPlanR
 
     if (!rows || rows.length === 0) return true;
 
+    // Bulletproof safeguard: ensure we never wipe out the full factory roster
+    const fullRows = mergePlanWithBaseline(rows, workDate);
+
     // 2. Map rows to Supabase table schema
-    const dbRows = rows.map((r, idx) => ({
+    const dbRows = fullRows.map((r, idx) => ({
       work_date: workDate,
       shift_type: r.shiftType || 'Ca 2',
       stt: Number(r.stt) || (idx + 1),
@@ -378,7 +382,7 @@ export async function fetchDailyPlanFromSupabase(workDate: string): Promise<Dail
 
     if (error || !data || data.length === 0) return null;
 
-    return data.map((r: any) => ({
+    const mapped = data.map((r: any) => ({
       id: Number(r.id),
       workDate: r.work_date,
       shiftType: r.shift_type || 'Ca 2',
@@ -400,6 +404,8 @@ export async function fetchDailyPlanFromSupabase(workDate: string): Promise<Dail
         ? Number(RegExp.$1)
         : (/tăng ca/i.test(r.note || '') ? 2 : undefined),
     }));
+
+    return mergePlanWithBaseline(mapped, workDate);
   } catch (err) {
     console.warn('Failed to fetch daily plan from Supabase:', err);
     return null;

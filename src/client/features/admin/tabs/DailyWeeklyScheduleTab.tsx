@@ -50,7 +50,7 @@ import {
   Modal,
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
-import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan, mergePlanWithBaseline } from '@client/lib/clientFallbackStore';
 import {
   isSupabaseConnected,
   pushDailyPlanToSupabase,
@@ -360,10 +360,12 @@ export function DailyWeeklyScheduleTab({
         `/schedules/daily?date=${encodeURIComponent(date)}`
       );
       if (res.rows && res.rows.length > 0) {
-        setDailyRows(res.rows);
+        const completeRows = mergePlanWithBaseline(res.rows, date);
+        setDailyRows(completeRows);
+        saveFallbackDailyPlan(date, completeRows);
         // Auto-seed Supabase Cloud from local if Supabase is connected
         if (isSupabaseConnected()) {
-          void pushDailyPlanToSupabase(date, res.rows);
+          void pushDailyPlanToSupabase(date, completeRows);
         }
       } else {
         const fallback = getFallbackDailyPlan(date);
