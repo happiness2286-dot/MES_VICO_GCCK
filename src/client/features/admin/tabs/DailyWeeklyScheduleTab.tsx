@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertOctagon,
   AlertTriangle,
+  ArrowRight,
   Calendar,
   CalendarCheck2,
   CalendarClock,
@@ -36,6 +37,7 @@ import {
   UserPlus,
   Users,
   Wrench,
+  X,
   Zap,
 } from 'lucide-react';
 import type { DailyPlanRow, WeeklyReportData } from '@shared/types';
@@ -997,6 +999,67 @@ export function DailyWeeklyScheduleTab({
   const [newIncidentReason, setNewIncidentReason] = useState<string>('');
   const [newIncidentNote, setNewIncidentNote] = useState<string>('');
   const [addingIncident, setAddingIncident] = useState<boolean>(false);
+
+  type WeeklyMetricFilter = 'ALL' | 'ACTUAL' | 'COMPLETED' | 'DELAYED';
+  const [weeklyMetricFilter, setWeeklyMetricFilter] = useState<WeeklyMetricFilter>('ALL');
+  const [selectedWeeklyCustomer, setSelectedWeeklyCustomer] = useState<string | null>(null);
+
+  const filteredCustomerStats = useMemo(() => {
+    if (!weeklyReport?.customerStats) return [];
+    let list = weeklyReport.customerStats;
+    if (weeklyMetricFilter === 'DELAYED') {
+      list = list.filter((c) => c.completionPct < 100);
+    } else if (weeklyMetricFilter === 'COMPLETED') {
+      list = list.filter((c) => c.completionPct >= 100);
+    } else if (weeklyMetricFilter === 'ACTUAL') {
+      list = list.filter((c) => c.actualQty > 0);
+    }
+    if (selectedWeeklyCustomer) {
+      list = list.filter((c) => c.customer === selectedWeeklyCustomer);
+    }
+    return list;
+  }, [weeklyReport, weeklyMetricFilter, selectedWeeklyCustomer]);
+
+  const filteredPoStatuses = useMemo(() => {
+    if (!weeklyReport?.poStatuses) return [];
+    let list = weeklyReport.poStatuses;
+    if (weeklyMetricFilter === 'DELAYED') {
+      list = list.filter(
+        (po) =>
+          po.isDelayed ||
+          (po.qtyPo > po.finishedQty &&
+            Boolean(po.dueDate && new Date(po.dueDate) <= new Date(weeklyReport.weekEnd)))
+      );
+    } else if (weeklyMetricFilter === 'COMPLETED') {
+      list = list.filter((po) => po.finishedQty >= po.qtyPo);
+    } else if (weeklyMetricFilter === 'ACTUAL') {
+      list = list.filter((po) => po.finishedQty > 0 || po.wipQty > 0);
+    }
+    if (selectedWeeklyCustomer) {
+      list = list.filter((po) => po.customer === selectedWeeklyCustomer);
+    }
+    return list;
+  }, [weeklyReport, weeklyMetricFilter, selectedWeeklyCustomer]);
+
+  const handleWeeklyPoToDailySchedule = (productOrPo: string) => {
+    try {
+      localStorage.setItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS', productOrPo);
+    } catch {}
+    setSearchFilter(productOrPo);
+    setSubTab('daily');
+    toast.success(`Đã chuyển sang phân hệ Kế Hoạch Ngày để phân công thợ cho ${productOrPo}!`);
+  };
+
+  const handleWeeklyPoToOrders = (poId: string) => {
+    try {
+      localStorage.setItem('GCCK_ADMIN_ORDERS_PO_FOCUS', poId);
+    } catch {}
+    if (onNavigateTab) {
+      onNavigateTab('orders', { ordersSearch: poId });
+    } else {
+      navigateTo(`/admin?tab=orders&ordersSearch=${encodeURIComponent(poId)}`);
+    }
+  };
 
   const loadWeeklyReport = async (wStart: string) => {
     setLoadingWeekly(true);
@@ -1967,46 +2030,159 @@ export function DailyWeeklyScheduleTab({
                   </Badge>
                 </div>
 
-                {/* 4 Metric Cards */}
+                {/* 4 Interactive Metric Cards (Click to Filter Directly) */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <Card className="border-slate-200 bg-white p-3 text-center">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setWeeklyMetricFilter('ALL');
+                      setSelectedWeeklyCustomer(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setWeeklyMetricFilter('ALL');
+                        setSelectedWeeklyCustomer(null);
+                      }
+                    }}
+                    title="Bấm để xem toàn bộ danh sách đơn hàng & khách hàng"
+                    className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+                      weeklyMetricFilter === 'ALL'
+                        ? 'border-blue-400 bg-blue-50/40 ring-2 ring-blue-500 ring-offset-2'
+                        : 'border-slate-200 bg-white hover:border-blue-300'
+                    }`}
+                  >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
                       Tổng Kế Hoạch
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-slate-900">
                       {weeklyReport.summary.totalPlannedQty} SP
                     </div>
-                  </Card>
-                  <Card className="border-slate-200 bg-white p-3 text-center">
+                    <div className="mt-1 text-[10px] font-bold text-blue-600">
+                      🔍 Bấm để hiện tất cả
+                    </div>
+                  </div>
+
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setWeeklyMetricFilter((cur) => (cur === 'ACTUAL' ? 'ALL' : 'ACTUAL'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setWeeklyMetricFilter((cur) => (cur === 'ACTUAL' ? 'ALL' : 'ACTUAL'));
+                      }
+                    }}
+                    title="Bấm để lọc riêng các đơn đã có sản lượng gia công thực tế"
+                    className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+                      weeklyMetricFilter === 'ACTUAL'
+                        ? 'border-emerald-400 bg-emerald-50/50 ring-2 ring-emerald-500 ring-offset-2'
+                        : 'border-slate-200 bg-white hover:border-emerald-300'
+                    }`}
+                  >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
                       Thực Tế Đã Làm
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-emerald-700">
                       {weeklyReport.summary.totalActualQty} SP
                     </div>
-                  </Card>
-                  <Card className="border-slate-200 bg-white p-3 text-center">
+                    <div className="mt-1 text-[10px] font-bold text-emerald-700">
+                      ⚡ Lọc đơn đã làm
+                    </div>
+                  </div>
+
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setWeeklyMetricFilter((cur) => (cur === 'COMPLETED' ? 'ALL' : 'COMPLETED'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setWeeklyMetricFilter((cur) => (cur === 'COMPLETED' ? 'ALL' : 'COMPLETED'));
+                      }
+                    }}
+                    title="Bấm để lọc riêng các đơn hàng đạt 100% kế hoạch"
+                    className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+                      weeklyMetricFilter === 'COMPLETED'
+                        ? 'border-blue-400 bg-blue-50/60 ring-2 ring-blue-600 ring-offset-2'
+                        : 'border-slate-200 bg-white hover:border-blue-300'
+                    }`}
+                  >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
                       Đơn Đạt Kế Hoạch
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-blue-700">
                       {weeklyReport.summary.completedPoCount} PO
                     </div>
-                  </Card>
-                  <Card className="border-slate-200 bg-white p-3 text-center">
+                    <div className="mt-1 text-[10px] font-bold text-blue-700">
+                      ✅ Lọc đơn đạt 100%
+                    </div>
+                  </div>
+
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setWeeklyMetricFilter((cur) => (cur === 'DELAYED' ? 'ALL' : 'DELAYED'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setWeeklyMetricFilter((cur) => (cur === 'DELAYED' ? 'ALL' : 'DELAYED'));
+                      }
+                    }}
+                    title="Bấm để vào thẳng và lọc riêng các đơn trượt kế hoạch / chậm tiến độ"
+                    className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+                      weeklyMetricFilter === 'DELAYED'
+                        ? 'border-rose-400 bg-rose-50/70 ring-2 ring-rose-500 ring-offset-2 shadow-xs'
+                        : 'border-slate-200 bg-white hover:border-rose-300'
+                    }`}
+                  >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
                       Đơn Trượt Kế Hoạch
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-rose-700">
                       {weeklyReport.summary.delayedPoCount} PO
                     </div>
-                  </Card>
+                    <div className="mt-1 text-[10px] font-extrabold text-rose-700 animate-pulse">
+                      🚨 Bấm lọc &amp; xử lý ngay
+                    </div>
+                  </div>
                 </div>
+
+                {/* Active Filter Banner */}
+                {(weeklyMetricFilter !== 'ALL' || selectedWeeklyCustomer) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/90 px-3.5 py-2 text-xs font-bold text-blue-950">
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-blue-600" />
+                      <span>
+                        Đang lọc trực tiếp: <strong>
+                          {weeklyMetricFilter === 'DELAYED' && '🚨 Đơn Trượt Kế Hoạch / Chậm Hạn'}
+                          {weeklyMetricFilter === 'COMPLETED' && '✅ Đơn Đạt Kế Hoạch Đúng Hạn'}
+                          {weeklyMetricFilter === 'ACTUAL' && '⚡ Đơn Đã Có Sản Lượng Thực Tế'}
+                          {weeklyMetricFilter === 'ALL' && 'Tất Cả'}
+                          {selectedWeeklyCustomer ? ` (Khách hàng: ${selectedWeeklyCustomer})` : ''}
+                        </strong> ({filteredCustomerStats.length} đối tác &bull; {filteredPoStatuses.length} đơn PO)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWeeklyMetricFilter('ALL');
+                        setSelectedWeeklyCustomer(null);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-[11px] font-black text-blue-700 shadow-2xs hover:bg-blue-100"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span>✕ Bỏ lọc (Hiện tất cả)</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Customer Stats Table */}
                 <Card className="overflow-hidden border-slate-200 bg-white p-0">
-                  <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 font-bold text-xs text-slate-800">
-                    Chi tiết sản lượng theo từng đối tác khách hàng
+                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-800">
+                    <span>Chi tiết sản lượng theo từng đối tác khách hàng (Bấm hàng để xem riêng đơn PO)</span>
+                    {selectedWeeklyCustomer && (
+                      <span className="text-[11px] font-bold text-blue-700">
+                        Đang chọn: <strong>{selectedWeeklyCustomer}</strong>
+                      </span>
+                    )}
                   </div>
                   <table className="w-full text-left text-xs">
                     <thead>
@@ -2017,39 +2193,194 @@ export function DailyWeeklyScheduleTab({
                         <th className="px-3 py-2 text-center">Thực Tế</th>
                         <th className="px-3 py-2 text-center">Tỷ Lệ %</th>
                         <th className="px-4 py-2">Trạng Thái Đơn</th>
+                        <th className="px-3 py-2 text-center">Thao Tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-900">
-                      {weeklyReport.customerStats.map((cs) => (
-                        <tr key={cs.customer} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 font-extrabold text-blue-700">{cs.customer}</td>
-                          <td className="px-3 py-2 text-center">{cs.productCount}</td>
-                          <td className="font-mono-num px-3 py-2 text-center">{cs.plannedQty}</td>
-                          <td className="font-mono-num px-3 py-2 text-center text-emerald-700 font-extrabold">
-                            {cs.actualQty}
-                          </td>
-                          <td className="font-mono-num px-3 py-2 text-center">
-                            <Badge
-                              variant={
-                                cs.completionPct >= 90
-                                  ? 'success'
-                                  : cs.completionPct >= 70
-                                  ? 'warning'
-                                  : 'danger'
-                              }
-                            >
-                              {cs.completionPct}%
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-2 text-slate-600">
-                            {cs.completionPct >= 100
-                              ? '✅ Hoàn thành đúng tiến độ'
-                              : `⏳ Còn thiếu ${Math.max(0, cs.plannedQty - cs.actualQty)} SP`}
+                      {filteredCustomerStats.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-6 text-center text-xs text-slate-500">
+                            Không có đối tác khách hàng nào khớp với trạng thái đang chọn.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        filteredCustomerStats.map((cs) => {
+                          const isSelected = selectedWeeklyCustomer === cs.customer;
+                          return (
+                            <tr
+                              key={cs.customer}
+                              onClick={() =>
+                                setSelectedWeeklyCustomer((cur) =>
+                                  cur === cs.customer ? null : cs.customer
+                                )
+                              }
+                              title="Bấm để lọc riêng danh sách đơn hàng PO của khách này"
+                              className={`cursor-pointer transition-colors ${
+                                isSelected ? 'bg-blue-50/70 font-bold' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <td className="px-4 py-2 font-extrabold text-blue-700 flex items-center gap-1.5">
+                                <span>{cs.customer}</span>
+                                {isSelected && (
+                                  <span className="rounded bg-blue-600 px-1 py-0.2 text-[9px] font-black text-white">
+                                    Đang xem
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center">{cs.productCount}</td>
+                              <td className="font-mono-num px-3 py-2 text-center">{cs.plannedQty}</td>
+                              <td className="font-mono-num px-3 py-2 text-center text-emerald-700 font-extrabold">
+                                {cs.actualQty}
+                              </td>
+                              <td className="font-mono-num px-3 py-2 text-center">
+                                <Badge
+                                  variant={
+                                    cs.completionPct >= 90
+                                      ? 'success'
+                                      : cs.completionPct >= 70
+                                      ? 'warning'
+                                      : 'danger'
+                                  }
+                                >
+                                  {cs.completionPct}%
+                                </Badge>
+                              </td>
+                              <td className="px-4 py-2 text-slate-600">
+                                {cs.completionPct >= 100
+                                  ? '✅ Hoàn thành đúng tiến độ'
+                                  : `⏳ Còn thiếu ${Math.max(0, cs.plannedQty - cs.actualQty)} SP`}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline">
+                                  <span>Xem PO</span>
+                                  <ArrowRight className="h-3 w-3" />
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
+                </Card>
+
+                {/* DETAILED PO LIST (INLINE RESOLUTION - VÀO THẲNG VẤN ĐỀ) */}
+                <Card className="overflow-hidden border-slate-200 bg-white p-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-blue-600" />
+                      <h4 className="text-xs font-black uppercase tracking-wide text-slate-900">
+                        {weeklyMetricFilter === 'DELAYED'
+                          ? `🚨 Danh Sách ${filteredPoStatuses.length} Đơn Hàng PO Trượt Kế Hoạch / Chậm Hạn (Cần Xử Lý Bù)`
+                          : weeklyMetricFilter === 'COMPLETED'
+                          ? `✅ Danh Sách ${filteredPoStatuses.length} Đơn Hàng PO Đạt Chuẩn 100% Kế Hoạch`
+                          : weeklyMetricFilter === 'ACTUAL'
+                          ? `⚡ Danh Sách ${filteredPoStatuses.length} Đơn Hàng PO Đã Có Sản Lượng Gia Công`
+                          : `📦 Danh Sách Chi Tiết Các Đơn Hàng PO (${filteredPoStatuses.length} PO)`}
+                      </h4>
+                    </div>
+
+                    <div className="text-[11px] font-semibold text-slate-600">
+                      Bấm nút thao tác trực tiếp để giải quyết triệt để từng đơn hàng
+                    </div>
+                  </div>
+
+                  {filteredPoStatuses.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-500">
+                      Không có đơn hàng PO nào khớp với bộ lọc trạng thái hiện tại.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {filteredPoStatuses.map((po) => {
+                        const isDone = Number(po.finishedQty || 0) >= Number(po.qtyPo || 0);
+                        const remain = Math.max(0, Number(po.qtyPo || 0) - Number(po.finishedQty || 0));
+                        const pct =
+                          po.qtyPo > 0
+                            ? Math.min(100, Math.round((Number(po.finishedQty || 0) / Number(po.qtyPo || 1)) * 100))
+                            : 0;
+
+                        return (
+                          <div
+                            key={po.poId}
+                            className={`flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between transition-colors ${
+                              po.isDelayed
+                                ? 'bg-rose-50/30 hover:bg-rose-50/60'
+                                : isDone
+                                ? 'bg-emerald-50/20 hover:bg-emerald-50/40'
+                                : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-mono-num text-xs font-black text-blue-700">
+                                  {po.poId}
+                                </span>
+                                <span className="text-xs font-extrabold text-slate-800">
+                                  &bull; {po.customer}
+                                </span>
+                                {po.isDelayed && (
+                                  <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-black text-white">
+                                    🚨 TRƯỢT KẾ HOẠCH / CHẬM HẠN
+                                  </span>
+                                )}
+                                {isDone && (
+                                  <span className="rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-black text-white">
+                                    ✅ ĐÃ XONG 100%
+                                  </span>
+                                )}
+                                <span className="font-mono-num text-[11px] font-semibold text-slate-500">
+                                  Hạn giao: {formatDateVn(po.dueDate)}
+                                </span>
+                              </div>
+
+                              <div className="truncate text-xs font-bold text-slate-900 sm:text-sm">
+                                {po.productName}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-3 text-xs">
+                                <span className="font-mono-num text-slate-600">
+                                  Tổng đặt: <strong>{po.qtyPo}</strong> SP
+                                </span>
+                                <span className="font-mono-num text-emerald-700">
+                                  Đã làm: <strong>{po.finishedQty}</strong> SP ({pct}%)
+                                </span>
+                                {remain > 0 && (
+                                  <span className="font-mono-num font-bold text-rose-700">
+                                    Còn thiếu: {remain} SP
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Direct Action Buttons to Resolve Completely */}
+                            <div className="flex shrink-0 flex-wrap items-center gap-2 pt-1 sm:pt-0">
+                              {remain > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleWeeklyPoToDailySchedule(po.productName || po.poId)}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300 bg-blue-600 px-3 py-1.5 text-xs font-black text-white shadow-sm transition-all hover:bg-blue-700 active:scale-[0.98]"
+                                  title="Đưa mặt hàng này vào Kế hoạch ngày để bố trí máy và thợ làm bù"
+                                >
+                                  <Calendar className="h-3.5 w-3.5" />
+                                  <span>📅 Đưa Vào Kế Hoạch Bù</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleWeeklyPoToOrders(po.poId)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-800 shadow-sm transition-all hover:border-blue-400 hover:bg-slate-50 active:scale-[0.98]"
+                                title="Vào phân hệ Quản lý Đơn hàng để kiểm tra phiếu traveler QR, bản vẽ &amp; tiến độ"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5 text-slate-600" />
+                                <span>📦 Chi Tiết Đơn PO</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </Card>
               </div>
 

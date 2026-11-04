@@ -1749,17 +1749,21 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
         poCount: 5,
       },
     ],
-    poStatuses: FALLBACK_ORDERS.slice(0, 10).map((po) => ({
-      poId: po.poId,
-      customer: po.customer,
-      productName: po.productName,
-      qtyPo: po.qtyPo,
-      finishedQty: po.finishedQty,
-      wipQty: po.remainQty,
-      dueDate: po.dueDate,
-      status: po.status,
-      isDelayed: po.remainQty > 0 && new Date(po.dueDate) < new Date(),
-    })),
+    poStatuses: FALLBACK_ORDERS.map((po) => {
+      const isCompleted = Number(po.finishedQty || 0) >= Number(po.qtyPo || 0);
+      const isDelayed = !isCompleted && Boolean(po.dueDate && new Date(po.dueDate) < new Date());
+      return {
+        poId: po.poId,
+        customer: po.customer,
+        productName: po.productName,
+        qtyPo: po.qtyPo,
+        finishedQty: po.finishedQty,
+        wipQty: po.remainQty,
+        dueDate: po.dueDate,
+        status: po.status,
+        isDelayed,
+      };
+    }),
     workerLaborStats: FALLBACK_WORKERS.slice(0, 10).map((w, idx) => ({
       workerId: w.id,
       workerName: w.name,

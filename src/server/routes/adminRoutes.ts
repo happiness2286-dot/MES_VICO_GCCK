@@ -2055,13 +2055,13 @@ export function createAdminRoutes(db: DatabaseSync): Router {
     const delayedPos = allPos.filter((p) => p.dueDate && p.dueDate <= weekEnd && p.remainQty > 0);
     const completedPos = allPos.filter((p) => p.finishedQty >= p.qtyPo);
 
-    const poStatuses = allPos.slice(0, 15).map((p) => ({
+    const poStatuses = allPos.map((p) => ({
       poId: p.poId,
       customer: p.customer,
       productName: p.productName,
       qtyPo: p.qtyPo,
       finishedQty: p.finishedQty,
-      wipQty: p.wipQty,
+      wipQty: p.remainQty ?? p.wipQty ?? 0,
       dueDate: p.dueDate,
       status: p.status,
       isDelayed: Boolean(p.dueDate && p.dueDate <= weekEnd && p.remainQty > 0),
