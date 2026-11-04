@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Camera,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   ClipboardCheck,
   Download,
@@ -308,6 +310,33 @@ const HANDOVER_RECEIVER_OPTIONS = [
   'Trần Văn Quỳnh',
 ];
 
+  type HandoverMetricFilter = 'ALL' | 'OK' | 'DEFECT' | 'RAW_DEFECT';
+  const [hoMetricFilter, setHoMetricFilter] = useState<HandoverMetricFilter>('ALL');
+
+  // Trạng thái Thu Lên / Trải Xuống cho cả 4 mục Bàn Giao BM.GC.01.02
+  const [hoExpandedByMetric, setHoExpandedByMetric] = useState<Record<HandoverMetricFilter, boolean>>({
+    ALL: true,
+    OK: true,
+    DEFECT: true,
+    RAW_DEFECT: true,
+  });
+
+  const toggleHoMetricExpanded = (metric: HandoverMetricFilter) => {
+    setHoExpandedByMetric((prev) => ({
+      ...prev,
+      [metric]: !prev[metric],
+    }));
+  };
+
+  const toggleAllHoMetrics = (expanded: boolean) => {
+    setHoExpandedByMetric({
+      ALL: expanded,
+      OK: expanded,
+      DEFECT: expanded,
+      RAW_DEFECT: expanded,
+    });
+  };
+
   const [handovers, setHandovers] = useState<HandoverSlipRow[]>(() => getFallbackHandovers());
   const [hoSearch, setHoSearch] = useState('');
   const [hoDateFilter, setHoDateFilter] = useState('');
@@ -508,6 +537,15 @@ const HANDOVER_RECEIVER_OPTIONS = [
       if (hoDateFilter && h.handoverDate !== hoDateFilter) {
         return false;
       }
+      if (hoMetricFilter === 'OK' && (h.prodQtyTransferred || 0) <= 0) {
+        return false;
+      }
+      if (hoMetricFilter === 'DEFECT' && (h.prodQtyDefect || 0) <= 0) {
+        return false;
+      }
+      if (hoMetricFilter === 'RAW_DEFECT' && (h.rawQtyDefect || 0) <= 0 && (h.prodQtyMissing || 0) <= 0) {
+        return false;
+      }
       if (hoSearch.trim()) {
         const q = hoSearch.toLowerCase();
         const text = `${h.productName} ${h.customer} ${h.poId || ''} ${h.note || ''} ${h.receiverName || ''} ${h.senderName || ''}`.toLowerCase();
@@ -515,7 +553,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
       }
       return true;
     });
-  }, [handovers, hoDeptFilter, hoDateFilter, hoSearch]);
+  }, [handovers, hoDeptFilter, hoDateFilter, hoMetricFilter, hoSearch]);
 
   useEffect(() => {
     void reloadLogs();
@@ -1748,46 +1786,198 @@ const HANDOVER_RECEIVER_OPTIONS = [
       {/* ==================== SUB-VIEW D: SỔ CHUYỂN GIAO CÔNG ĐOẠN (BM.GC.01.02) ==================== */}
       {subView === 'HANDOVER' && (
         <div className="space-y-4">
-          {/* Top KPI Cards */}
+          {/* Top KPI Cards (Bấm vào để lọc & Thu Lên / Trải Xuống) */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Card className="border-l-4 border-l-blue-600 p-3.5">
+            {/* THẺ 1: TỔNG PHIẾU BÀN GIAO */}
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (hoMetricFilter === 'ALL') {
+                  toggleHoMetricExpanded('ALL');
+                } else {
+                  setHoMetricFilter('ALL');
+                  setHoExpandedByMetric((p) => ({ ...p, ALL: true }));
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (hoMetricFilter === 'ALL') {
+                    toggleHoMetricExpanded('ALL');
+                  } else {
+                    setHoMetricFilter('ALL');
+                    setHoExpandedByMetric((p) => ({ ...p, ALL: true }));
+                  }
+                }
+              }}
+              title="Bấm để lọc toàn bộ phiếu bàn giao và thu lên / trải xuống bảng"
+              className={`cursor-pointer border-l-4 border-l-blue-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+                hoMetricFilter === 'ALL'
+                  ? 'ring-2 ring-blue-500 ring-offset-2 bg-blue-50/40'
+                  : 'hover:border-blue-300'
+              }`}
+            >
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Tổng Phiếu Bàn Giao
+                1. Tổng Phiếu Bàn Giao
               </div>
               <div className="mt-1 font-mono-num text-2xl font-black text-slate-900">
-                {filteredHandovers.length}
+                {handovers.length}
               </div>
               <div className="text-[11px] text-slate-500">Theo biểu mẫu BM.GC.01.02</div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {hoMetricFilter === 'ALL' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-blue-900">
+                    {hoExpandedByMetric.ALL ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{hoExpandedByMetric.ALL ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-blue-700">🔍 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </Card>
 
-            <Card className="border-l-4 border-l-emerald-600 p-3.5">
+            {/* THẺ 2: BTP CHUYỂN GIAO ĐẠT */}
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (hoMetricFilter === 'OK') {
+                  toggleHoMetricExpanded('OK');
+                } else {
+                  setHoMetricFilter('OK');
+                  setHoExpandedByMetric((p) => ({ ...p, OK: true }));
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (hoMetricFilter === 'OK') {
+                    toggleHoMetricExpanded('OK');
+                  } else {
+                    setHoMetricFilter('OK');
+                    setHoExpandedByMetric((p) => ({ ...p, OK: true }));
+                  }
+                }
+              }}
+              title="Bấm để lọc riêng các phiếu có BTP chuyển giao đạt và thu lên / trải xuống bảng"
+              className={`cursor-pointer border-l-4 border-l-emerald-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+                hoMetricFilter === 'OK'
+                  ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50/50'
+                  : 'hover:border-emerald-300'
+              }`}
+            >
               <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                BTP Chuyển Giao Đạt
+                2. BTP Chuyển Giao Đạt
               </div>
               <div className="mt-1 font-mono-num text-2xl font-black text-emerald-700">
-                {filteredHandovers.reduce((sum, h) => sum + (h.prodQtyTransferred || 0), 0).toLocaleString('vi-VN')}
+                {handovers.reduce((sum, h) => sum + (h.prodQtyTransferred || 0), 0).toLocaleString('vi-VN')}
               </div>
               <div className="text-[11px] text-emerald-600 font-semibold">Chuyển sang công đoạn sau</div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {hoMetricFilter === 'OK' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900">
+                    {hoExpandedByMetric.OK ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{hoExpandedByMetric.OK ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-emerald-700">🟢 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </Card>
 
-            <Card className="border-l-4 border-l-rose-600 p-3.5">
+            {/* THẺ 3: PHẾ PHẨM GIA CÔNG */}
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (hoMetricFilter === 'DEFECT') {
+                  toggleHoMetricExpanded('DEFECT');
+                } else {
+                  setHoMetricFilter('DEFECT');
+                  setHoExpandedByMetric((p) => ({ ...p, DEFECT: true }));
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (hoMetricFilter === 'DEFECT') {
+                    toggleHoMetricExpanded('DEFECT');
+                  } else {
+                    setHoMetricFilter('DEFECT');
+                    setHoExpandedByMetric((p) => ({ ...p, DEFECT: true }));
+                  }
+                }
+              }}
+              title="Bấm để lọc riêng các phiếu có phát sinh phế phẩm hỏng gia công và thu lên / trải xuống bảng"
+              className={`cursor-pointer border-l-4 border-l-rose-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+                hoMetricFilter === 'DEFECT'
+                  ? 'ring-2 ring-rose-500 ring-offset-2 bg-rose-50/50'
+                  : 'hover:border-rose-300'
+              }`}
+            >
               <div className="text-[11px] font-bold uppercase tracking-wider text-rose-700">
-                Phế Phẩm Gia Công
+                3. Phế Phẩm Gia Công
               </div>
               <div className="mt-1 font-mono-num text-2xl font-black text-rose-700">
-                {filteredHandovers.reduce((sum, h) => sum + (h.prodQtyDefect || 0), 0).toLocaleString('vi-VN')}
+                {handovers.reduce((sum, h) => sum + (h.prodQtyDefect || 0), 0).toLocaleString('vi-VN')}
               </div>
               <div className="text-[11px] text-rose-600 font-semibold">Hỏng tại PX Gia Công</div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {hoMetricFilter === 'DEFECT' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-rose-900 font-extrabold">
+                    {hoExpandedByMetric.DEFECT ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{hoExpandedByMetric.DEFECT ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-rose-700 font-extrabold animate-pulse">🔴 Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </Card>
 
-            <Card className="border-l-4 border-l-amber-600 p-3.5">
+            {/* THẺ 4: PHÔI LỖI & HAO HỤT */}
+            <Card
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (hoMetricFilter === 'RAW_DEFECT') {
+                  toggleHoMetricExpanded('RAW_DEFECT');
+                } else {
+                  setHoMetricFilter('RAW_DEFECT');
+                  setHoExpandedByMetric((p) => ({ ...p, RAW_DEFECT: true }));
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  if (hoMetricFilter === 'RAW_DEFECT') {
+                    toggleHoMetricExpanded('RAW_DEFECT');
+                  } else {
+                    setHoMetricFilter('RAW_DEFECT');
+                    setHoExpandedByMetric((p) => ({ ...p, RAW_DEFECT: true }));
+                  }
+                }
+              }}
+              title="Bấm để lọc riêng các phiếu có phôi lỗi đúc hoặc thiếu hàng và thu lên / trải xuống bảng"
+              className={`cursor-pointer border-l-4 border-l-amber-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
+                hoMetricFilter === 'RAW_DEFECT'
+                  ? 'ring-2 ring-amber-500 ring-offset-2 bg-amber-50/50'
+                  : 'hover:border-amber-300'
+              }`}
+            >
               <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
-                Phôi Lỗi &amp; Hao Hụt
+                4. Phôi Lỗi &amp; Hao Hụt
               </div>
               <div className="mt-1 font-mono-num text-2xl font-black text-amber-700">
-                {filteredHandovers.reduce((sum, h) => sum + (h.rawQtyDefect || 0) + (h.prodQtyMissing || 0), 0).toLocaleString('vi-VN')}
+                {handovers.reduce((sum, h) => sum + (h.rawQtyDefect || 0) + (h.prodQtyMissing || 0), 0).toLocaleString('vi-VN')}
               </div>
               <div className="text-[11px] text-amber-600 font-semibold">Lỗi đúc / Thiếu hàng</div>
+              <div className="mt-2 flex items-center gap-1 text-[11px] font-bold">
+                {hoMetricFilter === 'RAW_DEFECT' ? (
+                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                    {hoExpandedByMetric.RAW_DEFECT ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    <span>{hoExpandedByMetric.RAW_DEFECT ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                  </span>
+                ) : (
+                  <span className="text-amber-800">⚡ Bấm lọc &amp; mở</span>
+                )}
+              </div>
             </Card>
           </div>
 
@@ -1873,7 +2063,96 @@ const HANDOVER_RECEIVER_OPTIONS = [
           </Card>
 
           {/* Main Handover Table matching Form BM.GC.01.02 */}
-          <Card noPadding>
+          <Card noPadding className="overflow-hidden">
+            {/* Header bar with Collapse / Expand and Master controls */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-slate-900">
+                  {hoMetricFilter === 'DEFECT'
+                    ? `🚨 Danh Sách ${filteredHandovers.length} Phiếu Có Phế Phẩm Hỏng Gia Công`
+                    : hoMetricFilter === 'RAW_DEFECT'
+                    ? `⚠️ Danh Sách ${filteredHandovers.length} Phiếu Có Phôi Lỗi Đúc / Hao Hụt`
+                    : hoMetricFilter === 'OK'
+                    ? `✅ Danh Sách ${filteredHandovers.length} Phiếu Chuyển Giao BTP Đạt`
+                    : `📋 Sổ Chuyển Giao Bán Thành Phẩm & Phôi (BM.GC.01.02) — ${filteredHandovers.length} Phiếu`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Nút Thu Lên / Trải Xuống mục đang chọn */}
+                <button
+                  type="button"
+                  onClick={() => toggleHoMetricExpanded(hoMetricFilter)}
+                  title={
+                    hoExpandedByMetric[hoMetricFilter]
+                      ? `Thu gọn bảng danh sách ${filteredHandovers.length} phiếu`
+                      : `Trải rộng bảng danh sách ${filteredHandovers.length} phiếu`
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black shadow-2xs transition-all active:scale-[0.98] ${
+                    hoExpandedByMetric[hoMetricFilter]
+                      ? 'border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100'
+                      : 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  {hoExpandedByMetric[hoMetricFilter] ? (
+                    <>
+                      <ChevronUp className="h-4 w-4 text-blue-700" />
+                      <span>▲ Thu Lên</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4 text-emerald-700" />
+                      <span>▼ Trải Xuống (${filteredHandovers.length} Phiếu)</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Master buttons for all 4 categories */}
+                <div className="flex items-center gap-1 border-l border-slate-300 pl-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleAllHoMetrics(false)}
+                    title="Thu lên toàn bộ cả 4 mục"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100"
+                  >
+                    <ChevronUp className="h-3 w-3 text-slate-600" />
+                    <span>Thu cả 4 mục</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleAllHoMetrics(true)}
+                    title="Trải xuống toàn bộ cả 4 mục"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-100"
+                  >
+                    <ChevronDown className="h-3 w-3 text-slate-600" />
+                    <span>Trải cả 4 mục</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {!hoExpandedByMetric[hoMetricFilter] ? (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleHoMetricExpanded(hoMetricFilter)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') toggleHoMetricExpanded(hoMetricFilter);
+                }}
+                className="flex cursor-pointer items-center justify-between bg-slate-50/90 px-4 py-3.5 text-xs font-bold text-slate-700 hover:bg-blue-50/70 hover:text-blue-900 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronDown className="h-4 w-4 text-blue-600" />
+                  <span>
+                    Bảng sổ chuyển giao công đoạn BM.GC.01.02 của <strong>${filteredHandovers.length}</strong> phiếu mục này đang được <strong>thu gọn</strong>.
+                  </span>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-black text-blue-800 shadow-2xs hover:bg-blue-50">
+                  <span>Bấm để trải xuống (${filteredHandovers.length} Phiếu)</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-xs">
                 <thead>
@@ -2032,6 +2311,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 </tbody>
               </table>
             </div>
+            )}
           </Card>
         </div>
       )}
