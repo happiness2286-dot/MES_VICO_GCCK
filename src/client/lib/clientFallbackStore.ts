@@ -42,9 +42,9 @@ import { normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
-import { getBaselineDailyPlan, mergePlanWithBaseline } from './baselinePlan';
+import { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from './baselinePlan';
 
-export { getBaselineDailyPlan, mergePlanWithBaseline } from './baselinePlan';
+export { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from './baselinePlan';
 
 export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';

@@ -50,7 +50,7 @@ import {
   Modal,
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
-import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan, mergePlanWithBaseline } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from '@client/lib/clientFallbackStore';
 import {
   isSupabaseConnected,
   pushDailyPlanToSupabase,
@@ -93,9 +93,11 @@ export function formatPlannedQtyDisplay(qty: number): string {
 
 function PlannedQtyCell({
   value,
+  stdQty,
   onChange,
 }: {
   value: number;
+  stdQty?: number;
   onChange: (val: number) => void;
 }) {
   const [text, setText] = useState<string>(String(value ?? 0));
@@ -169,7 +171,31 @@ function PlannedQtyCell({
               className="fixed inset-0 z-40"
               onClick={() => setShowDropdown(false)}
             />
-            <div className="absolute top-8 left-0 z-50 max-h-56 w-48 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-left shadow-xl">
+            <div className="absolute top-8 left-0 z-50 max-h-64 w-52 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 text-left shadow-xl">
+              {stdQty !== undefined && stdQty > 0 && (
+                <>
+                  <div className="px-2 py-1 text-[10px] font-black text-blue-700 uppercase tracking-wider">
+                    ⚡ Định mức công đoạn chuẩn
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(stdQty);
+                      setText(String(stdQty));
+                      setShowDropdown(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-xs font-black transition-colors ${
+                      Number(value) === Number(stdQty)
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-blue-50 text-blue-800 hover:bg-blue-100'
+                    }`}
+                  >
+                    <span>⚡ Chuẩn định mức: {stdQty} SP</span>
+                    <span className="font-mono text-[11px] opacity-90">{stdQty}</span>
+                  </button>
+                  <div className="my-1 border-t border-slate-200" />
+                </>
+              )}
               <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                 Phân đoạn ca (&lt; 1)
               </div>
@@ -196,7 +222,7 @@ function PlannedQtyCell({
               <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                 Số lượng chi tiết
               </div>
-              {[2, 4, 6, 7, 8, 10, 12, 15, 16, 18, 40].map((num) => (
+              {[2, 4, 6, 7, 8, 10, 12, 14, 15, 16, 18, 40].map((num) => (
                 <button
                   key={num}
                   type="button"
@@ -243,6 +269,25 @@ function PlannedQtyCell({
           );
         })}
       </div>
+
+      {stdQty !== undefined && stdQty > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            onChange(stdQty);
+            setText(String(stdQty));
+          }}
+          title={`Bấm để chọn định mức công đoạn chuẩn: ${stdQty} SP`}
+          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-black transition-all ${
+            Number(value) === Number(stdQty)
+              ? 'border border-blue-300 bg-blue-50 text-blue-800'
+              : 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 hover:border-amber-400 cursor-pointer shadow-2xs'
+          }`}
+        >
+          <span>⚡ ĐM:</span>
+          <span className="font-mono font-bold">{stdQty}</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -493,24 +538,43 @@ export function DailyWeeklyScheduleTab({
       const updated = [...prev];
       const cur = { ...updated[index], [field]: value };
 
-      // Cascade logic: if customer changes, reset product and op
+      // Cascade logic: if customer changes, reset product, op and plannedQty
       if (field === 'customer') {
         cur.productName = '';
         cur.opName = '';
         cur.spId = '';
         cur.ncId = '';
+        cur.plannedQty = 0;
       }
-      // If product changes, auto fill spId and customer if empty, and reset op
+      // If product changes, auto fill spId and customer if empty, and auto-select op and plannedQty by standard norm
       if (field === 'productName') {
         const prod = bootstrap.products.find((p) => p.productName === value);
         if (prod) {
           cur.spId = prod.spId;
           if (!cur.customer) cur.customer = prod.customer;
         }
-        cur.opName = '';
-        cur.ncId = '';
+
+        // Auto find operations for this product
+        const opsForProd = bootstrap.operations.filter(
+          (o) => (cur.spId && o.spId === cur.spId) || o.productName === value
+        );
+        if (opsForProd.length > 0) {
+          // Auto select first operation
+          const targetOp = opsForProd[0];
+          cur.opName = targetOp.opName;
+          cur.ncId = targetOp.ncId;
+          if (!cur.machineName && targetOp.defaultMachine) {
+            cur.machineName = targetOp.defaultMachine;
+          }
+          // Ưu tiên lấy theo định mức công đoạn
+          cur.plannedQty = calculateOpStandardPlanQty(targetOp);
+        } else {
+          cur.opName = '';
+          cur.ncId = '';
+          cur.plannedQty = 0;
+        }
       }
-      // If opName changes, auto fill ncId and default machine
+      // If opName changes, auto fill ncId, default machine, and priority plannedQty by standard norm
       if (field === 'opName') {
         const op = bootstrap.operations.find(
           (o) => o.opName === value && (!cur.spId || o.spId === cur.spId)
@@ -520,6 +584,8 @@ export function DailyWeeklyScheduleTab({
           if (!cur.machineName && op.defaultMachine) {
             cur.machineName = op.defaultMachine;
           }
+          // Ưu tiên lấy theo định mức công đoạn
+          cur.plannedQty = calculateOpStandardPlanQty(op);
         }
       }
 
@@ -1644,12 +1710,24 @@ export function DailyWeeklyScheduleTab({
 
                               {/* Kế Hoạch */}
                               <td className="px-2 py-1.5 text-center">
-                                <PlannedQtyCell
-                                  value={row.plannedQty}
-                                  onChange={(val) =>
-                                    handleRowChange(originalIdx, 'plannedQty', val)
-                                  }
-                                />
+                                {(() => {
+                                  const matchedOp = bootstrap.operations.find(
+                                    (o) =>
+                                      (row.ncId && o.ncId === row.ncId) ||
+                                      (o.opName === row.opName && (!row.spId || o.spId === row.spId)) ||
+                                      (o.productName === row.productName && o.opName === row.opName)
+                                  );
+                                  const opStdQty = matchedOp ? calculateOpStandardPlanQty(matchedOp) : undefined;
+                                  return (
+                                    <PlannedQtyCell
+                                      value={row.plannedQty}
+                                      stdQty={opStdQty}
+                                      onChange={(val) =>
+                                        handleRowChange(originalIdx, 'plannedQty', val)
+                                      }
+                                    />
+                                  );
+                                })()}
                               </td>
 
                               {/* Máy / Ca */}

@@ -443,3 +443,28 @@ export function mergePlanWithBaseline(
   // Reassign STT cleanly 1..N
   return merged.map((r, idx) => ({ ...r, stt: idx + 1, workDate }));
 }
+
+/**
+ * Tính sản lượng kế hoạch định mức chuẩn theo công đoạn (1 ca làm việc tiêu chuẩn 8h = 28.800s).
+ * - Nếu chi tiết chu kỳ bình thường (stdSeconds <= 28800): tính số lượng SP / ca làm tròn nguyên.
+ * - Nếu chi tiết lớn / chu kỳ dài (> 28800s / SP): tính theo phân đoạn ca (0.75, 0.5, 0.33, 0.25).
+ */
+export function calculateOpStandardPlanQty(op?: { stdSeconds?: number } | null): number {
+  if (!op || !op.stdSeconds || op.stdSeconds <= 0) return 1;
+
+  const shiftSeconds = 8 * 3600; // 28.800 giây cho 1 ca làm việc tiêu chuẩn 8 tiếng
+  const rawRatio = shiftSeconds / op.stdSeconds;
+
+  if (rawRatio >= 1) {
+    // Gia công hoàn thành >= 1 SP trong ca: làm tròn số nguyên gần nhất (tối thiểu 1)
+    return Math.max(1, Math.round(rawRatio));
+  }
+
+  // Nếu chi tiết lớn / chu kỳ dài (> 1 ca / SP): quy về phân đoạn chuẩn
+  if (rawRatio >= 0.7) return 0.75;
+  if (rawRatio >= 0.4) return 0.5;
+  if (rawRatio >= 0.28) return 0.33;
+  return 0.25;
+}
+
+
