@@ -2,10 +2,17 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertOctagon,
+  AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   Award,
+  Calendar,
+  CheckCircle2,
   Clock,
   Cpu,
+  ExternalLink,
+  FileText,
+  Filter,
   Flame,
   LayoutGrid,
   Maximize2,
@@ -17,6 +24,8 @@ import {
   Users,
   UserCheck,
   UserX,
+  Wrench,
+  X,
 } from 'lucide-react';
 import type { AndonLivePayload } from '@shared/types';
 import { removeVietnameseTones } from '@shared/vnSearch';
@@ -25,10 +34,21 @@ import { getFallbackAndonLive, saveFallbackDailyPlan } from '../../lib/clientFal
 import { isSupabaseConnected, fetchDailyPlanFromSupabase, subscribeSupabaseDailyPlanChanges } from '../../lib/supabaseClient';
 import { formatDateVn, formatNumber } from '../../lib/formatters';
 import { navigateTo } from '../../lib/navigation';
-import { Badge } from '../../components/ui/IndustrialPrimitives';
+import { Badge, Button, Modal } from '../../components/ui/IndustrialPrimitives';
 
 type AndonDisplayMode = 'ALL_ZONES' | 'CAROUSEL';
 type AndonSlideIndex = 0 | 1 | 2;
+type MachineFilterKey = 'ALL' | 'RUNNING' | 'SETUP' | 'OVERTIME' | 'STOPPED' | 'LIGHTS_OUT' | 'IDLE';
+
+const MACHINE_FILTER_LABELS: Record<MachineFilterKey, string> = {
+  ALL: 'Tất cả máy gia công',
+  RUNNING: '🟢 Đang chạy (Hoạt động tốt)',
+  SETUP: '🟡 Setup / Đo kiểm (Chuẩn bị gá)',
+  OVERTIME: '🔥 Đang tăng cường tăng ca (OT)',
+  STOPPED: '🔴 Sự cố / Dừng máy',
+  LIGHTS_OUT: '🟣 Lights-out đêm / Chờ phôi',
+  IDLE: '⚪ Không hoạt động (Chưa bố trí thợ)',
+};
 
 function getVietnamClockAndShift(now: Date): { clockStr: string; shiftLabel: string } {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -130,6 +150,64 @@ export function AndonTvBoard() {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [viewShift, setViewShift] = useState<'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3'>('AUTO');
   const [crewFilter, setCrewFilter] = useState<'SHIFT_ONLY' | 'ALL_13'>('ALL_13');
+  const [machineFilter, setMachineFilter] = useState<MachineFilterKey>('ALL');
+
+  // Inspection & Resolution Modals
+  const [selectedWorker, setSelectedWorker] = useState<NonNullable<AndonLivePayload['workersStatus']>[number] | null>(null);
+  const [selectedMachine, setSelectedMachine] = useState<AndonLivePayload['machines'][number] | null>(null);
+  const [selectedPo, setSelectedPo] = useState<AndonLivePayload['urgentOrders'][number] | null>(null);
+
+  // Fast resolution navigation helpers
+  const handleResolveWorkerSchedule = (workerName: string) => {
+    try {
+      localStorage.setItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS', workerName);
+    } catch {}
+    navigateTo(`/admin?tab=daily_schedule&worker=${encodeURIComponent(workerName)}`);
+  };
+
+  const handleResolveWorkerQc = () => {
+    navigateTo('/admin?tab=logs_qc');
+  };
+
+  const handleResolveWorkerPortal = () => {
+    navigateTo('/worker');
+  };
+
+  const handleResolveMachineCockpit = (_machineId?: string) => {
+    navigateTo('/admin?tab=cockpit');
+  };
+
+  const handleResolveMachineSchedule = (machineOrWorkerName: string) => {
+    try {
+      localStorage.setItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS', machineOrWorkerName);
+    } catch {}
+    navigateTo(`/admin?tab=daily_schedule&worker=${encodeURIComponent(machineOrWorkerName)}`);
+  };
+
+  const handleResolveMachinePo = (poId: string) => {
+    try {
+      localStorage.setItem('GCCK_ADMIN_ORDERS_PO_FOCUS', poId);
+    } catch {}
+    navigateTo(`/admin?tab=orders&ordersSearch=${encodeURIComponent(poId)}`);
+  };
+
+  const handleResolvePoOrders = (poId?: string) => {
+    try {
+      if (poId) localStorage.setItem('GCCK_ADMIN_ORDERS_PO_FOCUS', poId);
+    } catch {}
+    navigateTo(poId ? `/admin?tab=orders&ordersSearch=${encodeURIComponent(poId)}` : '/admin?tab=orders');
+  };
+
+  const handleResolvePoSchedule = (productOrPo?: string) => {
+    try {
+      if (productOrPo) localStorage.setItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS', productOrPo);
+    } catch {}
+    navigateTo(productOrPo ? `/admin?tab=daily_schedule&worker=${encodeURIComponent(productOrPo)}` : '/admin?tab=daily_schedule');
+  };
+
+  const handleResolvePoTrace = (poId: string) => {
+    navigateTo(`/admin?tab=logs_qc&tracePoId=${encodeURIComponent(poId)}`);
+  };
 
   const fetchAndon = useCallback(
     async (silent = true, overrideShift?: 'AUTO' | 'Ca 1' | 'Ca 2' | 'Ca 3') => {
@@ -231,6 +309,28 @@ export function AndonTvBoard() {
       }).length,
     [machines]
   );
+
+  const filteredMachines = useMemo(() => {
+    if (machineFilter === 'ALL') return machines;
+    return machines.filter((m) => {
+      if (machineFilter === 'RUNNING') return m.status === 'RUNNING';
+      if (machineFilter === 'SETUP') return m.status === 'SETUP';
+      if (machineFilter === 'OVERTIME') return Boolean(m.isOvertime);
+      if (machineFilter === 'STOPPED') return m.status === 'STOPPED';
+      if (machineFilter === 'LIGHTS_OUT') {
+        if (m.status === 'RUNNING' && m.isLightsOut) return true;
+        if (m.status === 'STOPPED') {
+          const stopAscii = removeVietnameseTones(m.stopReason || '').toLowerCase();
+          return stopAscii.includes('cho phoi') || stopAscii.includes('cho cau');
+        }
+        return false;
+      }
+      if (machineFilter === 'IDLE') {
+        return m.status === 'IDLE' || (!m.currentPoId && !m.currentWorkerName);
+      }
+      return true;
+    });
+  }, [machines, machineFilter]);
 
   const showZone1 = displayMode === 'ALL_ZONES' || slideIdx === 0;
   const showZone2 = displayMode === 'ALL_ZONES' || slideIdx === 1;
@@ -459,12 +559,25 @@ export function AndonTvBoard() {
       </header>
 
       <div className="mx-auto w-full max-w-[1920px] flex-1 space-y-3 p-3 sm:p-4">
-        {/* ==================== SUMMARY KPI STRIP ==================== */}
+        {/* ==================== SUMMARY KPI STRIP (CLICK TO FILTER MACHINES) ==================== */}
         <section
           aria-label="Tóm tắt trạng thái máy công cụ"
           className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6"
         >
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white px-3.5 py-2 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setMachineFilter((cur) => (cur === 'RUNNING' ? 'ALL' : 'RUNNING'))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setMachineFilter((cur) => (cur === 'RUNNING' ? 'ALL' : 'RUNNING'));
+              }
+            }}
+            title="Bấm để lọc hiển thị các máy đang chạy tốt"
+            className={`cursor-pointer transition-all flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-emerald-500 bg-white px-3.5 py-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+              machineFilter === 'RUNNING' ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50/40' : ''
+            }`}
+          >
             <div>
               <div className="text-[11px] font-bold uppercase text-slate-600">Đang chạy</div>
               <div className="text-xs font-semibold text-emerald-700">🟢 Hoạt động tốt</div>
@@ -474,7 +587,20 @@ export function AndonTvBoard() {
             </span>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-amber-500 bg-white px-3.5 py-2 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setMachineFilter((cur) => (cur === 'SETUP' ? 'ALL' : 'SETUP'))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setMachineFilter((cur) => (cur === 'SETUP' ? 'ALL' : 'SETUP'));
+              }
+            }}
+            title="Bấm để lọc hiển thị các máy đang setup / gá đặt"
+            className={`cursor-pointer transition-all flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-amber-500 bg-white px-3.5 py-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+              machineFilter === 'SETUP' ? 'ring-2 ring-amber-500 ring-offset-2 bg-amber-50/40' : ''
+            }`}
+          >
             <div>
               <div className="text-[11px] font-bold uppercase text-slate-600">Setup / Đo kiểm</div>
               <div className="text-xs font-semibold text-amber-800">🟡 Chuẩn bị gá</div>
@@ -484,7 +610,20 @@ export function AndonTvBoard() {
             </span>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-orange-200 border-l-4 border-l-orange-500 bg-orange-50/30 px-3.5 py-2 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setMachineFilter((cur) => (cur === 'OVERTIME' ? 'ALL' : 'OVERTIME'))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setMachineFilter((cur) => (cur === 'OVERTIME' ? 'ALL' : 'OVERTIME'));
+              }
+            }}
+            title="Bấm để lọc hiển thị các máy đang chạy tăng ca"
+            className={`cursor-pointer transition-all flex items-center justify-between rounded-xl border border-orange-200 border-l-4 border-l-orange-500 bg-orange-50/30 px-3.5 py-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+              machineFilter === 'OVERTIME' ? 'ring-2 ring-orange-500 ring-offset-2 bg-orange-100/50' : ''
+            }`}
+          >
             <div>
               <div className="text-[11px] font-bold uppercase text-orange-700">Tăng ca (OT)</div>
               <div className="text-xs font-semibold text-orange-800">🔥 Đang tăng cường</div>
@@ -494,7 +633,20 @@ export function AndonTvBoard() {
             </span>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-rose-600 bg-white px-3.5 py-2 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setMachineFilter((cur) => (cur === 'STOPPED' ? 'ALL' : 'STOPPED'))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setMachineFilter((cur) => (cur === 'STOPPED' ? 'ALL' : 'STOPPED'));
+              }
+            }}
+            title="Bấm để lọc hiển thị các máy đang gặp sự cố / dừng"
+            className={`cursor-pointer transition-all flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-rose-600 bg-white px-3.5 py-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+              machineFilter === 'STOPPED' ? 'ring-2 ring-rose-500 ring-offset-2 bg-rose-50/50' : ''
+            }`}
+          >
             <div>
               <div className="text-[11px] font-bold uppercase text-slate-600">Sự cố / Dừng</div>
               <div className="text-xs font-semibold text-rose-700">🔴 Cần xử lý</div>
@@ -504,7 +656,20 @@ export function AndonTvBoard() {
             </span>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white px-3.5 py-2 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setMachineFilter((cur) => (cur === 'LIGHTS_OUT' ? 'ALL' : 'LIGHTS_OUT'))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setMachineFilter((cur) => (cur === 'LIGHTS_OUT' ? 'ALL' : 'LIGHTS_OUT'));
+              }
+            }}
+            title="Bấm để lọc hiển thị máy chạy đêm lights-out hoặc chờ phôi"
+            className={`cursor-pointer transition-all flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-violet-500 bg-white px-3.5 py-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+              machineFilter === 'LIGHTS_OUT' ? 'ring-2 ring-violet-500 ring-offset-2 bg-violet-50/50' : ''
+            }`}
+          >
             <div>
               <div className="text-[11px] font-bold uppercase text-slate-600">Trong đó: Đêm / Chờ phôi</div>
               <div className="text-xs font-semibold text-violet-700">🟣 Lights-out</div>
@@ -514,7 +679,20 @@ export function AndonTvBoard() {
             </span>
           </div>
 
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-slate-400 bg-white px-3.5 py-2 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setMachineFilter((cur) => (cur === 'IDLE' ? 'ALL' : 'IDLE'))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                setMachineFilter((cur) => (cur === 'IDLE' ? 'ALL' : 'IDLE'));
+              }
+            }}
+            title="Bấm để lọc hiển thị các máy chưa bố trí thợ"
+            className={`cursor-pointer transition-all flex items-center justify-between rounded-xl border border-slate-200 border-l-4 border-l-slate-400 bg-white px-3.5 py-2 shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+              machineFilter === 'IDLE' ? 'ring-2 ring-slate-500 ring-offset-2 bg-slate-100' : ''
+            }`}
+          >
             <div>
               <div className="text-[11px] font-bold uppercase text-slate-600">Không hoạt động</div>
               <div className="text-xs font-semibold text-slate-600">⚪ Chưa bố trí thợ</div>
@@ -592,13 +770,22 @@ export function AndonTvBoard() {
                 return (
                   <div
                     key={w.workerId}
-                    className={`flex flex-col justify-between rounded-xl border p-2.5 transition-all ${cardCls}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedWorker(w)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelectedWorker(w);
+                      }
+                    }}
+                    title={`Bấm để vào xem chi tiết & giải quyết cho thợ ${w.name}`}
+                    className={`group flex flex-col justify-between rounded-xl border p-2.5 transition-all cursor-pointer hover:shadow-lg hover:border-blue-400 hover:-translate-y-0.5 active:scale-[0.99] ${cardCls}`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-1.5">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-black text-slate-900 flex items-center gap-1.5">
-                            <span>{w.name}</span>
+                            <span className="group-hover:text-blue-700 transition-colors">{w.name}</span>
                             <span className="font-mono text-[10px] font-bold text-slate-500">({w.workerId})</span>
                           </div>
                           <div className="truncate text-[11px] font-bold text-slate-600">
@@ -658,6 +845,14 @@ export function AndonTvBoard() {
                         </div>
                       )}
                     </div>
+
+                    {/* 1-Click Inspection Visual Cue */}
+                    <div className="mt-2.5 pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[11px] font-bold text-blue-700 group-hover:text-blue-800">
+                      <span className="inline-flex items-center gap-1">
+                        <span>🔍 Bấm xem &amp; giải quyết</span>
+                      </span>
+                      <ArrowRight className="h-3.5 w-3.5 text-blue-600 transition-transform group-hover:translate-x-0.5" />
+                    </div>
                   </div>
                 );
               })}
@@ -684,43 +879,112 @@ export function AndonTvBoard() {
                 <div className="flex items-center gap-2">
                   <Cpu className="h-5 w-5 text-blue-600" />
                   <h2 className="text-sm font-black uppercase tracking-wider text-slate-900 sm:text-base">
-                    Vùng 1 · Trạng Thái {machines.length} Máy Gia Công Cơ Khí
+                    Vùng 1 · Trạng Thái {filteredMachines.length}/{machines.length} Máy Gia Công Cơ Khí
                   </h2>
                 </div>
 
-                {/* Color Legend */}
+                {/* Color Legend (Clickable quick filter) */}
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                  <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-emerald-700">
+                  <button
+                    type="button"
+                    onClick={() => setMachineFilter((cur) => (cur === 'RUNNING' ? 'ALL' : 'RUNNING'))}
+                    className={`rounded-md border px-2 py-0.5 transition-all ${
+                      machineFilter === 'RUNNING'
+                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-xs'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    }`}
+                  >
                     🟢 Chạy: {data?.summary?.runningCount ?? 0}
-                  </span>
-                  <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMachineFilter((cur) => (cur === 'SETUP' ? 'ALL' : 'SETUP'))}
+                    className={`rounded-md border px-2 py-0.5 transition-all ${
+                      machineFilter === 'SETUP'
+                        ? 'border-amber-600 bg-amber-500 text-slate-950 font-black shadow-xs'
+                        : 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                    }`}
+                  >
                     🟡 Setup: {data?.summary?.setupCount ?? 0}
-                  </span>
-                  <span className="rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 text-rose-700">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMachineFilter((cur) => (cur === 'STOPPED' ? 'ALL' : 'STOPPED'))}
+                    className={`rounded-md border px-2 py-0.5 transition-all ${
+                      machineFilter === 'STOPPED'
+                        ? 'border-rose-600 bg-rose-600 text-white shadow-xs'
+                        : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    }`}
+                  >
                     🔴 Sự cố: {data?.summary?.stoppedCount ?? 0}
-                  </span>
-                  <span className="rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-violet-700">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMachineFilter((cur) => (cur === 'LIGHTS_OUT' ? 'ALL' : 'LIGHTS_OUT'))}
+                    className={`rounded-md border px-2 py-0.5 transition-all ${
+                      machineFilter === 'LIGHTS_OUT'
+                        ? 'border-violet-600 bg-violet-600 text-white shadow-xs'
+                        : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                    }`}
+                  >
                     🟣 Chờ phôi / Đêm
-                  </span>
-                  <span className="rounded-md border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-700">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMachineFilter((cur) => (cur === 'IDLE' ? 'ALL' : 'IDLE'))}
+                    className={`rounded-md border px-2 py-0.5 transition-all ${
+                      machineFilter === 'IDLE'
+                        ? 'border-slate-400 bg-slate-200 text-slate-900 font-black shadow-xs'
+                        : 'border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
                     ⚪ Không hoạt động: {data?.summary?.idleCount ?? 0}
-                  </span>
+                  </button>
                 </div>
               </div>
 
+              {/* Active Filter Notification Bar */}
+              {machineFilter !== 'ALL' && (
+                <div className="mb-3 flex items-center justify-between rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 text-xs text-blue-900 font-bold">
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-blue-600" />
+                    <span>
+                      Đang lọc hiển thị: <strong>{MACHINE_FILTER_LABELS[machineFilter]}</strong> ({filteredMachines.length} máy)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMachineFilter('ALL')}
+                    className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2 py-0.5 text-[11px] font-black text-blue-700 shadow-2xs hover:bg-blue-100"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    <span>Hiện tất cả 23 máy</span>
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {machines.map((m) => {
+                {filteredMachines.map((m) => {
                   const vis = resolveMachineVisualState(m);
                   return (
                     <div
                       key={m.id}
                       data-testid={`andon-machine-${m.id}`}
-                      className={`flex flex-col justify-between rounded-xl border p-2.5 transition-all ${vis.cardCls}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedMachine(m)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          setSelectedMachine(m);
+                        }
+                      }}
+                      title={`Bấm để xem chi tiết & giải quyết cho máy ${m.name}`}
+                      className={`group flex flex-col justify-between rounded-xl border p-2.5 transition-all cursor-pointer hover:shadow-lg hover:border-blue-400 hover:-translate-y-0.5 active:scale-[0.99] ${vis.cardCls}`}
                     >
                       <div>
                         <div className="flex items-start justify-between gap-1.5">
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-black text-slate-900">
+                            <div className="truncate text-sm font-black text-slate-900 group-hover:text-blue-700 transition-colors">
                               {m.name}
                             </div>
                             <div className="truncate text-[11px] font-medium text-slate-500">
@@ -787,7 +1051,7 @@ export function AndonTvBoard() {
                         )}
                       </div>
 
-                      {/* Load Bar */}
+                      {/* Load Bar & 1-Click Prompt */}
                       <div className="mt-2.5">
                         <div className="flex justify-between font-mono-num text-[10px] font-semibold text-slate-500">
                           <span>Tải KH</span>
@@ -804,6 +1068,11 @@ export function AndonTvBoard() {
                             }`}
                             style={{ width: `${Math.min(100, m.loadPct)}%` }}
                           />
+                        </div>
+
+                        <div className="mt-2 pt-1 border-t border-slate-200/50 flex items-center justify-between text-[10px] font-extrabold text-blue-700 group-hover:text-blue-800">
+                          <span>⚡ Xem chi tiết &amp; xử lý</span>
+                          <ArrowRight className="h-3 w-3 text-blue-600 transition-transform group-hover:translate-x-0.5" />
                         </div>
                       </div>
                     </div>
@@ -840,7 +1109,16 @@ export function AndonTvBoard() {
                     {urgentOrders.slice(0, displayMode === 'ALL_ZONES' ? 6 : 12).map((po) => (
                       <div
                         key={po.poId}
-                        className={`rounded-xl border p-2.5 shadow-sm ${
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedPo(po)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setSelectedPo(po);
+                          }
+                        }}
+                        title={`Bấm để xem chi tiết PO & giải quyết cho đơn ${po.poId}`}
+                        className={`group rounded-xl border p-2.5 shadow-sm transition-all cursor-pointer hover:shadow-lg hover:border-blue-400 hover:-translate-y-0.5 active:scale-[0.99] ${
                           po.isOverdue
                             ? 'border-rose-300 bg-rose-50/50'
                             : 'border-slate-200 bg-white'
@@ -848,7 +1126,7 @@ export function AndonTvBoard() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-1.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono-num text-xs font-black text-blue-700">
+                            <span className="font-mono-num text-xs font-black text-blue-700 group-hover:underline">
                               {po.poId}
                             </span>
                             <span className="text-xs font-bold text-slate-600">
@@ -886,6 +1164,11 @@ export function AndonTvBoard() {
                             {po.finishedQty}/{po.qtyPo} SP ({po.progressPct}%)
                           </span>
                         </div>
+
+                        <div className="mt-2 pt-1 border-t border-slate-200/50 flex items-center justify-between text-[11px] font-black text-blue-700 group-hover:text-blue-800">
+                          <span>📦 Bấm mở PO &amp; đưa vào kế hoạch</span>
+                          <ArrowRight className="h-3.5 w-3.5 text-blue-600 transition-transform group-hover:translate-x-0.5" />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -909,37 +1192,58 @@ export function AndonTvBoard() {
                   </div>
 
                   <div className="space-y-2">
-                    {leaderboard.slice(0, displayMode === 'ALL_ZONES' ? 6 : 10).map((w) => {
+                    {leaderboard.slice(0, displayMode === 'ALL_ZONES' ? 6 : 10).map((lb) => {
                       const medal =
-                        w.rank === 1
+                        lb.rank === 1
                           ? '🥇'
-                          : w.rank === 2
+                          : lb.rank === 2
                             ? '🥈'
-                            : w.rank === 3
+                            : lb.rank === 3
                               ? '🥉'
-                              : `#${w.rank}`;
+                              : `#${lb.rank}`;
                       const rankBadgeCls =
-                        w.rank === 1
+                        lb.rank === 1
                           ? 'bg-amber-100 text-amber-800 border-amber-200'
-                          : w.rank === 2
+                          : lb.rank === 2
                             ? 'bg-slate-200 text-slate-800 border-slate-300'
-                            : w.rank === 3
+                            : lb.rank === 3
                               ? 'bg-orange-100 text-orange-800 border-orange-200'
                               : 'bg-slate-100 text-slate-700 border-slate-200';
                       const rowCls =
-                        w.rank === 1
+                        lb.rank === 1
                           ? 'border-amber-300 bg-amber-50/30 shadow-sm'
-                          : w.rank === 2
+                          : lb.rank === 2
                             ? 'border-slate-300 bg-slate-50/70 shadow-sm'
-                            : w.rank === 3
+                            : lb.rank === 3
                               ? 'border-orange-300 bg-orange-50/30 shadow-sm'
                               : 'border-slate-200 bg-white shadow-sm';
 
+                      const matchedWorker = data?.workersStatus?.find(
+                        (ws) => ws.workerId === lb.workerId || ws.name === lb.workerName
+                      ) || {
+                        workerId: lb.workerId,
+                        name: lb.workerName,
+                        role: 'Thợ tiện / phay CNC',
+                        assignedShift: 'Ca 1' as const,
+                        isCurrentShiftActive: true,
+                        status: 'ACTIVE' as const,
+                        statusLabel: `Hiệu suất ${lb.kpiPct}% (${lb.earnedStdHours}h ĐM)`,
+                      };
+
                       return (
                         <div
-                          key={w.workerId}
-                          data-testid={`leaderboard-row-${w.workerId}`}
-                          className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${rowCls}`}
+                          key={lb.workerId}
+                          data-testid={`leaderboard-row-${lb.workerId}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedWorker(matchedWorker)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              setSelectedWorker(matchedWorker);
+                            }
+                          }}
+                          title={`Bấm để xem chi tiết & giải quyết cho thợ ${lb.workerName}`}
+                          className={`group flex items-center justify-between gap-3 rounded-xl border px-3 py-2 cursor-pointer hover:shadow-md hover:border-blue-400 hover:-translate-y-0.5 transition-all ${rowCls}`}
                         >
                           <div className="flex min-w-0 items-center gap-2.5">
                             <span
@@ -948,11 +1252,11 @@ export function AndonTvBoard() {
                               {medal}
                             </span>
                             <div className="min-w-0">
-                              <div className="truncate text-sm font-extrabold text-slate-900">
-                                {w.workerName}
+                              <div className="truncate text-sm font-extrabold text-slate-900 group-hover:text-blue-700 transition-colors">
+                                {lb.workerName}
                               </div>
                               <div className="font-mono-num text-[11px] font-medium text-slate-600">
-                                {w.workerId} · Sản lượng: {formatNumber(w.okQtyTotal)} SP
+                                {lb.workerId} · Sản lượng: {formatNumber(lb.okQtyTotal)} SP
                               </div>
                             </div>
                           </div>
@@ -960,10 +1264,10 @@ export function AndonTvBoard() {
                           <div className="flex shrink-0 items-center gap-2 text-right">
                             <div>
                               <div className="font-mono-num tabular-nums text-sm font-black text-emerald-700 sm:text-base">
-                                {formatNumber(w.earnedStdHours, 1)} giờ ĐM
+                                {formatNumber(lb.earnedStdHours, 1)} giờ ĐM
                               </div>
                               <div className="font-mono-num text-[11px] font-bold text-blue-700">
-                                Hiệu suất {w.kpiPct}% ĐM
+                                Hiệu suất {lb.kpiPct}% ĐM
                               </div>
                             </div>
                             <Award className="h-5 w-5 text-amber-500" />
@@ -978,6 +1282,454 @@ export function AndonTvBoard() {
           )}
         </div>
       </div>
+
+      {/* ==================== WORKER RESOLUTION MODAL ==================== */}
+      <Modal
+        open={Boolean(selectedWorker)}
+        onClose={() => setSelectedWorker(null)}
+        title={`Chi Tiết & Giải Quyết Thợ: ${selectedWorker?.name || ''}`}
+        subtitle={`Mã NV: ${selectedWorker?.workerId || ''} · ${selectedWorker?.title || selectedWorker?.role || ''} · ${selectedWorker?.assignedShift || ''}`}
+        maxWidthClass="max-w-2xl"
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+            <span className="text-xs text-slate-500 italic">Chọn hành động trực tiếp bên dưới để xử lý triệt để</span>
+            <Button variant="ghost" onClick={() => setSelectedWorker(null)}>Đóng</Button>
+          </div>
+        }
+      >
+        {selectedWorker && (
+          <div className="space-y-4 text-slate-800">
+            {/* Status banner */}
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Trạng thái ca trực</span>
+                <div className="text-base font-black text-slate-900 mt-0.5">
+                  {selectedWorker.status === 'ACTIVE'
+                    ? '🟢 Đang làm việc trong ca'
+                    : selectedWorker.status === 'OVERTIME'
+                    ? '🔥 Đang tăng cường tăng ca'
+                    : selectedWorker.status === 'OFF'
+                    ? '⚪ Báo nghỉ / Chưa gán máy'
+                    : selectedWorker.status === 'SUPERVISOR'
+                    ? '👔 Quản đốc điều hành sản xuất'
+                    : '💤 Nghỉ ca theo lịch luân chuyển'}
+                </div>
+              </div>
+              <span className="rounded-lg px-2.5 py-1 text-xs font-black bg-blue-100 text-blue-800 border border-blue-200">
+                {selectedWorker.assignedShift}
+              </span>
+            </div>
+
+            {/* Assignment Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 space-y-1">
+                <div className="text-xs font-bold text-emerald-800 uppercase">⚙️ Máy gia công chính</div>
+                <div className="text-sm font-black text-slate-900">
+                  {selectedWorker.primaryMachine || 'Chưa gán máy chính'}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-1">
+                <div className="text-xs font-bold text-amber-800 uppercase">⭐ Ghép máy phụ (+0.33)</div>
+                <div className="text-sm font-black text-slate-900">
+                  {selectedWorker.secondaryMachine || 'Không ghép máy phụ'}
+                </div>
+              </div>
+            </div>
+
+            {/* Assigned Tasks */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+              <div className="text-xs font-black text-slate-700 uppercase border-b border-slate-100 pb-1">
+                Nhiệm vụ sản xuất được giao hôm nay
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-500">Sản phẩm / Bản vẽ:</span>
+                  <div className="font-bold text-slate-900">{selectedWorker.productName || 'Chưa có phân công sản phẩm'}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">Công đoạn / Nguyên công:</span>
+                  <div className="font-bold text-slate-900">{selectedWorker.opName || '---'}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">Kế hoạch ca:</span>
+                  <div className="font-bold text-slate-900">
+                    {selectedWorker.plannedQty !== undefined ? `${selectedWorker.plannedQty} SP` : '---'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500">Ghi chú phân công:</span>
+                  <div className="font-bold text-slate-900">{selectedWorker.note || '---'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 1-Click Resolution Actions */}
+            <div className="space-y-2 pt-1">
+              <div className="text-xs font-black text-slate-700 uppercase flex items-center gap-1.5">
+                <Wrench className="h-4 w-4 text-blue-600" />
+                <span>Giải pháp điều phối &amp; xử lý ngay:</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleResolveWorkerSchedule(selectedWorker.name)}
+                  className="flex items-center justify-between rounded-xl border border-blue-300 bg-blue-600 px-3.5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    <span>Lập / Điều Chỉnh Kế Hoạch Cho Thợ</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResolveWorkerQc}
+                  className="flex items-center justify-between rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-black text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-400 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-slate-600" />
+                    <span>Xem Nhật Ký Báo Cáo QC Của Thợ</span>
+                  </div>
+                  <ExternalLink className="h-4 w-4 text-slate-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResolveWorkerPortal}
+                  className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-xs font-black text-emerald-900 shadow-sm hover:bg-emerald-100 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-emerald-600" />
+                    <span>Mở Cổng Thợ Nhập Báo Cáo</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-emerald-700" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleResolveMachineCockpit()}
+                  className="flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-black text-amber-900 shadow-sm hover:bg-amber-100 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Flame className="h-4 w-4 text-amber-600" />
+                    <span>Điều Độ &amp; Cân Bằng Tải Xưởng</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-amber-700" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ==================== MACHINE RESOLUTION MODAL ==================== */}
+      <Modal
+        open={Boolean(selectedMachine)}
+        onClose={() => setSelectedMachine(null)}
+        title={`Chi Tiết & Giải Quyết Máy: ${selectedMachine?.name || ''}`}
+        subtitle={`Nhóm: ${selectedMachine?.group || ''} · Tải kế hoạch: ${selectedMachine?.loadPct || 0}% ${selectedMachine?.isBottleneck ? ' (Quá tải cổ chai)' : ''}`}
+        maxWidthClass="max-w-2xl"
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+            <span className="text-xs text-slate-500 italic">Chọn hành động để xử lý triệt để sự cố hoặc điều phối máy</span>
+            <Button variant="ghost" onClick={() => setSelectedMachine(null)}>Đóng</Button>
+          </div>
+        }
+      >
+        {selectedMachine && (() => {
+          const vis = resolveMachineVisualState(selectedMachine);
+          return (
+            <div className="space-y-4 text-slate-800">
+              {/* Status card */}
+              <div className={`flex items-center justify-between rounded-xl border p-3 ${vis.cardCls}`}>
+                <div>
+                  <span className="text-[11px] font-bold text-slate-600 uppercase">Trạng thái vận hành</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-black ${vis.pillCls}`}>
+                      <span className={`h-2.5 w-2.5 rounded-full ${vis.dotCls}`} />
+                      {vis.badgeLabel}
+                    </span>
+                    {selectedMachine.isBottleneck && (
+                      <span className="rounded bg-rose-600 px-2 py-0.5 text-xs font-black text-white">
+                        🔥 Cổ chai quá tải ({selectedMachine.loadPct}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Tải kế hoạch</span>
+                  <div className="font-mono-num text-xl font-black text-slate-900">{selectedMachine.loadPct}%</div>
+                </div>
+              </div>
+
+              {/* Stop Reason Alert if stopped */}
+              {selectedMachine.stopReason && (
+                <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-3 space-y-1">
+                  <div className="flex items-center gap-2 text-xs font-black text-rose-800 uppercase">
+                    <AlertTriangle className="h-4 w-4 text-rose-600" />
+                    <span>Cảnh báo sự cố / Dừng máy:</span>
+                  </div>
+                  <div className="text-sm font-bold text-rose-950">
+                    {selectedMachine.stopReason}
+                  </div>
+                </div>
+              )}
+
+              {/* Current Operation details */}
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+                <div className="text-xs font-black text-slate-700 uppercase border-b border-slate-100 pb-1">
+                  Đơn hàng &amp; Thợ đang phụ trách máy
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-500">Lệnh SX / PO:</span>
+                    <div className="font-mono font-bold text-blue-700">
+                      {selectedMachine.currentPoId || 'Chưa gán đơn hàng'}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Thợ vận hành:</span>
+                    <div className="font-bold text-slate-900">
+                      {selectedMachine.currentWorkerName ? `👷 ${selectedMachine.currentWorkerName}` : 'Chưa bố trí thợ'}
+                      {selectedMachine.isDualMachine ? ' (⭐ Ghép máy phụ +0.33)' : ''}
+                      {selectedMachine.isOvertime ? ` (🔥 Tăng ca ${selectedMachine.overtimeHours || ''}h)` : ''}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Sản phẩm / Bản vẽ:</span>
+                    <div className="font-bold text-slate-900">
+                      {selectedMachine.currentProductName || '---'}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Nguyên công / Bước:</span>
+                    <div className="font-bold text-slate-900">
+                      {selectedMachine.currentNcId || ''} {selectedMachine.currentOpName ? `· ${selectedMachine.currentOpName}` : '---'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 1-Click Resolution Actions */}
+              <div className="space-y-2 pt-1">
+                <div className="text-xs font-black text-slate-700 uppercase flex items-center gap-1.5">
+                  <Wrench className="h-4 w-4 text-blue-600" />
+                  <span>Giải pháp điều phối &amp; khắc phục:</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleResolveMachineCockpit(selectedMachine.id)}
+                    className="flex items-center justify-between rounded-xl border border-blue-300 bg-blue-600 px-3.5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Cpu className="h-4 w-4" />
+                      <span>Điều Độ &amp; Cân Bằng Tải Máy</span>
+                    </div>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleResolveMachineSchedule(selectedMachine.currentWorkerName || selectedMachine.name)}
+                    className="flex items-center justify-between rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-black text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-400 active:scale-[0.99] transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-slate-600" />
+                      <span>Bố Trí / Sửa Kế Hoạch Cho Máy</span>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-slate-400" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResolveWorkerPortal}
+                    className="flex items-center justify-between rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 text-xs font-black text-rose-900 shadow-sm hover:bg-rose-100 active:scale-[0.99] transition-all"
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertOctagon className="h-4 w-4 text-rose-600" />
+                      <span>Báo Cáo Dừng / Báo Sự Cố Máy</span>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-rose-700" />
+                  </button>
+
+                  {selectedMachine.currentPoId ? (
+                    <button
+                      type="button"
+                      onClick={() => handleResolveMachinePo(selectedMachine.currentPoId!)}
+                      className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-xs font-black text-emerald-900 shadow-sm hover:bg-emerald-100 active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-emerald-600" />
+                        <span>Vào Đơn Hàng PO ({selectedMachine.currentPoId})</span>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-emerald-700" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleResolvePoOrders('')}
+                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-black text-slate-700 shadow-sm hover:bg-slate-100 active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-500" />
+                        <span>Chọn Đơn PO Để Gán Vào Máy</span>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-slate-400" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* ==================== PO RESOLUTION MODAL ==================== */}
+      <Modal
+        open={Boolean(selectedPo)}
+        onClose={() => setSelectedPo(null)}
+        title={`Chi Tiết & Giải Quyết PO: ${selectedPo?.poId || ''}`}
+        subtitle={`Khách hàng: ${selectedPo?.customer || ''} · Hạn giao: ${selectedPo ? formatDateVn(selectedPo.dueDate) : ''}`}
+        maxWidthClass="max-w-2xl"
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+            <span className="text-xs text-slate-500 italic">Chọn hành động xử lý đơn hàng khẩn hoặc đưa vào sản xuất</span>
+            <Button variant="ghost" onClick={() => setSelectedPo(null)}>Đóng</Button>
+          </div>
+        }
+      >
+        {selectedPo && (
+          <div className="space-y-4 text-slate-800">
+            {/* Overdue alert */}
+            {selectedPo.isOverdue && (
+              <div className="flex items-center justify-between rounded-xl border-2 border-rose-300 bg-rose-50 p-3">
+                <div className="flex items-center gap-2 text-rose-800">
+                  <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
+                  <div className="text-sm font-black">CẢNH BÁO ĐƠN HÀNG QUÁ HẠN GIAO!</div>
+                </div>
+                <span className="rounded bg-rose-600 px-2 py-0.5 text-xs font-black text-white">
+                  Hạn: {formatDateVn(selectedPo.dueDate)}
+                </span>
+              </div>
+            )}
+
+            {/* Product info */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+              <div className="text-xs font-black text-slate-700 uppercase border-b border-slate-100 pb-1">
+                Thông tin sản phẩm &amp; Khách hàng
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-500">Khách hàng:</span>
+                  <div className="font-bold text-slate-900">{selectedPo.customer}</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">Hạn giao hàng:</span>
+                  <div className="font-bold text-slate-900">{formatDateVn(selectedPo.dueDate)}</div>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-slate-500">Chi tiết sản phẩm / Bản vẽ:</span>
+                  <div className="font-bold text-slate-900 text-sm">{selectedPo.productName}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Progress & Quantities */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+              <div className="flex justify-between items-center text-xs font-black text-slate-700 uppercase">
+                <span>Tiến độ hoàn thành: {selectedPo.progressPct}%</span>
+                <span className="font-mono-num">{selectedPo.finishedQty} / {selectedPo.qtyPo} SP</span>
+              </div>
+              <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full ${
+                    selectedPo.progressPct >= 80
+                      ? 'bg-emerald-500'
+                      : selectedPo.isOverdue
+                      ? 'bg-rose-600'
+                      : 'bg-blue-600'
+                  }`}
+                  style={{ width: `${selectedPo.progressPct}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center text-xs pt-1">
+                <div className="rounded-lg bg-white p-2 border border-slate-200">
+                  <div className="text-slate-500">Tổng đặt</div>
+                  <div className="font-mono-num font-black text-slate-900">{selectedPo.qtyPo}</div>
+                </div>
+                <div className="rounded-lg bg-emerald-50 p-2 border border-emerald-200">
+                  <div className="text-emerald-700">Đã xong (OK)</div>
+                  <div className="font-mono-num font-black text-emerald-800">{selectedPo.finishedQty}</div>
+                </div>
+                <div className="rounded-lg bg-rose-50 p-2 border border-rose-200">
+                  <div className="text-rose-700">Còn thiếu</div>
+                  <div className="font-mono-num font-black text-rose-800">{selectedPo.remainQty}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 1-Click Resolution Actions */}
+            <div className="space-y-2 pt-1">
+              <div className="text-xs font-black text-slate-700 uppercase flex items-center gap-1.5">
+                <Wrench className="h-4 w-4 text-blue-600" />
+                <span>Giải pháp xử lý đơn hàng:</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleResolvePoOrders(selectedPo.poId)}
+                  className="flex items-center justify-between rounded-xl border border-blue-300 bg-blue-600 px-3.5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    <span>Vào Đơn Hàng PO &amp; In Phiếu QR</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleResolvePoSchedule(selectedPo.productName || selectedPo.poId)}
+                  className="flex items-center justify-between rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-xs font-black text-emerald-900 shadow-sm hover:bg-emerald-100 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-emerald-600" />
+                    <span>Ưu Tiên Đưa Vào Kế Hoạch Hôm Nay</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-emerald-700" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleResolvePoTrace(selectedPo.poId)}
+                  className="flex items-center justify-between rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-black text-slate-800 shadow-sm hover:bg-slate-50 hover:border-slate-400 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <ExternalLink className="h-4 w-4 text-slate-500" />
+                    <span>Truy Vết Tiến Độ &amp; Nhật Ký Sản Xuất</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-slate-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleResolveMachineCockpit()}
+                  className="flex items-center justify-between rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-black text-amber-900 shadow-sm hover:bg-amber-100 active:scale-[0.99] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-amber-600" />
+                    <span>Cân Bằng Tải Xưởng &amp; Bố Trí Máy</span>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-amber-700" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ==================== BOTTOM LIVE ALERT TICKER ==================== */}
       <footer className="sticky bottom-0 z-20 border-t border-slate-300 bg-white px-4 py-2.5 shadow-sm">

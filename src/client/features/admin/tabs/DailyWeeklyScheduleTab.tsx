@@ -302,6 +302,7 @@ export function DailyWeeklyScheduleTab({
   bootstrap: rawBootstrap,
   onRefreshBootstrap,
   onNavigateTab,
+  deepLink,
 }: AdminTabCommonProps) {
   const bootstrap = rawBootstrap || getFallbackBootstrap();
   const toast = useToast();
@@ -351,7 +352,33 @@ export function DailyWeeklyScheduleTab({
     }
   };
   const [selectedShift, setSelectedShift] = useState<string>('ALL');
-  const [searchFilter, setSearchFilter] = useState<string>('');
+  const [searchFilter, setSearchFilter] = useState<string>(() => {
+    try {
+      const focus = localStorage.getItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS');
+      if (focus) {
+        localStorage.removeItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS');
+        return focus;
+      }
+    } catch {
+      // ignore
+    }
+    return deepLink?.dailyScheduleSearch || '';
+  });
+
+  useEffect(() => {
+    try {
+      const focus = localStorage.getItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS');
+      if (focus) {
+        setSearchFilter(focus);
+        localStorage.removeItem('GCCK_ADMIN_SCHEDULE_WORKER_FOCUS');
+      }
+    } catch {
+      // ignore
+    }
+    if (deepLink?.dailyScheduleSearch) {
+      setSearchFilter(deepLink.dailyScheduleSearch);
+    }
+  }, [deepLink?.dailyScheduleSearch]);
   const [dailyRows, setDailyRows] = useState<DailyPlanRow[]>([]);
   const [availableDates, setAvailableDates] = useState<DailyDateMeta[]>([]);
   const [loadingDates, setLoadingDates] = useState<boolean>(false);

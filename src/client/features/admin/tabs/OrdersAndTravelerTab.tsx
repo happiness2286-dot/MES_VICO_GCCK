@@ -58,7 +58,18 @@ export function OrdersAndTravelerTab({
   const [deliveries, setDeliveries] = useState<DeliveryLogDto[]>([]);
   const [filterMode, setFilterMode] = useState<PoFilterKey>('ALL');
   const [customerFilter, setCustomerFilter] = useState('ALL');
-  const [searchQuery, setSearchQuery] = useState(deepLink?.ordersSearch || '');
+  const [searchQuery, setSearchQuery] = useState(() => {
+    try {
+      const focus = localStorage.getItem('GCCK_ADMIN_ORDERS_PO_FOCUS');
+      if (focus) {
+        localStorage.removeItem('GCCK_ADMIN_ORDERS_PO_FOCUS');
+        return focus;
+      }
+    } catch {
+      // ignore
+    }
+    return deepLink?.ordersSearch || '';
+  });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -220,6 +231,16 @@ export function OrdersAndTravelerTab({
   }, [bootstrap.ordersList]);
 
   useEffect(() => {
+    try {
+      const focus = localStorage.getItem('GCCK_ADMIN_ORDERS_PO_FOCUS');
+      if (focus) {
+        setSearchQuery(focus);
+        setPage(1);
+        localStorage.removeItem('GCCK_ADMIN_ORDERS_PO_FOCUS');
+      }
+    } catch {
+      // ignore
+    }
     if (deepLink?.ordersSearch !== undefined) {
       setSearchQuery(deepLink.ordersSearch);
       setPage(1);

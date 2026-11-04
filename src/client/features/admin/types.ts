@@ -15,6 +15,8 @@ export interface AdminDeepLinkContext {
   logsSubView?: 'LOGS' | 'QC' | 'TRACE' | 'HANDOVER';
   ordersSearch?: string;
   costingSearch?: string;
+  dailyScheduleSearch?: string;
+  cockpitMachineId?: string;
   masterSubTab?: 'OPS' | 'MACHINES_TOOLS' | 'WORKERS' | 'CONFIG' | 'TRAINING_SOP';
   masterSearch?: string;
   attendanceSearch?: string;
