@@ -2327,23 +2327,40 @@ export function createAdminRoutes(db: DatabaseSync): Router {
     const rawQtyTransferred = Number(payload.rawQtyTransferred || 0);
     const rawQtyDefect = Number(payload.rawQtyDefect || 0);
 
-    // Auto calculate missing quantities and update PO wip/finished
+    // Auto calculate cumulative transferred & missing quantities and update PO wip/finished
     if (targetPoId) {
       const existingPo = db.prepare('SELECT * FROM purchase_orders WHERE LOWER(po_id) = LOWER(?)').get(targetPoId) as Record<string, any> | undefined;
       if (existingPo) {
         const qtyPo = Number(existingPo.qty_po || 0);
-        if (prodQtyMissing <= 0 && qtyPo > 0) {
-          prodQtyMissing = Math.max(0, qtyPo - prodQtyTransferred - prodQtyDefect);
+
+        // Sum previous handovers for this PO
+        const prior = db.prepare(`
+          SELECT 
+            COALESCE(SUM(prod_qty_transferred), 0) as tot_prod,
+            COALESCE(SUM(raw_qty_transferred), 0) as tot_raw,
+            COALESCE(SUM(prod_qty_defect), 0) as tot_prod_def,
+            COALESCE(SUM(raw_qty_defect), 0) as tot_raw_def
+          FROM handover_slips 
+          WHERE LOWER(po_id) = LOWER(?)
+        `).get(targetPoId) as any;
+
+        const priorProd = Number(prior?.tot_prod || 0);
+        const priorRaw = Number(prior?.tot_raw || 0);
+        const cumProd = priorProd + prodQtyTransferred;
+        const cumRaw = priorRaw + rawQtyTransferred;
+
+        if (prodQtyMissing <= 0 || prodQtyMissing === (qtyPo - prodQtyTransferred)) {
+          prodQtyMissing = Math.max(0, qtyPo - cumProd - prodQtyDefect);
         }
-        if (rawQtyMissing <= 0 && qtyPo > 0) {
-          rawQtyMissing = Math.max(0, qtyPo - rawQtyTransferred - rawQtyDefect);
+        if (rawQtyMissing <= 0 || rawQtyMissing === (qtyPo - rawQtyTransferred)) {
+          rawQtyMissing = Math.max(0, qtyPo - cumRaw - rawQtyDefect);
         }
+
         const curWip = Number(existingPo.wip_qty || 0);
-        const curFin = Number(existingPo.finished_qty || 0);
         const curDel = Number(existingPo.delivered_qty || 0);
 
-        const newWip = rawQtyTransferred > 0 ? Math.max(curWip, rawQtyTransferred) : curWip;
-        const newFin = prodQtyTransferred > 0 ? Math.max(curFin, prodQtyTransferred) : curFin;
+        const newWip = Math.max(curWip, cumRaw, rawQtyTransferred);
+        const newFin = cumProd;
         const newStock = Math.max(0, newFin - curDel);
         const newRemain = Math.max(0, qtyPo - curDel);
         const newStatus = derivePoStatus(qtyPo, newWip, newFin, curDel);
@@ -2485,24 +2502,40 @@ export function createAdminRoutes(db: DatabaseSync): Router {
       confirmedAt,
     };
 
-    // Auto sync updated handover to purchase orders
+    // Auto sync updated handover to purchase orders (cumulative recalculation)
     const targetPoId = String(updated.poId || '').trim();
     if (targetPoId) {
       const existingPo = db.prepare('SELECT * FROM purchase_orders WHERE LOWER(po_id) = LOWER(?)').get(targetPoId) as Record<string, any> | undefined;
       if (existingPo) {
         const qtyPo = Number(existingPo.qty_po || 0);
-        if (Number(updated.prodQtyMissing || 0) <= 0 && qtyPo > 0) {
-          updated.prodQtyMissing = Math.max(0, qtyPo - Number(updated.prodQtyTransferred || 0) - Number(updated.prodQtyDefect || 0));
+
+        const prior = db.prepare(`
+          SELECT 
+            COALESCE(SUM(prod_qty_transferred), 0) as tot_prod,
+            COALESCE(SUM(raw_qty_transferred), 0) as tot_raw,
+            COALESCE(SUM(prod_qty_defect), 0) as tot_prod_def,
+            COALESCE(SUM(raw_qty_defect), 0) as tot_raw_def
+          FROM handover_slips 
+          WHERE LOWER(po_id) = LOWER(?) AND id != ?
+        `).get(targetPoId, id) as any;
+
+        const priorProd = Number(prior?.tot_prod || 0);
+        const priorRaw = Number(prior?.tot_raw || 0);
+        const cumProd = priorProd + Number(updated.prodQtyTransferred || 0);
+        const cumRaw = priorRaw + Number(updated.rawQtyTransferred || 0);
+
+        if (Number(updated.prodQtyMissing || 0) <= 0 || Number(updated.prodQtyMissing || 0) === (qtyPo - Number(updated.prodQtyTransferred || 0))) {
+          updated.prodQtyMissing = Math.max(0, qtyPo - cumProd - Number(updated.prodQtyDefect || 0));
         }
-        if (Number(updated.rawQtyMissing || 0) <= 0 && qtyPo > 0) {
-          updated.rawQtyMissing = Math.max(0, qtyPo - Number(updated.rawQtyTransferred || 0) - Number(updated.rawQtyDefect || 0));
+        if (Number(updated.rawQtyMissing || 0) <= 0 || Number(updated.rawQtyMissing || 0) === (qtyPo - Number(updated.rawQtyTransferred || 0))) {
+          updated.rawQtyMissing = Math.max(0, qtyPo - cumRaw - Number(updated.rawQtyDefect || 0));
         }
+
         const curWip = Number(existingPo.wip_qty || 0);
-        const curFin = Number(existingPo.finished_qty || 0);
         const curDel = Number(existingPo.delivered_qty || 0);
 
-        const newWip = Number(updated.rawQtyTransferred || 0) > 0 ? Math.max(curWip, Number(updated.rawQtyTransferred)) : curWip;
-        const newFin = Number(updated.prodQtyTransferred || 0) > 0 ? Math.max(curFin, Number(updated.prodQtyTransferred)) : curFin;
+        const newWip = Math.max(curWip, cumRaw);
+        const newFin = cumProd;
         const newStock = Math.max(0, newFin - curDel);
         const newRemain = Math.max(0, qtyPo - curDel);
         const newStatus = derivePoStatus(qtyPo, newWip, newFin, curDel);
@@ -2521,7 +2554,33 @@ export function createAdminRoutes(db: DatabaseSync): Router {
 
   router.delete('/handovers/:id', requireRoles('SHIFT_LEADER', 'DIRECTOR', 'ADMIN'), (req, res) => {
     const id = String(req.params.id);
+    const existing = queryHandoverSlips(db).find((h) => h.id === id);
     deleteHandoverSlip(db, id);
+    if (existing?.poId) {
+      const targetPoId = existing.poId;
+      const existingPo = db.prepare('SELECT * FROM purchase_orders WHERE LOWER(po_id) = LOWER(?)').get(targetPoId) as Record<string, any> | undefined;
+      if (existingPo) {
+        const qtyPo = Number(existingPo.qty_po || 0);
+        const prior = db.prepare(`
+          SELECT 
+            COALESCE(SUM(prod_qty_transferred), 0) as tot_prod,
+            COALESCE(SUM(raw_qty_transferred), 0) as tot_raw
+          FROM handover_slips 
+          WHERE LOWER(po_id) = LOWER(?)
+        `).get(targetPoId) as any;
+        const newFin = Number(prior?.tot_prod || 0);
+        const newWip = Number(prior?.tot_raw || 0);
+        const curDel = Number(existingPo.delivered_qty || 0);
+        const newStock = Math.max(0, newFin - curDel);
+        const newRemain = Math.max(0, qtyPo - curDel);
+        const newStatus = derivePoStatus(qtyPo, newWip, newFin, curDel);
+        db.prepare(`
+          UPDATE purchase_orders
+          SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?
+          WHERE LOWER(po_id) = LOWER(?)
+        `).run(newWip, newFin, newStock, newRemain, newStatus, targetPoId);
+      }
+    }
     res.json({ success: true, id });
   });
 

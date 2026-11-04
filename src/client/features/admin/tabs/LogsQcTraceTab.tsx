@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowRight,
   Camera,
   ChevronDown,
   ChevronUp,
@@ -63,6 +64,7 @@ interface MeasuredDimRow {
 export function LogsQcTraceTab({
   bootstrap: rawBootstrap,
   onRefreshBootstrap,
+  onNavigateTab,
   deepLink,
 }: AdminTabCommonProps) {
   const bootstrap = rawBootstrap || getFallbackBootstrap();
@@ -364,6 +366,121 @@ const HANDOVER_RECEIVER_OPTIONS = [
   const [customSenderMode, setCustomSenderMode] = useState(false);
   const [customReceiverMode, setCustomReceiverMode] = useState(false);
   const [submittingHo, setSubmittingHo] = useState(false);
+  const [isHoPoSummaryExpanded, setIsHoPoSummaryExpanded] = useState(true);
+
+  // Prior transfers calculation for the currently selected PO in the modal
+  const priorProdTransferred = useMemo(() => {
+    if (!hoSelectedPo && !hoProdName) return 0;
+    const cleanPoId = (hoSelectedPo || '').trim().toLowerCase();
+    const cleanProd = (hoProdName || '').trim().toLowerCase();
+    return handovers
+      .filter((h) =>
+        (!editingHoId || h.id !== editingHoId) &&
+        ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
+         (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
+      )
+      .reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
+  }, [handovers, editingHoId, hoSelectedPo, hoProdName]);
+
+  const priorRawTransferred = useMemo(() => {
+    if (!hoSelectedPo && !hoProdName) return 0;
+    const cleanPoId = (hoSelectedPo || '').trim().toLowerCase();
+    const cleanProd = (hoProdName || '').trim().toLowerCase();
+    return handovers
+      .filter((h) =>
+        (!editingHoId || h.id !== editingHoId) &&
+        ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
+         (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
+      )
+      .reduce((sum, h) => sum + (Number(h.rawQtyTransferred) || 0), 0);
+  }, [handovers, editingHoId, hoSelectedPo, hoProdName]);
+
+  // Aggregate handovers by PO & Product for the "Tất Cả Các Phân Xưởng" cumulative view
+  const poHandoversSummary = useMemo(() => {
+    const map = new Map<string, {
+      poId: string;
+      productName: string;
+      customer: string;
+      qtyPo: number;
+      wipQty: number;
+      slips: HandoverSlipRow[];
+      dates: { date: string; qty: number; from: HandoverDept; to: HandoverDept; defect: number }[];
+      totalBtp: number;
+      totalRaw: number;
+      totalDefect: number;
+      totalRawDefect: number;
+      missingQty: number;
+      progressPct: number;
+      interWorkshopRoutes: { route: string; qty: number; defect: number }[];
+    }>();
+
+    for (const h of handovers) {
+      const key = (h.poId || h.productName || 'UNKNOWN').trim().toUpperCase();
+      if (!map.has(key)) {
+        const cleanPoId = (h.poId || '').trim().toLowerCase();
+        const cleanProd = (h.productName || '').trim().toLowerCase();
+        const po = bootstrap.ordersList.find((p) =>
+          (cleanPoId && p.poId.toLowerCase() === cleanPoId) ||
+          (cleanProd && p.productName.trim().toLowerCase() === cleanProd)
+        );
+        map.set(key, {
+          poId: h.poId || po?.poId || '—',
+          productName: h.productName || po?.productName || '—',
+          customer: h.customer || po?.customer || 'Nội bộ',
+          qtyPo: po?.qtyPo || 0,
+          wipQty: po?.wipQty || 0,
+          slips: [],
+          dates: [],
+          totalBtp: 0,
+          totalRaw: 0,
+          totalDefect: 0,
+          totalRawDefect: 0,
+          missingQty: 0,
+          progressPct: 0,
+          interWorkshopRoutes: [],
+        });
+      }
+
+      const item = map.get(key)!;
+      item.slips.push(h);
+      const btp = Number(h.prodQtyTransferred || 0);
+      const raw = Number(h.rawQtyTransferred || 0);
+      const def = Number(h.prodQtyDefect || 0);
+      const rawDef = Number(h.rawQtyDefect || 0);
+
+      item.totalBtp += btp;
+      item.totalRaw = Math.max(item.totalRaw, raw);
+      item.totalDefect += def;
+      item.totalRawDefect += rawDef;
+
+      item.dates.push({
+        date: h.handoverDate,
+        qty: btp,
+        from: h.fromDept,
+        to: h.toDept,
+        defect: def,
+      });
+
+      const fromName = h.fromDept === 'PX_GIA_CONG' ? 'Gia Công' : h.fromDept === 'PX_NHIET_LUYEN' ? 'Nhiệt Luyện' : h.fromDept === 'PX_HOAN_THIEN' ? 'Hoàn Thiện' : 'KHVT';
+      const toName = h.toDept === 'PX_GIA_CONG' ? 'Gia Công' : h.toDept === 'PX_NHIET_LUYEN' ? 'Nhiệt Luyện' : h.toDept === 'PX_HOAN_THIEN' ? 'Hoàn Thiện' : 'KHVT';
+      const routeKey = `${fromName} ➔ ${toName}`;
+      const existingRoute = item.interWorkshopRoutes.find((r) => r.route === routeKey);
+      if (existingRoute) {
+        existingRoute.qty += btp;
+        existingRoute.defect += def;
+      } else {
+        item.interWorkshopRoutes.push({ route: routeKey, qty: btp, defect: def });
+      }
+    }
+
+    for (const item of map.values()) {
+      const targetQty = item.qtyPo > 0 ? item.qtyPo : item.totalBtp;
+      item.missingQty = Math.max(0, targetQty - item.totalBtp);
+      item.progressPct = targetQty > 0 ? Math.min(100, Math.round((item.totalBtp / targetQty) * 100)) : 100;
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.totalBtp - a.totalBtp);
+  }, [handovers, bootstrap.ordersList]);
 
   const reloadHandovers = async () => {
     try {
@@ -403,21 +520,31 @@ const HANDOVER_RECEIVER_OPTIONS = [
     setEditingHoId(null);
     setHoDate(new Date().toISOString().slice(0, 10));
     setHoFromDept('PX_GIA_CONG');
-    setHoToDept('PX_NHIET_LUYEN');
+    setHoToDept('PX_HOAN_THIEN');
     const firstPo = bootstrap.ordersList[0];
     const poQty = firstPo?.qtyPo || 0;
-    const btpQty = firstPo?.finishedQty || 0;
-    const rawQty = firstPo?.wipQty && firstPo.wipQty > 0 ? firstPo.wipQty : poQty;
+    const cleanPoId = (firstPo?.poId || '').trim().toLowerCase();
+    const cleanProd = (firstPo?.productName || '').trim().toLowerCase();
+    const priorBtp = handovers
+      .filter((h) => (cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) || (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
+      .reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
+    const priorRaw = handovers
+      .filter((h) => (cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) || (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
+      .reduce((sum, h) => sum + (Number(h.rawQtyTransferred) || 0), 0);
+
+    const suggestedBtp = Math.max(0, poQty - priorBtp);
+    const suggestedRaw = Math.max(0, poQty - priorRaw);
+
     setHoSelectedPo(firstPo?.poId || '');
     setHoProdName(firstPo?.productName || '');
     setHoCustomer(firstPo?.customer || '');
     setHoUnit('Cái');
-    setHoProdQtyTransferred(btpQty);
+    setHoProdQtyTransferred(suggestedBtp > 0 ? suggestedBtp : 1);
     setHoProdQtyDefect(0);
-    setHoProdQtyMissing(Math.max(0, poQty - btpQty));
-    setHoRawQtyTransferred(rawQty);
+    setHoProdQtyMissing(Math.max(0, poQty - (priorBtp + (suggestedBtp > 0 ? suggestedBtp : 1))));
+    setHoRawQtyTransferred(suggestedRaw > 0 ? suggestedRaw : poQty);
     setHoRawQtyDefect(0);
-    setHoRawQtyMissing(Math.max(0, poQty - rawQty));
+    setHoRawQtyMissing(Math.max(0, poQty - (priorRaw + (suggestedRaw > 0 ? suggestedRaw : poQty))));
     setHoNote('');
     setHoReceiver('Trần Văn Dũng');
     setHoSender(user?.name || 'Hoàng Ngọc Hà');
@@ -445,14 +572,24 @@ const HANDOVER_RECEIVER_OPTIONS = [
       setHoProdName(po.productName);
       setHoCustomer(po.customer);
       const poQty = po.qtyPo || 0;
-      const btpQty = po.finishedQty || 0;
-      const rawQty = po.wipQty && po.wipQty > 0 ? po.wipQty : poQty;
-      setHoProdQtyTransferred(btpQty);
+      const cleanPoId = poId.trim().toLowerCase();
+      const cleanProd = po.productName.trim().toLowerCase();
+      const priorBtp = handovers
+        .filter((h) => (!editingHoId || h.id !== editingHoId) && ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) || (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd)))
+        .reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
+      const priorRaw = handovers
+        .filter((h) => (!editingHoId || h.id !== editingHoId) && ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) || (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd)))
+        .reduce((sum, h) => sum + (Number(h.rawQtyTransferred) || 0), 0);
+
+      const suggestedBtp = Math.max(0, poQty - priorBtp);
+      const suggestedRaw = Math.max(0, poQty - priorRaw);
+
+      setHoProdQtyTransferred(suggestedBtp > 0 ? suggestedBtp : 1);
       setHoProdQtyDefect(0);
-      setHoProdQtyMissing(Math.max(0, poQty - btpQty));
-      setHoRawQtyTransferred(rawQty);
+      setHoProdQtyMissing(Math.max(0, poQty - (priorBtp + (suggestedBtp > 0 ? suggestedBtp : 1))));
+      setHoRawQtyTransferred(suggestedRaw > 0 ? suggestedRaw : poQty);
       setHoRawQtyDefect(0);
-      setHoRawQtyMissing(Math.max(0, poQty - rawQty));
+      setHoRawQtyMissing(Math.max(0, poQty - (priorRaw + (suggestedRaw > 0 ? suggestedRaw : poQty))));
     }
   };
 
@@ -510,7 +647,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
         }
         saveFallbackHandover(targetRow);
         setHandovers((prev) => prev.map((h) => (h.id === editingHoId ? targetRow : h)));
-        toast.success('Đã cập nhật thành công số liệu chuyển giao công đoạn BM.GC.01.02!');
+        if (onRefreshBootstrap) {
+          try { await onRefreshBootstrap(); } catch {}
+        }
+        toast.success('Đã cập nhật số liệu chuyển giao BM.GC.01.02 & tự động đồng bộ sang Lệnh PO & QR!');
       } else {
         try {
           await apiClient.post('/handovers', targetRow);
@@ -519,7 +659,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
         }
         saveFallbackHandover(targetRow);
         setHandovers((prev) => [targetRow, ...prev]);
-        toast.success('Đã lưu thành công phiếu chuyển giao công đoạn BM.GC.01.02!');
+        if (onRefreshBootstrap) {
+          try { await onRefreshBootstrap(); } catch {}
+        }
+        toast.success('Đã lưu phiếu chuyển giao BM.GC.01.02 & tự động đồng bộ sang Lệnh PO & QR!');
       }
       setHoModalOpen(false);
     } catch (err: any) {
@@ -2062,6 +2205,165 @@ const HANDOVER_RECEIVER_OPTIONS = [
             </div>
           </Card>
 
+          {/* ================= BẢNG TỔNG HỢP LŨY KẾ & TIẾN ĐỘ ĐƠN HÀNG PO (TẤT CẢ PHÂN XƯỞNG) ================= */}
+          {hoDeptFilter === 'ALL' && (
+            <Card noPadding className="overflow-hidden border border-blue-200 shadow-2xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100 bg-blue-50/70 px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-white font-black text-xs">
+                    ∑
+                  </div>
+                  <div>
+                    <span className="text-xs font-black uppercase text-blue-950">
+                      Tổng Hợp Lũy Kế &amp; Tiến Độ Bàn Giao Theo Đơn Hàng PO (Tất Cả Phân Xưởng)
+                    </span>
+                    <span className="ml-2 text-[11px] font-semibold text-blue-700 hidden sm:inline">
+                      Cộng dồn số liệu các ngày để ăn khớp với Lệnh PO &amp; QC
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsHoPoSummaryExpanded((p) => !p)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-xs font-bold text-blue-800 shadow-2xs hover:bg-blue-50"
+                  >
+                    {isHoPoSummaryExpanded ? <ChevronUp className="h-3.5 w-3.5 text-blue-700" /> : <ChevronDown className="h-3.5 w-3.5 text-blue-700" />}
+                    <span>{isHoPoSummaryExpanded ? '▲ Thu Lên' : `▼ Trải Xuống (${poHandoversSummary.length} Đơn PO)`}</span>
+                  </button>
+                </div>
+              </div>
+
+              {isHoPoSummaryExpanded && (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                        <th className="border-r border-slate-200 p-2.5 text-center">STT</th>
+                        <th className="border-r border-slate-200 p-2.5">Mã PO &amp; Khách Hàng</th>
+                        <th className="border-r border-slate-200 p-2.5">Tên Sản Phẩm / Bán Thành Phẩm</th>
+                        <th className="border-r border-slate-200 p-2 text-center bg-blue-50/60 text-blue-900">SL Đặt PO</th>
+                        <th className="border-r border-slate-200 p-2 text-center bg-amber-50/60 text-amber-900">Phôi Nhận</th>
+                        <th className="border-r border-slate-200 p-2.5 bg-emerald-50 text-emerald-950">Chi Tiết Lũy Kế Chuyển Giao Theo Ngày &amp; Tuyến</th>
+                        <th className="border-r border-slate-200 p-2 text-center bg-emerald-100/70 text-emerald-900 font-black">Cộng Tổng Đã Giao</th>
+                        <th className="border-r border-slate-200 p-2 text-center bg-rose-50 text-rose-800">SP Lỗi</th>
+                        <th className="border-r border-slate-200 p-2 text-center bg-amber-100/80 text-amber-900 font-black">Còn Thiếu Thực Tế</th>
+                        <th className="border-r border-slate-200 p-2.5 text-center">Tiến Độ</th>
+                        <th className="p-2 text-center">Liên Thông PO</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {poHandoversSummary.length === 0 ? (
+                        <tr>
+                          <td colSpan={11} className="p-6 text-center text-slate-500 font-semibold">
+                            Chưa có dữ liệu bàn giao công đoạn nào được ghi nhận.
+                          </td>
+                        </tr>
+                      ) : (
+                        poHandoversSummary.map((sumItem, sIdx) => {
+                          return (
+                            <tr key={sumItem.poId + sIdx} className="hover:bg-blue-50/30 transition-colors">
+                              <td className="border-r border-slate-200 p-2.5 text-center font-bold font-mono-num text-slate-700">
+                                {sIdx + 1}
+                              </td>
+                              <td className="border-r border-slate-200 p-2.5">
+                                <div className="font-mono-num font-black text-blue-700 text-sm">{sumItem.poId}</div>
+                                <div className="text-[11px] font-semibold text-slate-600">{sumItem.customer}</div>
+                              </td>
+                              <td className="border-r border-slate-200 p-2.5">
+                                <div className="font-extrabold text-slate-900 text-sm">{sumItem.productName}</div>
+                                {sumItem.interWorkshopRoutes.length > 0 && (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {sumItem.interWorkshopRoutes.map((r, rIdx) => (
+                                      <span key={rIdx} className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                                        <span>{r.route}:</span>
+                                        <strong className="text-blue-700">{r.qty}</strong>
+                                        {r.defect > 0 && <strong className="text-rose-600">({r.defect} lỗi)</strong>}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-slate-900 text-sm bg-blue-50/20">
+                                {sumItem.qtyPo > 0 ? sumItem.qtyPo : '—'}
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-center font-mono-num font-bold text-amber-800 bg-amber-50/20">
+                                {sumItem.totalRaw > 0 ? sumItem.totalRaw : '—'}
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-xs bg-emerald-50/20">
+                                <div className="space-y-1">
+                                  {sumItem.dates.map((d, dIdx) => (
+                                    <div key={dIdx} className="flex items-center justify-between gap-2 text-[11px]">
+                                      <span className="font-mono-num font-bold text-slate-700">
+                                        📅 {formatDateVn(d.date)}:
+                                      </span>
+                                      <span className="font-semibold text-slate-600 truncate max-w-[200px]" title={`${d.from} → ${d.to}`}>
+                                        {d.from === 'PX_GIA_CONG' ? 'PX Gia Công' : d.from === 'PX_NHIET_LUYEN' ? 'PX Nhiệt Luyện' : d.from} &rarr; {d.to === 'PX_HOAN_THIEN' ? 'PX Hoàn Thiện' : d.to === 'PX_GIA_CONG' ? 'PX Gia Công' : d.to}
+                                      </span>
+                                      <span className="font-mono-num font-black text-emerald-700">
+                                        +{d.qty} SP
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-emerald-800 bg-emerald-100/50 text-base">
+                                {sumItem.totalBtp}
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-rose-700 bg-rose-50/30">
+                                {sumItem.totalDefect > 0 ? sumItem.totalDefect : '—'}
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-base bg-amber-100/60 text-amber-900">
+                                {sumItem.missingQty > 0 ? (
+                                  <span className="inline-block rounded bg-amber-200/80 px-2 py-0.5 text-amber-900 font-black">
+                                    Thiếu {sumItem.missingQty}
+                                  </span>
+                                ) : (
+                                  <span className="text-emerald-700 font-bold">Đủ 100%</span>
+                                )}
+                              </td>
+                              <td className="border-r border-slate-200 p-2 text-center">
+                                <div className="font-mono-num font-black text-blue-700 text-xs">
+                                  {sumItem.progressPct}%
+                                </div>
+                                <div className="mt-1 h-2 w-full min-w-[60px] overflow-hidden rounded-full bg-slate-200">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      sumItem.progressPct >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
+                                    }`}
+                                    style={{ width: `${sumItem.progressPct}%` }}
+                                  />
+                                </div>
+                              </td>
+                              <td className="p-2 text-center whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (onNavigateTab) {
+                                      onNavigateTab('orders', { ordersSearch: sumItem.poId });
+                                    } else {
+                                      navigateTo('/admin/orders');
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-800 shadow-2xs hover:bg-blue-100 hover:text-blue-900 transition-colors"
+                                  title="Chuyển sang Lệnh PO & QR để xem tiến độ và xuất giao"
+                                >
+                                  <span>Lệnh PO</span>
+                                  <ArrowRight className="h-3 w-3 text-blue-700" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Main Handover Table matching Form BM.GC.01.02 */}
           <Card noPadding className="overflow-hidden">
             {/* Header bar with Collapse / Expand and Master controls */}
@@ -2242,12 +2544,25 @@ const HANDOVER_RECEIVER_OPTIONS = [
                           </td>
                           <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
                             {(() => {
-                              if (row.prodQtyMissing > 0) return row.prodQtyMissing;
-                              const po = bootstrap.ordersList.find((p) => (row.poId && p.poId.toLowerCase() === row.poId.toLowerCase()) || (row.productName && p.productName.trim().toLowerCase() === row.productName.trim().toLowerCase()));
+                              const cleanPoId = (row.poId || '').trim().toLowerCase();
+                              const cleanProd = (row.productName || '').trim().toLowerCase();
+                              const po = bootstrap.ordersList.find((p) => (cleanPoId && p.poId.toLowerCase() === cleanPoId) || (cleanProd && p.productName.trim().toLowerCase() === cleanProd));
                               if (po && po.qtyPo > 0) {
-                                const calc = Math.max(0, po.qtyPo - (row.prodQtyTransferred || 0) - (row.prodQtyDefect || 0));
-                                if (calc > 0) return calc;
+                                const samePoHandovers = handovers.filter((h) =>
+                                  (cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
+                                  (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd)
+                                );
+                                const sorted = [...samePoHandovers].sort((a, b) =>
+                                  (a.handoverDate || '').localeCompare(b.handoverDate || '') ||
+                                  (a.id || '').localeCompare(b.id || '')
+                                );
+                                const rowIdx = sorted.findIndex((h) => h.id === row.id);
+                                const upToSlips = rowIdx >= 0 ? sorted.slice(0, rowIdx + 1) : [row];
+                                const cumProd = upToSlips.reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
+                                const missing = Math.max(0, po.qtyPo - cumProd);
+                                return missing > 0 ? missing : '—';
                               }
+                              if (row.prodQtyMissing > 0) return row.prodQtyMissing;
                               return '—';
                             })()}
                           </td>
@@ -2448,7 +2763,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
                     setHoProdQtyTransferred(val);
                     const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
                     if (po && po.qtyPo > 0) {
-                      setHoProdQtyMissing(Math.max(0, po.qtyPo - val - hoProdQtyDefect));
+                      setHoProdQtyMissing(Math.max(0, po.qtyPo - priorProdTransferred - val - hoProdQtyDefect));
                     }
                   }}
                   className={modalInputCls}
@@ -2465,14 +2780,14 @@ const HANDOVER_RECEIVER_OPTIONS = [
                     setHoProdQtyDefect(val);
                     const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
                     if (po && po.qtyPo > 0) {
-                      setHoProdQtyMissing(Math.max(0, po.qtyPo - hoProdQtyTransferred - val));
+                      setHoProdQtyMissing(Math.max(0, po.qtyPo - priorProdTransferred - hoProdQtyTransferred - val));
                     }
                   }}
                   className={modalInputCls}
                 />
               </div>
               <div>
-                <label className="mb-1 block font-bold text-amber-700">Số Thiếu (Khấu trừ còn lại)</label>
+                <label className="mb-1 block font-bold text-amber-700">Số Thiếu (Còn nợ đơn PO)</label>
                 <input
                   type="number"
                   min="0"
@@ -2485,9 +2800,16 @@ const HANDOVER_RECEIVER_OPTIONS = [
             {(() => {
               const po = bootstrap.ordersList.find((p) => p.poId === hoSelectedPo);
               if (!po) return null;
+              const cumTransferred = priorProdTransferred + hoProdQtyTransferred;
+              const remMissing = Math.max(0, po.qtyPo - cumTransferred - hoProdQtyDefect);
               return (
-                <div className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                  💡 SL Đặt: <strong>{po.qtyPo}</strong> — Khấu trừ còn lại chuyển tiếp: <strong>{Math.max(0, po.qtyPo - hoProdQtyTransferred - hoProdQtyDefect)} SP</strong>
+                <div className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 flex flex-wrap items-center justify-between gap-1">
+                  <span>
+                    💡 Đơn PO: <strong>{po.qtyPo} Cái</strong> • Đã chuyển các đợt trước: <strong className="text-blue-700">{priorProdTransferred}</strong> • Tổng lũy kế đợt này: <strong className="text-emerald-700">{cumTransferred}</strong>
+                  </span>
+                  <span>
+                    Còn thiếu sau giao: <strong className="text-amber-800">{remMissing} SP</strong>
+                  </span>
                 </div>
               );
             })()}

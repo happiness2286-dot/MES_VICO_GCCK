@@ -87,6 +87,20 @@ export function OrdersAndTravelerTab({
     return map;
   }, [orders, bootstrap.ordersList]);
 
+  const handoverFinishedMap = useMemo(() => {
+    const map = new Map<string, number>();
+    try {
+      const list = getFallbackHandovers();
+      for (const h of list) {
+        if (h.poId && Number(h.prodQtyTransferred || 0) > 0) {
+          const k = h.poId.trim().toLowerCase();
+          map.set(k, (map.get(k) || 0) + Number(h.prodQtyTransferred));
+        }
+      }
+    } catch {}
+    return map;
+  }, [orders, bootstrap.ordersList]);
+
   // Create New PO Modal State
   const [createOpen, setCreateOpen] = useState(false);
   const [newPoId, setNewPoId] = useState('');
@@ -762,12 +776,14 @@ export function OrdersAndTravelerTab({
                         ? 'warning'
                         : 'neutral';
 
+                const displayFin = Math.max(Number(po.finishedQty || 0), handoverFinishedMap.get(po.poId.trim().toLowerCase()) || 0);
+                const displayStock = Math.max(0, displayFin - (po.deliveredQty || 0));
                 const finishRatioPct = Math.min(
                   100,
                   Math.max(
                     0,
                     Math.round(
-                      ((Math.max(po.finishedQty, po.deliveredQty) || 0) /
+                      ((Math.max(displayFin, po.deliveredQty) || 0) /
                         Math.max(1, po.qtyPo || 1)) *
                         100
                     )
@@ -869,17 +885,17 @@ export function OrdersAndTravelerTab({
                     })()}
                     <td
                       className={`font-mono-num px-2.5 py-2.5 text-center ${
-                        po.finishedQty > 0 ? 'font-bold text-emerald-700' : 'text-slate-400'
+                        displayFin > 0 ? 'font-bold text-emerald-700' : 'text-slate-400'
                       }`}
                     >
-                      {formatNumber(po.finishedQty)}
+                      {formatNumber(displayFin)}
                     </td>
                     <td
                       className={`font-mono-num px-2.5 py-2.5 text-center ${
-                        po.stockQty > 0 ? 'font-bold text-blue-700' : 'text-slate-400'
+                        displayStock > 0 ? 'font-bold text-blue-700' : 'text-slate-400'
                       }`}
                     >
-                      {formatNumber(po.stockQty)}
+                      {formatNumber(displayStock)}
                     </td>
                     <td
                       className={`font-mono-num px-2.5 py-2.5 text-center ${

@@ -857,27 +857,38 @@ export function syncOrdersWithHandovers(): void {
     const handovers = getFallbackHandovers();
     if (!handovers || handovers.length === 0) return;
     let changed = false;
-    for (const h of handovers) {
-      const cleanPoId = (h.poId || '').trim().toLowerCase();
-      const po = FALLBACK_ORDERS.find(
-        (o) => (cleanPoId && o.poId.toLowerCase() === cleanPoId) ||
-               (h.productName && o.productName.trim().toLowerCase() === h.productName.trim().toLowerCase())
+
+    // Group cumulative handovers by PO
+    for (const po of FALLBACK_ORDERS) {
+      const cleanPoId = po.poId.trim().toLowerCase();
+      const cleanProdName = po.productName.trim().toLowerCase();
+
+      const related = handovers.filter(
+        (h) => (h.poId && h.poId.trim().toLowerCase() === cleanPoId) ||
+               (h.productName && h.productName.trim().toLowerCase() === cleanProdName)
       );
-      if (po) {
-        const rawTransferred = Number(h.rawQtyTransferred || 0);
-        const prodTransferred = Number(h.prodQtyTransferred || 0);
-        if (rawTransferred > Number(po.wipQty || 0)) {
-          po.wipQty = rawTransferred;
+
+      if (related.length > 0) {
+        // Cumulative finished BTP: sum all prodQtyTransferred
+        const totalBtp = related.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
+        // Cumulative or max phôi transferred
+        const totalRaw = related.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
+
+        if (totalRaw > Number(po.wipQty || 0)) {
+          po.wipQty = totalRaw;
           changed = true;
         }
-        if (prodTransferred > Number(po.finishedQty || 0)) {
-          po.finishedQty = prodTransferred;
+        if (totalBtp !== Number(po.finishedQty || 0)) {
+          po.finishedQty = totalBtp;
           po.stockQty = Math.max(0, po.finishedQty - (po.deliveredQty || 0));
           po.remainQty = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
-          changed = true;
-        }
-        if ((po.wipQty > 0 || po.finishedQty > 0) && po.status === '⏳ Đang chờ SX') {
-          po.status = '⚙️ Đang gia công';
+          if (po.deliveredQty >= po.qtyPo) {
+            po.status = '✅ Đã giao đủ';
+          } else if (po.finishedQty >= po.qtyPo) {
+            po.status = '📦 Xong CK - Chờ giao';
+          } else if ((po.wipQty || 0) > 0 || (po.finishedQty || 0) > 0) {
+            po.status = '⚙️ Đang gia công';
+          }
           changed = true;
         }
       }
@@ -916,23 +927,37 @@ export function clearAllFallbackHandovers(): void {
 
 export function saveFallbackHandover(row: HandoverSlipRow): void {
   try {
+    const list = getFallbackHandovers();
     const cleanPoId = (row.poId || '').trim().toLowerCase();
+    const cleanProdName = (row.productName || '').trim().toLowerCase();
+
     const matchingPo = FALLBACK_ORDERS.find(
       (o) => (cleanPoId && o.poId.toLowerCase() === cleanPoId) ||
-             (row.productName && o.productName.trim().toLowerCase() === row.productName.trim().toLowerCase())
+             (cleanProdName && o.productName.trim().toLowerCase() === cleanProdName)
     );
 
-    // Auto-calculate missing quantities if 0 based on matching PO
+    // Calculate prior transfers from other slips for the same PO/product
+    const otherSlips = list.filter((h) =>
+      h.id !== row.id &&
+      ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
+       (cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName))
+    );
+
+    const priorProdTransferred = otherSlips.reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
+    const priorRawTransferred = otherSlips.reduce((sum, h) => sum + (Number(h.rawQtyTransferred) || 0), 0);
+    const cumulativeProdTransferred = priorProdTransferred + (Number(row.prodQtyTransferred) || 0);
+    const cumulativeRawTransferred = priorRawTransferred + (Number(row.rawQtyTransferred) || 0);
+
+    // Auto-calculate missing quantities based on matching PO and cumulative transfers
     if (matchingPo && matchingPo.qtyPo > 0) {
-      if (!row.prodQtyMissing || row.prodQtyMissing <= 0) {
-        row.prodQtyMissing = Math.max(0, matchingPo.qtyPo - (row.prodQtyTransferred || 0) - (row.prodQtyDefect || 0));
+      if (!row.prodQtyMissing || row.prodQtyMissing <= 0 || row.prodQtyMissing === (matchingPo.qtyPo - (Number(row.prodQtyTransferred) || 0))) {
+        row.prodQtyMissing = Math.max(0, matchingPo.qtyPo - cumulativeProdTransferred - (Number(row.prodQtyDefect) || 0));
       }
-      if (!row.rawQtyMissing || row.rawQtyMissing <= 0) {
-        row.rawQtyMissing = Math.max(0, matchingPo.qtyPo - (row.rawQtyTransferred || 0) - (row.rawQtyDefect || 0));
+      if (!row.rawQtyMissing || row.rawQtyMissing <= 0 || row.rawQtyMissing === (matchingPo.qtyPo - (Number(row.rawQtyTransferred) || 0))) {
+        row.rawQtyMissing = Math.max(0, matchingPo.qtyPo - cumulativeRawTransferred - (Number(row.rawQtyDefect) || 0));
       }
     }
 
-    const list = getFallbackHandovers();
     const idx = list.findIndex((h) => h.id === row.id);
     if (idx >= 0) {
       list[idx] = row;
@@ -943,12 +968,8 @@ export function saveFallbackHandover(row: HandoverSlipRow): void {
 
     // Synchronize received phôi and finished BTP to matching PO
     if (matchingPo) {
-      if (Number(row.rawQtyTransferred || 0) > 0) {
-        matchingPo.wipQty = Math.max(matchingPo.wipQty || 0, Number(row.rawQtyTransferred));
-      }
-      if (Number(row.prodQtyTransferred || 0) > 0) {
-        matchingPo.finishedQty = Math.max(matchingPo.finishedQty || 0, Number(row.prodQtyTransferred));
-      }
+      matchingPo.wipQty = Math.max(Number(matchingPo.wipQty || 0), cumulativeRawTransferred, Number(row.rawQtyTransferred || 0));
+      matchingPo.finishedQty = cumulativeProdTransferred;
       matchingPo.stockQty = Math.max(0, (matchingPo.finishedQty || 0) - (matchingPo.deliveredQty || 0));
       matchingPo.remainQty = Math.max(0, matchingPo.qtyPo - (matchingPo.deliveredQty || 0));
       if (matchingPo.deliveredQty >= matchingPo.qtyPo) {
@@ -987,6 +1008,7 @@ export function deleteFallbackHandover(id: string): void {
   try {
     const list = getFallbackHandovers().filter((h) => h.id !== id);
     localStorage.setItem(LOCAL_HANDOVERS_KEY, JSON.stringify(list));
+    syncOrdersWithHandovers();
   } catch {
     // ignore
   }
