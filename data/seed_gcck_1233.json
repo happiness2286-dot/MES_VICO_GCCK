@@ -193,8 +193,7 @@
       "id": "M04",
       "name": "Máy tiện OKUMA",
       "group": "Tiện CNC 2 trục (M01)",
-      "costPerHour": 87500,
-      "costHour": 75000
+      "costPerHour": 75000
     },
     {
       "id": "M05",
@@ -294,10 +293,9 @@
     },
     {
       "id": "M21",
-      "name": "Máy cưa băng",
+      "name": "Máy cưa băng AMADA",
       "group": "Cưa phôi",
-      "costPerHour": 62500,
-      "costHour": 75000
+      "costPerHour": 62500
     },
     {
       "id": "M22",

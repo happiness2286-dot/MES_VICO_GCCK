@@ -22,6 +22,13 @@ import type {
  * - Máy cưa (máy cưa băng, cưa phôi...): 600.000 đ/ca (75.000 đ/h)
  * - Máy tiện OKUMA: 600.000 đ/ca (75.000 đ/h)
  */
+/**
+ * Bảng Đơn Giá Ca Máy & Giờ Máy Chuẩn Phân Xưởng (Quy định Nhà máy):
+ * - 500.000 đ/ca (62.500 đ/h): Cắt dây số 1+2+3, Cưa băng AMADA, Mài từ
+ * - 600.000 đ/ca (75.000 đ/h): Tiện T630, Tiện OKUMA, Khoan cần Yoshida, Phay OKK1+OKK2+OKK3, Phay YM, Phay CNC số 2
+ * - 700.000 đ/ca (87.500 đ/h): Tiện 1516, Tiện CNC 1 + CNC 2, Tiện FUJI
+ * - 800.000 đ/ca (100.000 đ/h): Phay OIGO, Phay CNC số 1
+ */
 export function getMachineShiftAndHourlyRate(
   machineName?: string,
   productName?: string,
@@ -30,40 +37,63 @@ export function getMachineShiftAndHourlyRate(
   const normMach = (machineName || '').trim().toLowerCase();
   const normProd = (productName || '').trim().toLowerCase();
 
-  // Máy cưa, Máy khoan (khoan cần Yoshida...) hoặc Máy tiện OKUMA -> 600k/ca = 75k/h
+  // 1. Nhóm 500.000 đ/ca = 62.500 đ/h: Cắt dây 1-2-3, Cưa băng AMADA, Mài
   if (
     normMach.includes('cưa') ||
     normMach.includes('cua') ||
+    normMach.includes('amada') ||
+    normMach.includes('cắt dây') ||
+    normMach.includes('cat day') ||
+    normMach.includes('dk7745') ||
+    normMach.includes('mài') ||
+    normMach.includes('mai') ||
+    normMach.includes('in 3d')
+  ) {
+    return { shiftRate: 500000, hourRate: 62500 };
+  }
+
+  // 2. Nhóm 600.000 đ/ca = 75.000 đ/h:
+  // - Máy tiện T630, Máy tiện OKUMA
+  // - Máy khoan cần Yoshida
+  // - Máy phay OKK1 + OKK2 + OKK3
+  // - Máy phay YM
+  // - Máy phay CNC số 2
+  if (
+    normMach.includes('t630') ||
+    normMach.includes('okuma') ||
     normMach.includes('khoan') ||
-    normMach.includes('okuma')
+    normMach.includes('yoshida') ||
+    normMach.includes('okk') ||
+    normMach.includes('ym') ||
+    (normMach.includes('phay') && (normMach.includes('cnc2') || normMach.includes('cnc 2') || normMach.includes('số 2')))
   ) {
     return { shiftRate: 600000, hourRate: 75000 };
   }
 
-  // Nếu là chi tiết gán vào máy tiện OKUMA theo Win-Win routing
+  // 3. Nhóm 700.000 đ/ca = 87.500 đ/h:
+  // - Máy tiện 1516
+  // - Máy tiện CNC 1 + CNC 2
+  // - Máy tiện FUJI
   if (
+    normMach.includes('1516') ||
+    normMach.includes('fuji') ||
     normMach.includes('tiện') ||
-    normMach.includes('tien') ||
-    !normMach
+    normMach.includes('tien')
   ) {
-    if (
-      normProd.startsWith('alktop 1') ||
-      normProd.startsWith('alktop ii 1') ||
-      normProd.startsWith('alktop 2 1') ||
-      normProd.includes('1130') ||
-      normProd.includes('1135') ||
-      normProd.includes('1335') ||
-      normProd.includes('1342') ||
-      normProd.includes('1031') ||
-      normProd.includes('1640') ||
-      normProd.includes('1645') ||
-      normProd.includes('1950')
-    ) {
-      return { shiftRate: 600000, hourRate: 75000 };
-    }
+    return { shiftRate: 700000, hourRate: 87500 };
   }
 
-  // Máy CNC chuẩn: 800k/ca = 100.000 đ/h
+  // 4. Nhóm 800.000 đ/ca = 100.000 đ/h:
+  // - Máy phay OIGO
+  // - Máy phay CNC số 1
+  if (
+    normMach.includes('oigo') ||
+    (normMach.includes('phay') && (normMach.includes('cnc1') || normMach.includes('cnc 1') || normMach.includes('số 1')))
+  ) {
+    return { shiftRate: 800000, hourRate: 100000 };
+  }
+
+  // Fallback mặc định theo định mức chuẩn
   const baseHour = Math.max(1, defaultRatePerHour);
   return { shiftRate: baseHour * 8, hourRate: baseHour };
 }

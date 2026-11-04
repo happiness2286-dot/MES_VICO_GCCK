@@ -566,7 +566,7 @@ export function CostingPnlTab({
               </h2>
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
-              Cơ chế <strong className="text-slate-700">Đơn Giá Máy Trọn Gói</strong>: Máy cưa, Máy khoan &amp; Máy tiện OKUMA là <strong className="text-emerald-700">600k/ca (75k/h)</strong>; Máy CNC khác là <strong className="text-blue-700">800k/ca (100k/h)</strong>. Đủ định mức ca hòa vốn, vượt tăng năng suất thưởng thợ.
+              Cơ chế <strong className="text-slate-700">Đơn Giá Máy Trọn Gói Nhà Máy</strong>: Cưa băng/Cắt dây <strong className="text-emerald-700">500k/ca (62.5k/h)</strong>; OKK1-3/Khoan Yoshida/YM/CNC2/T630 <strong className="text-teal-700">600k/ca (75k/h)</strong>; Tiện 1516/FUJI/Tiện CNC <strong className="text-blue-700">700k/ca (87.5k/h)</strong>; Phay CNC1/OIGO <strong className="text-indigo-700">800k/ca (100k/h)</strong>. Đủ định mức ca hòa vốn, vượt tăng năng suất thưởng thợ.
             </p>
           </div>
 
@@ -633,7 +633,7 @@ export function CostingPnlTab({
                 }`}
                 title="Đơn giá máy trọn gói 800k/ca = 100k/h đã bao gồm nhân công, điện, máy, dao và phụ phí xưởng"
               >
-                <span>🏭 1. Máy Trọn Gói (Cưa/Khoan/OKUMA 600k, CNC 800k)</span>
+                <span>🏭 1. Giá Máy Nhà Máy (500k - 800k/ca)</span>
               </button>
               <button
                 type="button"
@@ -759,7 +759,7 @@ export function CostingPnlTab({
                     {costingModel === 'ALL_IN' ? 'Giá Vốn ĐM (Trọn Gói)' : 'Giá Vốn ĐM / 1 SP'}
                     <div className="text-[10px] font-normal text-slate-500">
                       {costingModel === 'ALL_IN'
-                        ? '(Cưa, Khoan & OKUMA 600k/ca, CNC 800k/ca)'
+                        ? '(Cưa/Cắt dây 500k, OKK/Khoan/CNC2 600k, Tiện 700k, CNC1/OIGO 800k)'
                         : '(Lương+Máy+Dao+10%+Phôi)'}
                     </div>
                   </th>
