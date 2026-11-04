@@ -566,7 +566,7 @@ export function CostingPnlTab({
               </h2>
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
-              Cơ chế <strong className="text-slate-700">Đơn Giá Máy Trọn Gói</strong>: Máy cưa &amp; Máy tiện OKUMA là <strong className="text-emerald-700">600k/ca (75k/h)</strong>; Máy CNC khác là <strong className="text-blue-700">800k/ca (100k/h)</strong>. Đủ định mức ca hòa vốn, vượt tăng năng suất thưởng thợ.
+              Cơ chế <strong className="text-slate-700">Đơn Giá Máy Trọn Gói</strong>: Máy cưa, Máy khoan &amp; Máy tiện OKUMA là <strong className="text-emerald-700">600k/ca (75k/h)</strong>; Máy CNC khác là <strong className="text-blue-700">800k/ca (100k/h)</strong>. Đủ định mức ca hòa vốn, vượt tăng năng suất thưởng thợ.
             </p>
           </div>
 
@@ -633,7 +633,7 @@ export function CostingPnlTab({
                 }`}
                 title="Đơn giá máy trọn gói 800k/ca = 100k/h đã bao gồm nhân công, điện, máy, dao và phụ phí xưởng"
               >
-                <span>🏭 1. Máy Trọn Gói (Cưa/OKUMA 600k, CNC 800k)</span>
+                <span>🏭 1. Máy Trọn Gói (Cưa/Khoan/OKUMA 600k, CNC 800k)</span>
               </button>
               <button
                 type="button"
@@ -759,7 +759,7 @@ export function CostingPnlTab({
                     {costingModel === 'ALL_IN' ? 'Giá Vốn ĐM (Trọn Gói)' : 'Giá Vốn ĐM / 1 SP'}
                     <div className="text-[10px] font-normal text-slate-500">
                       {costingModel === 'ALL_IN'
-                        ? '(Cưa & OKUMA 600k/ca, CNC 800k/ca)'
+                        ? '(Cưa, Khoan & OKUMA 600k/ca, CNC 800k/ca)'
                         : '(Lương+Máy+Dao+10%+Phôi)'}
                     </div>
                   </th>

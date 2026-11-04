@@ -30,10 +30,11 @@ export function getMachineShiftAndHourlyRate(
   const normMach = (machineName || '').trim().toLowerCase();
   const normProd = (productName || '').trim().toLowerCase();
 
-  // Máy cưa (máy cưa băng, cưa phôi...) hoặc Máy tiện OKUMA -> 600k/ca = 75k/h
+  // Máy cưa, Máy khoan (khoan cần Yoshida...) hoặc Máy tiện OKUMA -> 600k/ca = 75k/h
   if (
     normMach.includes('cưa') ||
     normMach.includes('cua') ||
+    normMach.includes('khoan') ||
     normMach.includes('okuma')
   ) {
     return { shiftRate: 600000, hourRate: 75000 };
