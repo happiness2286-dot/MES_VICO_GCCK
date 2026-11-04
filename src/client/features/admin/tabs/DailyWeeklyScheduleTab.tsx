@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Clock,
   Copy,
   Download,
@@ -1003,6 +1004,33 @@ export function DailyWeeklyScheduleTab({
   type WeeklyMetricFilter = 'ALL' | 'ACTUAL' | 'COMPLETED' | 'DELAYED';
   const [weeklyMetricFilter, setWeeklyMetricFilter] = useState<WeeklyMetricFilter>('ALL');
   const [selectedWeeklyCustomer, setSelectedWeeklyCustomer] = useState<string | null>(null);
+
+  // Trạng thái Thu Lên / Trải Xuống cho cả 4 mục PO
+  const [poListExpandedByMetric, setPoListExpandedByMetric] = useState<Record<WeeklyMetricFilter, boolean>>({
+    ALL: true,
+    ACTUAL: true,
+    COMPLETED: true,
+    DELAYED: true,
+  });
+
+  // Trạng thái Thu Lên / Trải Xuống cho Bảng Đối Tác Khách Hàng
+  const [isCustomerTableExpanded, setIsCustomerTableExpanded] = useState<boolean>(true);
+
+  const togglePoListExpanded = (metric: WeeklyMetricFilter) => {
+    setPoListExpandedByMetric((prev) => ({
+      ...prev,
+      [metric]: !prev[metric],
+    }));
+  };
+
+  const toggleAllPoMetrics = (expanded: boolean) => {
+    setPoListExpandedByMetric({
+      ALL: expanded,
+      ACTUAL: expanded,
+      COMPLETED: expanded,
+      DELAYED: expanded,
+    });
+  };
 
   const filteredCustomerStats = useMemo(() => {
     if (!weeklyReport?.customerStats) return [];
@@ -2030,103 +2058,170 @@ export function DailyWeeklyScheduleTab({
                   </Badge>
                 </div>
 
-                {/* 4 Interactive Metric Cards (Click to Filter Directly) */}
+                {/* 4 Interactive Metric Cards (Click to Filter & Toggle Thu/Trải Directly) */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   <div
                     role="button"
                     tabIndex={0}
                     onClick={() => {
-                      setWeeklyMetricFilter('ALL');
-                      setSelectedWeeklyCustomer(null);
+                      if (weeklyMetricFilter === 'ALL') {
+                        togglePoListExpanded('ALL');
+                      } else {
+                        setWeeklyMetricFilter('ALL');
+                        setSelectedWeeklyCustomer(null);
+                        setPoListExpandedByMetric((p) => ({ ...p, ALL: true }));
+                      }
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
-                        setWeeklyMetricFilter('ALL');
-                        setSelectedWeeklyCustomer(null);
+                        if (weeklyMetricFilter === 'ALL') {
+                          togglePoListExpanded('ALL');
+                        } else {
+                          setWeeklyMetricFilter('ALL');
+                          setSelectedWeeklyCustomer(null);
+                          setPoListExpandedByMetric((p) => ({ ...p, ALL: true }));
+                        }
                       }
                     }}
-                    title="Bấm để xem toàn bộ danh sách đơn hàng & khách hàng"
+                    title="Bấm để lọc toàn bộ đơn hàng & thu lên/trải xuống danh sách"
                     className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
                       weeklyMetricFilter === 'ALL'
-                        ? 'border-blue-400 bg-blue-50/40 ring-2 ring-blue-500 ring-offset-2'
+                        ? 'border-blue-400 bg-blue-50/50 ring-2 ring-blue-500 ring-offset-2'
                         : 'border-slate-200 bg-white hover:border-blue-300'
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      Tổng Kế Hoạch
+                      1. Tổng Kế Hoạch
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-slate-900">
                       {weeklyReport.summary.totalPlannedQty} SP
                     </div>
-                    <div className="mt-1 text-[10px] font-bold text-blue-600">
-                      🔍 Bấm để hiện tất cả
+                    <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
+                      {weeklyMetricFilter === 'ALL' ? (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-blue-900">
+                          {poListExpandedByMetric.ALL ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          <span>{poListExpandedByMetric.ALL ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                        </span>
+                      ) : (
+                        <span className="text-blue-700">🔍 Bấm lọc &amp; mở</span>
+                      )}
                     </div>
                   </div>
 
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => setWeeklyMetricFilter((cur) => (cur === 'ACTUAL' ? 'ALL' : 'ACTUAL'))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setWeeklyMetricFilter((cur) => (cur === 'ACTUAL' ? 'ALL' : 'ACTUAL'));
+                    onClick={() => {
+                      if (weeklyMetricFilter === 'ACTUAL') {
+                        togglePoListExpanded('ACTUAL');
+                      } else {
+                        setWeeklyMetricFilter('ACTUAL');
+                        setPoListExpandedByMetric((p) => ({ ...p, ACTUAL: true }));
                       }
                     }}
-                    title="Bấm để lọc riêng các đơn đã có sản lượng gia công thực tế"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        if (weeklyMetricFilter === 'ACTUAL') {
+                          togglePoListExpanded('ACTUAL');
+                        } else {
+                          setWeeklyMetricFilter('ACTUAL');
+                          setPoListExpandedByMetric((p) => ({ ...p, ACTUAL: true }));
+                        }
+                      }
+                    }}
+                    title="Bấm để lọc các đơn đã có sản lượng gia công & thu lên/trải xuống danh sách"
                     className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
                       weeklyMetricFilter === 'ACTUAL'
-                        ? 'border-emerald-400 bg-emerald-50/50 ring-2 ring-emerald-500 ring-offset-2'
+                        ? 'border-emerald-400 bg-emerald-50/60 ring-2 ring-emerald-500 ring-offset-2'
                         : 'border-slate-200 bg-white hover:border-emerald-300'
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      Thực Tế Đã Làm
+                      2. Thực Tế Đã Làm
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-emerald-700">
                       {weeklyReport.summary.totalActualQty} SP
                     </div>
-                    <div className="mt-1 text-[10px] font-bold text-emerald-700">
-                      ⚡ Lọc đơn đã làm
+                    <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
+                      {weeklyMetricFilter === 'ACTUAL' ? (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900">
+                          {poListExpandedByMetric.ACTUAL ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          <span>{poListExpandedByMetric.ACTUAL ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                        </span>
+                      ) : (
+                        <span className="text-emerald-700">⚡ Bấm lọc &amp; mở</span>
+                      )}
                     </div>
                   </div>
 
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => setWeeklyMetricFilter((cur) => (cur === 'COMPLETED' ? 'ALL' : 'COMPLETED'))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setWeeklyMetricFilter((cur) => (cur === 'COMPLETED' ? 'ALL' : 'COMPLETED'));
+                    onClick={() => {
+                      if (weeklyMetricFilter === 'COMPLETED') {
+                        togglePoListExpanded('COMPLETED');
+                      } else {
+                        setWeeklyMetricFilter('COMPLETED');
+                        setPoListExpandedByMetric((p) => ({ ...p, COMPLETED: true }));
                       }
                     }}
-                    title="Bấm để lọc riêng các đơn hàng đạt 100% kế hoạch"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        if (weeklyMetricFilter === 'COMPLETED') {
+                          togglePoListExpanded('COMPLETED');
+                        } else {
+                          setWeeklyMetricFilter('COMPLETED');
+                          setPoListExpandedByMetric((p) => ({ ...p, COMPLETED: true }));
+                        }
+                      }
+                    }}
+                    title="Bấm để lọc các đơn hàng đạt 100% kế hoạch & thu lên/trải xuống danh sách"
                     className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
                       weeklyMetricFilter === 'COMPLETED'
-                        ? 'border-blue-400 bg-blue-50/60 ring-2 ring-blue-600 ring-offset-2'
+                        ? 'border-blue-400 bg-blue-50/70 ring-2 ring-blue-600 ring-offset-2'
                         : 'border-slate-200 bg-white hover:border-blue-300'
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      Đơn Đạt Kế Hoạch
+                      3. Đơn Đạt Kế Hoạch
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-blue-700">
                       {weeklyReport.summary.completedPoCount} PO
                     </div>
-                    <div className="mt-1 text-[10px] font-bold text-blue-700">
-                      ✅ Lọc đơn đạt 100%
+                    <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
+                      {weeklyMetricFilter === 'COMPLETED' ? (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-blue-900">
+                          {poListExpandedByMetric.COMPLETED ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          <span>{poListExpandedByMetric.COMPLETED ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                        </span>
+                      ) : (
+                        <span className="text-blue-700">✅ Bấm lọc &amp; mở</span>
+                      )}
                     </div>
                   </div>
 
                   <div
                     role="button"
                     tabIndex={0}
-                    onClick={() => setWeeklyMetricFilter((cur) => (cur === 'DELAYED' ? 'ALL' : 'DELAYED'))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        setWeeklyMetricFilter((cur) => (cur === 'DELAYED' ? 'ALL' : 'DELAYED'));
+                    onClick={() => {
+                      if (weeklyMetricFilter === 'DELAYED') {
+                        togglePoListExpanded('DELAYED');
+                      } else {
+                        setWeeklyMetricFilter('DELAYED');
+                        setPoListExpandedByMetric((p) => ({ ...p, DELAYED: true }));
                       }
                     }}
-                    title="Bấm để vào thẳng và lọc riêng các đơn trượt kế hoạch / chậm tiến độ"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        if (weeklyMetricFilter === 'DELAYED') {
+                          togglePoListExpanded('DELAYED');
+                        } else {
+                          setWeeklyMetricFilter('DELAYED');
+                          setPoListExpandedByMetric((p) => ({ ...p, DELAYED: true }));
+                        }
+                      }
+                    }}
+                    title="Bấm để lọc các đơn trượt kế hoạch & thu lên/trải xuống danh sách"
                     className={`cursor-pointer rounded-2xl border p-3 text-center transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
                       weeklyMetricFilter === 'DELAYED'
                         ? 'border-rose-400 bg-rose-50/70 ring-2 ring-rose-500 ring-offset-2 shadow-xs'
@@ -2134,13 +2229,20 @@ export function DailyWeeklyScheduleTab({
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      Đơn Trượt Kế Hoạch
+                      4. Đơn Trượt Kế Hoạch
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-rose-700">
                       {weeklyReport.summary.delayedPoCount} PO
                     </div>
-                    <div className="mt-1 text-[10px] font-extrabold text-rose-700 animate-pulse">
-                      🚨 Bấm lọc &amp; xử lý ngay
+                    <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
+                      {weeklyMetricFilter === 'DELAYED' ? (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-rose-100 px-1.5 py-0.5 text-rose-900 font-extrabold">
+                          {poListExpandedByMetric.DELAYED ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          <span>{poListExpandedByMetric.DELAYED ? 'Đang mở (Bấm thu)' : 'Thu gọn (Bấm trải)'}</span>
+                        </span>
+                      ) : (
+                        <span className="text-rose-700 font-extrabold animate-pulse">🚨 Bấm lọc &amp; mở</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2174,98 +2276,233 @@ export function DailyWeeklyScheduleTab({
                   </div>
                 )}
 
-                {/* Customer Stats Table */}
+                {/* Customer Stats Table (Có Nút Thu Lên / Trải Xuống) */}
                 <Card className="overflow-hidden border-slate-200 bg-white p-0">
-                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-800">
-                    <span>Chi tiết sản lượng theo từng đối tác khách hàng (Bấm hàng để xem riêng đơn PO)</span>
-                    {selectedWeeklyCustomer && (
-                      <span className="text-[11px] font-bold text-blue-700">
-                        Đang chọn: <strong>{selectedWeeklyCustomer}</strong>
-                      </span>
-                    )}
-                  </div>
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-100/60 font-bold uppercase text-slate-600">
-                        <th className="px-4 py-2">Khách Hàng</th>
-                        <th className="px-3 py-2 text-center">Số Mặt Hàng</th>
-                        <th className="px-3 py-2 text-center">Kế Hoạch</th>
-                        <th className="px-3 py-2 text-center">Thực Tế</th>
-                        <th className="px-3 py-2 text-center">Tỷ Lệ %</th>
-                        <th className="px-4 py-2">Trạng Thái Đơn</th>
-                        <th className="px-3 py-2 text-center">Thao Tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-900">
-                      {filteredCustomerStats.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="py-6 text-center text-xs text-slate-500">
-                            Không có đối tác khách hàng nào khớp với trạng thái đang chọn.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredCustomerStats.map((cs) => {
-                          const isSelected = selectedWeeklyCustomer === cs.customer;
-                          return (
-                            <tr
-                              key={cs.customer}
-                              onClick={() =>
-                                setSelectedWeeklyCustomer((cur) =>
-                                  cur === cs.customer ? null : cs.customer
-                                )
-                              }
-                              title="Bấm để lọc riêng danh sách đơn hàng PO của khách này"
-                              className={`cursor-pointer transition-colors ${
-                                isSelected ? 'bg-blue-50/70 font-bold' : 'hover:bg-slate-50'
-                              }`}
-                            >
-                              <td className="px-4 py-2 font-extrabold text-blue-700 flex items-center gap-1.5">
-                                <span>{cs.customer}</span>
-                                {isSelected && (
-                                  <span className="rounded bg-blue-600 px-1 py-0.2 text-[9px] font-black text-white">
-                                    Đang xem
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-3 py-2 text-center">{cs.productCount}</td>
-                              <td className="font-mono-num px-3 py-2 text-center">{cs.plannedQty}</td>
-                              <td className="font-mono-num px-3 py-2 text-center text-emerald-700 font-extrabold">
-                                {cs.actualQty}
-                              </td>
-                              <td className="font-mono-num px-3 py-2 text-center">
-                                <Badge
-                                  variant={
-                                    cs.completionPct >= 90
-                                      ? 'success'
-                                      : cs.completionPct >= 70
-                                      ? 'warning'
-                                      : 'danger'
-                                  }
-                                >
-                                  {cs.completionPct}%
-                                </Badge>
-                              </td>
-                              <td className="px-4 py-2 text-slate-600">
-                                {cs.completionPct >= 100
-                                  ? '✅ Hoàn thành đúng tiến độ'
-                                  : `⏳ Còn thiếu ${Math.max(0, cs.plannedQty - cs.actualQty)} SP`}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline">
-                                  <span>Xem PO</span>
-                                  <ArrowRight className="h-3 w-3" />
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span>Chi tiết sản lượng theo từng đối tác khách hàng (Bấm hàng để xem riêng đơn PO)</span>
+                      {selectedWeeklyCustomer && (
+                        <span className="text-[11px] font-bold text-blue-700">
+                          &bull; Đang chọn: <strong>{selectedWeeklyCustomer}</strong>
+                        </span>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomerTableExpanded((prev) => !prev)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:border-blue-400 hover:bg-blue-50 hover:text-blue-800 transition-colors"
+                    >
+                      {isCustomerTableExpanded ? (
+                        <>
+                          <ChevronUp className="h-3.5 w-3.5 text-slate-600" />
+                          <span>Thu Lên</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
+                          <span>Trải Xuống ({filteredCustomerStats.length} Đối Tác)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {isCustomerTableExpanded ? (
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-100/60 font-bold uppercase text-slate-600">
+                          <th className="px-4 py-2">Khách Hàng</th>
+                          <th className="px-3 py-2 text-center">Số Mặt Hàng</th>
+                          <th className="px-3 py-2 text-center">Kế Hoạch</th>
+                          <th className="px-3 py-2 text-center">Thực Tế</th>
+                          <th className="px-3 py-2 text-center">Tỷ Lệ %</th>
+                          <th className="px-4 py-2">Trạng Thái Đơn</th>
+                          <th className="px-3 py-2 text-center">Thao Tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-semibold text-slate-900">
+                        {filteredCustomerStats.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-6 text-center text-xs text-slate-500">
+                              Không có đối tác khách hàng nào khớp với trạng thái đang chọn.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredCustomerStats.map((cs) => {
+                            const isSelected = selectedWeeklyCustomer === cs.customer;
+                            return (
+                              <tr
+                                key={cs.customer}
+                                onClick={() =>
+                                  setSelectedWeeklyCustomer((cur) =>
+                                    cur === cs.customer ? null : cs.customer
+                                  )
+                                }
+                                title="Bấm để lọc riêng danh sách đơn hàng PO của khách này"
+                                className={`cursor-pointer transition-colors ${
+                                  isSelected ? 'bg-blue-50/70 font-bold' : 'hover:bg-slate-50'
+                                }`}
+                              >
+                                <td className="px-4 py-2 font-extrabold text-blue-700 flex items-center gap-1.5">
+                                  <span>{cs.customer}</span>
+                                  {isSelected && (
+                                    <span className="rounded bg-blue-600 px-1 py-0.2 text-[9px] font-black text-white">
+                                      Đang xem
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-center">{cs.productCount}</td>
+                                <td className="font-mono-num px-3 py-2 text-center">{cs.plannedQty}</td>
+                                <td className="font-mono-num px-3 py-2 text-center text-emerald-700 font-extrabold">
+                                  {cs.actualQty}
+                                </td>
+                                <td className="font-mono-num px-3 py-2 text-center">
+                                  <Badge
+                                    variant={
+                                      cs.completionPct >= 90
+                                        ? 'success'
+                                        : cs.completionPct >= 70
+                                        ? 'warning'
+                                        : 'danger'
+                                    }
+                                  >
+                                    {cs.completionPct}%
+                                  </Badge>
+                                </td>
+                                <td className="px-4 py-2 text-slate-600">
+                                  {cs.completionPct >= 100
+                                    ? '✅ Hoàn thành đúng tiến độ'
+                                    : `⏳ Còn thiếu ${Math.max(0, cs.plannedQty - cs.actualQty)} SP`}
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:underline">
+                                    <span>Xem PO</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setIsCustomerTableExpanded(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') setIsCustomerTableExpanded(true);
+                      }}
+                      className="flex cursor-pointer items-center justify-between bg-slate-50/60 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-blue-50/50 hover:text-blue-800 transition-colors"
+                    >
+                      <span>Bảng tổng hợp đối tác đang thu gọn ({filteredCustomerStats.length} khách hàng).</span>
+                      <span className="font-bold text-blue-700 underline">Bấm để trải xuống &darr;</span>
+                    </div>
+                  )}
                 </Card>
 
-                {/* DETAILED PO LIST (INLINE RESOLUTION - VÀO THẲNG VẤN ĐỀ) */}
+                {/* DETAILED PO LIST (CẢ 4 MỤC ĐỀU CÓ NÚT THU LÊN / TRẢI XUỐNG RIÊNG & CHUNG) */}
                 <Card className="overflow-hidden border-slate-200 bg-white p-0">
+                  {/* Category Switcher Tabs for all 4 items */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-100/70 px-4 py-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5 font-bold">
+                      <span className="text-slate-600">Xem mục:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWeeklyMetricFilter('ALL');
+                          setSelectedWeeklyCustomer(null);
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                          weeklyMetricFilter === 'ALL'
+                            ? 'bg-blue-600 text-white shadow-xs font-black'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>1. Tổng Kế Hoạch</span>
+                        <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                          weeklyMetricFilter === 'ALL' ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {poListExpandedByMetric.ALL ? '▲ Mở' : '▼ Thu'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWeeklyMetricFilter('ACTUAL')}
+                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                          weeklyMetricFilter === 'ACTUAL'
+                            ? 'bg-emerald-600 text-white shadow-xs font-black'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>2. Thực Tế Đã Làm</span>
+                        <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                          weeklyMetricFilter === 'ACTUAL' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {poListExpandedByMetric.ACTUAL ? '▲ Mở' : '▼ Thu'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWeeklyMetricFilter('COMPLETED')}
+                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                          weeklyMetricFilter === 'COMPLETED'
+                            ? 'bg-blue-700 text-white shadow-xs font-black'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>3. Đơn Đạt Chuẩn</span>
+                        <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                          weeklyMetricFilter === 'COMPLETED' ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {poListExpandedByMetric.COMPLETED ? '▲ Mở' : '▼ Thu'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWeeklyMetricFilter('DELAYED')}
+                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                          weeklyMetricFilter === 'DELAYED'
+                            ? 'bg-rose-600 text-white shadow-xs font-black'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>4. Đơn Trượt Kế Hoạch</span>
+                        <span className={`rounded-sm px-1 py-0.2 text-[10px] ${
+                          weeklyMetricFilter === 'DELAYED' ? 'bg-rose-800 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {poListExpandedByMetric.DELAYED ? '▲ Mở' : '▼ Thu'}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Master buttons for all 4 categories */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => toggleAllPoMetrics(false)}
+                        title="Thu lên toàn bộ cả 4 mục"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <ChevronUp className="h-3.5 w-3.5 text-slate-600" />
+                        <span>▲ Thu cả 4 mục</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleAllPoMetrics(true)}
+                        title="Trải xuống toàn bộ cả 4 mục"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 hover:text-slate-900"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5 text-slate-600" />
+                        <span>▼ Trải cả 4 mục</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Header bar of the active list */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-blue-600" />
@@ -2280,12 +2517,64 @@ export function DailyWeeklyScheduleTab({
                       </h4>
                     </div>
 
-                    <div className="text-[11px] font-semibold text-slate-600">
-                      Bấm nút thao tác trực tiếp để giải quyết triệt để từng đơn hàng
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="hidden text-[11px] font-semibold text-slate-600 lg:inline">
+                        Bấm nút thao tác trực tiếp để giải quyết triệt để từng đơn hàng
+                      </span>
+
+                      {/* Nút Thu Lên / Trải Xuống cụ thể của mục đang chọn */}
+                      <button
+                        type="button"
+                        onClick={() => togglePoListExpanded(weeklyMetricFilter)}
+                        title={
+                          poListExpandedByMetric[weeklyMetricFilter]
+                            ? `Bấm để thu gọn danh sách ${filteredPoStatuses.length} đơn hàng mục này`
+                            : `Bấm để trải xuống xem chi tiết ${filteredPoStatuses.length} đơn hàng mục này`
+                        }
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black shadow-2xs transition-all active:scale-[0.98] ${
+                          poListExpandedByMetric[weeklyMetricFilter]
+                            ? 'border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100'
+                            : 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      >
+                        {poListExpandedByMetric[weeklyMetricFilter] ? (
+                          <>
+                            <ChevronUp className="h-4 w-4 text-blue-700" />
+                            <span>▲ Thu Lên</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-4 w-4 text-emerald-700" />
+                            <span>▼ Trải Xuống ({filteredPoStatuses.length} Đơn)</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
 
-                  {filteredPoStatuses.length === 0 ? (
+                  {/* Body: Collapsed Banner OR PO Items List */}
+                  {!poListExpandedByMetric[weeklyMetricFilter] ? (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => togglePoListExpanded(weeklyMetricFilter)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') togglePoListExpanded(weeklyMetricFilter);
+                      }}
+                      className="flex cursor-pointer items-center justify-between bg-slate-50/90 px-4 py-3 text-xs font-bold text-slate-700 hover:bg-blue-50/70 hover:text-blue-900 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ChevronDown className="h-4 w-4 text-blue-600" />
+                        <span>
+                          Danh sách <strong>{filteredPoStatuses.length}</strong> đơn hàng PO của mục này đang được <strong>thu gọn</strong>.
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1 text-xs font-black text-blue-800 shadow-2xs hover:bg-blue-50">
+                        <span>Bấm để trải xuống xem {filteredPoStatuses.length} đơn</span>
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                  ) : filteredPoStatuses.length === 0 ? (
                     <div className="py-8 text-center text-xs text-slate-500">
                       Không có đơn hàng PO nào khớp với bộ lọc trạng thái hiện tại.
                     </div>
