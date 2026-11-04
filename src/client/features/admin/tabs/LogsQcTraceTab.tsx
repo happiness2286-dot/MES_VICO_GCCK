@@ -2102,7 +2102,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
                   ) : (
                     <>
                       <ChevronDown className="h-4 w-4 text-emerald-700" />
-                      <span>▼ Trải Xuống (${filteredHandovers.length} Phiếu)</span>
+                      <span>▼ Trải Xuống ({filteredHandovers.length} Phiếu)</span>
                     </>
                   )}
                 </button>
@@ -2144,11 +2144,11 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 <div className="flex items-center gap-2">
                   <ChevronDown className="h-4 w-4 text-blue-600" />
                   <span>
-                    Bảng sổ chuyển giao công đoạn BM.GC.01.02 của <strong>${filteredHandovers.length}</strong> phiếu mục này đang được <strong>thu gọn</strong>.
+                    Bảng sổ chuyển giao công đoạn BM.GC.01.02 của <strong>{filteredHandovers.length}</strong> phiếu mục này đang được <strong>thu gọn</strong>.
                   </span>
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs font-black text-blue-800 shadow-2xs hover:bg-blue-50">
-                  <span>Bấm để trải xuống (${filteredHandovers.length} Phiếu)</span>
+                  <span>Bấm để trải xuống ({filteredHandovers.length} Phiếu)</span>
                   <ChevronDown className="h-3.5 w-3.5" />
                 </span>
               </div>
