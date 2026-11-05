@@ -39,7 +39,8 @@ import {
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
 import { getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
-import { normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
+import { normalizeVn, removeVietnameseTones, normalizePoKey } from '@shared/vnSearch';
+import { buildConsolidatedQcList } from './qcLogHelper';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase, pushDailyPlanToSupabase } from './supabaseClient';
@@ -856,69 +857,87 @@ export const INITIAL_HANDOVERS: HandoverSlipRow[] = [];
 export function syncOrdersWithHandovers(): void {
   try {
     const handovers = getFallbackHandovers();
+    const allLogs = getAllFallbackLogs();
     let changed = false;
 
-    // Group cumulative handovers by PO
+    // Group cumulative handovers and production logs by PO
     for (const po of FALLBACK_ORDERS) {
       const cleanPoId = po.poId.trim().toLowerCase();
+      const normPo = normalizePoKey(po.poId);
       const cleanProdName = po.productName.trim().toLowerCase();
 
-      // Chỉ lọc phiếu bàn giao thuộc đúng PO này.
-      // Nếu phiếu có ghi mã poId, bắt buộc phải khớp chính xác cleanPoId, tuyệt đối không được gộp nhầm sang PO khác có cùng tên sản phẩm!
-      // Chỉ khi phiếu hoàn toàn không ghi mã poId thì mới đối chiếu tạm theo tên sản phẩm.
-      const related = (handovers || []).filter((h) => {
-        const hPo = (h.poId || '').trim().toLowerCase();
+      // 1. Phôi nhận và BTP từ Sổ bàn giao thuộc đúng PO này
+      const relatedHandovers = (handovers || []).filter((h) => {
+        const hPo = (h.poId || '').trim();
         if (hPo) {
-          return hPo === cleanPoId;
+          return normalizePoKey(hPo) === normPo;
         }
         return Boolean(cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName);
       });
 
-      if (related.length > 0) {
-        // Cumulative finished BTP: sum all prodQtyTransferred
-        const totalBtp = related.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
-        // Cumulative or max phôi transferred from handover slips
-        const totalRaw = related.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
+      const hovRaw = relatedHandovers.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
+      const hovFin = relatedHandovers.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
 
-        if (po.wipQty !== totalRaw) {
-          po.wipQty = totalRaw;
-          changed = true;
-        }
-        if (totalBtp !== Number(po.finishedQty || 0)) {
-          po.finishedQty = totalBtp;
-          po.stockQty = Math.max(0, po.finishedQty - (po.deliveredQty || 0));
-          po.remainQty = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
-          if (po.deliveredQty >= po.qtyPo) {
-            po.status = '✅ Đã giao đủ';
-          } else if (po.finishedQty >= po.qtyPo) {
-            po.status = '📦 Xong CK - Chờ giao';
-          } else if ((po.wipQty || 0) > 0 || (po.finishedQty || 0) > 0) {
-            po.status = '⚙️ Đang gia công';
-          } else {
-            po.status = '⏳ Đang chờ SX';
-          }
-          changed = true;
-        }
-      } else {
-        // PO chưa có phiếu bàn giao chuyển phôi / thành phẩm của riêng mình:
-        // Đặt lại wipQty = 0 và nếu finishedQty từng bị lây nhầm từ đơn khác do lỗi trùng tên sản phẩm trước đó thì reset về 0
-        if (Number(po.wipQty || 0) > 0) {
-          po.wipQty = 0;
-          changed = true;
-        }
-        const hasSlipForPo = (handovers || []).some((h) => (h.poId || '').trim().toLowerCase() === cleanPoId);
-        if (!hasSlipForPo && Number(po.finishedQty || 0) > 0 && Number(po.deliveredQty || 0) === 0) {
-          po.finishedQty = 0;
-          po.stockQty = 0;
-          po.remainQty = po.qtyPo;
-          po.status = '⏳ Đang chờ SX';
-          changed = true;
-        } else if (Number(po.wipQty || 0) === 0 && Number(po.finishedQty || 0) === 0 && Number(po.deliveredQty || 0) === 0) {
-          if (po.status !== '⏳ Đang chờ SX') {
-            po.status = '⏳ Đang chờ SX';
-            changed = true;
-          }
-        }
+      // 2. Sản lượng hoàn thiện thực tế từ Nhật ký ca (thợ nộp báo cáo ca)
+      const matchingLogs = allLogs.filter((l) => {
+        if (l.isVoided) return false;
+        if (!l.poId) return false;
+        return normalizePoKey(l.poId) === normPo;
+      });
+
+      const logFin = matchingLogs.reduce((s, l) => {
+        const isFinal =
+          l.isFinalOp === 1 ||
+          l.stage === 'End' ||
+          String(l.opName || '').toLowerCase().includes('hoàn thiện') ||
+          String(l.opName || '').toLowerCase().includes('end');
+        return isFinal ? s + (Number(l.okQty) || 0) : s;
+      }, 0);
+
+      // 3. Số hoàn thành Xong CK (End): Kết hợp số đã xong trước đó (nhập tay) + số BTP bàn giao + số xong từ nhật ký ca
+      const currentManualFin = Number((po as any).initialFinishedQty ?? po.finishedQty ?? 0);
+      const totalFin = Math.max(currentManualFin, hovFin, logFin, ((po as any).initialFinishedQty || 0) + logFin);
+
+      // 4. Tổng phôi đã cấp / nhận (Phôi nhận):
+      // Quản đốc có thể nhập tay số phôi ban đầu (initialWipQty / wipQty) hoặc từ Sổ bàn giao (hovRaw)
+      const manualRaw = Number((po as any).initialWipQty ?? po.wipQty ?? 0);
+      const totalRawAllocated = Math.max(hovRaw, manualRaw);
+
+      // 5. Số phôi ĐANG SX (Phôi nhận/WIP) CÒN LẠI:
+      // = Số phôi nhận trừ đi số lượng đã gia công hoàn thành (khấu trừ thực tế)
+      // Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX (Phôi nhận/WIP)!
+      const remainingWip = Math.max(0, totalRawAllocated - totalFin);
+
+      if (po.wipQty !== remainingWip) {
+        po.wipQty = remainingWip;
+        changed = true;
+      }
+
+      if (totalFin !== Number(po.finishedQty || 0)) {
+        po.finishedQty = totalFin;
+        po.stockQty = Math.max(0, po.finishedQty - (po.deliveredQty || 0));
+        po.remainQty = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
+        changed = true;
+      }
+
+      if (logFin > 0 && po.faiStatus !== 'FAI_PASSED') {
+        po.faiStatus = 'FAI_PASSED';
+        changed = true;
+      }
+
+      const delivered = Number(po.deliveredQty || 0);
+      let expectedStatus = '⏳ Đang chờ SX';
+      if (delivered >= po.qtyPo) {
+        expectedStatus = '✅ Đã giao đủ';
+      } else if (po.finishedQty >= po.qtyPo) {
+        expectedStatus = '📦 Xong CK - Chờ giao';
+      } else if (po.wipQty > 0 || po.finishedQty > 0) {
+        expectedStatus = '⚙️ Đang gia công';
+      }
+
+      if (po.status !== expectedStatus) {
+        po.status = expectedStatus;
+        changed = true;
       }
     }
     if (changed) {
@@ -1079,7 +1098,7 @@ export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): Boot
     ordersList: [...FALLBACK_ORDERS],
     schedules: [],
     machineLoads: [],
-    qcInspections: [],
+    qcInspections: buildConsolidatedQcList([], combinedLogs),
     recentLogs: combinedLogs,
     todayAccumulated,
     opDoneMap: {},
@@ -1286,6 +1305,7 @@ export async function submitDirectToGoogleAppsScript(
   };
 
   saveClientStoredLog(mockLogDto);
+  syncOrdersWithHandovers();
 
   // Sync to Supabase Cloud if configured
   let cloudSynced = false;
@@ -1580,28 +1600,30 @@ export function getFallbackTraceability(poId: string): TraceabilityDto {
       matName: finalOpsList[0]?.matName || 'Thép cơ khí chế tạo',
     },
     operationsTimeline,
-    qcRecords: [
-      {
-        id: 1,
-        inspectionType: 'FAI',
-        poId: po.poId,
-        spId: po.spId || 'SP-01',
-        ncId: finalOpsList[0]?.ncId || 'NC098',
-        productName: po.productName,
-        opName: finalOpsList[0]?.opName || 'Gia công',
-        machineName: 'Máy Tiện CNC 1',
-        operatorId: 'NV00214',
-        inspectorId: 'NV00266',
-        inspectorName: 'Trần Văn Dũng (KCS)',
-        result: 'PASS',
-        sampleSize: 1,
-        defectQty: 0,
-        measuredDimsJson: JSON.stringify({ 'Kích thước chính': 45.02 }),
-        rootCause: '',
-        correctiveAction: 'Đạt yêu cầu kỹ thuật FAI.',
-        createdAt: new Date().toISOString(),
-      },
-    ],
+    qcRecords: buildConsolidatedQcList([], allLogs).length > 0
+      ? buildConsolidatedQcList([], allLogs)
+      : [
+          {
+            id: 1,
+            inspectionType: 'FAI',
+            poId: po.poId,
+            spId: po.spId || 'SP-01',
+            ncId: finalOpsList[0]?.ncId || 'NC098',
+            productName: po.productName,
+            opName: finalOpsList[0]?.opName || 'Gia công',
+            machineName: 'Máy Tiện CNC 1',
+            operatorId: 'NV00214',
+            inspectorId: 'NV00266',
+            inspectorName: 'Trần Văn Dũng (KCS)',
+            result: 'PASS',
+            sampleSize: 1,
+            defectQty: 0,
+            measuredDimsJson: JSON.stringify({ 'Kích thước chính': 45.02 }),
+            rootCause: '',
+            correctiveAction: 'Đạt yêu cầu kỹ thuật FAI.',
+            createdAt: new Date().toISOString(),
+          },
+        ],
     deliveries: [],
   };
 }

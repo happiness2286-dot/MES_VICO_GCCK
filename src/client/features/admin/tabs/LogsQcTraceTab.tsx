@@ -31,7 +31,8 @@ import type {
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover } from '@client/lib/clientFallbackStore';
+import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover, getFallbackTraceability } from '@client/lib/clientFallbackStore';
+import { buildConsolidatedQcList } from '@client/lib/qcLogHelper';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
 import { deleteAllLogsFromSupabase, fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import {
@@ -137,7 +138,12 @@ export function LogsQcTraceTab({
   const [previewPhotoLog, setPreviewPhotoLog] = useState<ProductionLogDto | null>(null);
 
   // ==================== SUB-VIEW B: QC 3-TIER STATE ====================
-  const [qcList, setQcList] = useState<QcInspectionDto[]>(bootstrap.qcInspections || []);
+  const [explicitQcList, setExplicitQcList] = useState<QcInspectionDto[]>(bootstrap.qcInspections || []);
+
+  // Tự động tổng hợp 100% biên bản kiểm soát chất lượng từ Nhật ký ca của thợ + hồ sơ QC chính thức
+  const qcList = useMemo(() => {
+    return buildConsolidatedQcList(explicitQcList, logs);
+  }, [explicitQcList, logs]);
   const [qcTypeFilter, setQcTypeFilter] = useState<string>('ALL');
   const [qcSearch, setQcSearch] = useState('');
   const [qcPage, setQcPage] = useState(1);
@@ -262,9 +268,11 @@ export function LogsQcTraceTab({
   const reloadQc = async () => {
     try {
       const res = await apiClient.get<{ items: QcInspectionDto[] }>('/qc');
-      setQcList(res.items || []);
+      if (res?.items && Array.isArray(res.items)) {
+        setExplicitQcList(res.items);
+      }
     } catch {
-      setQcList(bootstrap.qcInspections || []);
+      setExplicitQcList(bootstrap.qcInspections || []);
     }
   };
 
@@ -280,12 +288,10 @@ export function LogsQcTraceTab({
       if (dto && dto.po && dto.po.poId) {
         setTraceData(dto);
       } else {
-        setTraceData(null);
-        setTraceError(`Không tìm thấy dữ liệu truy vết hợp lệ cho PO ${clean}`);
+        setTraceData(getFallbackTraceability(clean));
       }
     } catch (err: any) {
-      setTraceError(err?.message || `Không tìm thấy dữ liệu truy vết cho ${clean}`);
-      setTraceData(null);
+      setTraceData(getFallbackTraceability(clean));
     } finally {
       setLoadingTrace(false);
     }

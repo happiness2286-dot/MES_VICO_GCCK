@@ -41,3 +41,18 @@ export function matchesSearch(haystack: string | null | undefined, query: string
   if (tokens.length === 0) return true;
   return tokens.every((tok) => foldedHay.includes(tok));
 }
+
+/**
+ * Normalizes PO numbers for robust matching across system:
+ * - Handles 'P0' (P-zero) vs 'PO' (P-letter O) common typos
+ * - Strips dashes, spaces, and special characters
+ * - Uppercases (e.g. 'PO488-06' -> 'PO48806', 'P0488-06' -> 'PO48806')
+ */
+export function normalizePoKey(raw: string | null | undefined): string {
+  if (!raw) return '';
+  return String(raw)
+    .trim()
+    .toUpperCase()
+    .replace(/^P0/, 'PO')
+    .replace(/[^A-Z0-9]/g, '');
+}

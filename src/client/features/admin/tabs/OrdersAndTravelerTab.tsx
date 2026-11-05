@@ -15,8 +15,8 @@ import {
   Truck,
   Wrench,
 } from 'lucide-react';
-import type { DeliveryLogDto, PurchaseOrderInfo } from '@shared/types';
-import { matchesSearch, normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
+import type { DeliveryLogDto, PurchaseOrderInfo, ProductionLogDto } from '@shared/types';
+import { matchesSearch, normalizeVn, removeVietnameseTones, normalizePoKey } from '@shared/vnSearch';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import { apiClient } from '@client/lib/apiClient';
 import {
@@ -25,7 +25,8 @@ import {
   fileToUint8Array,
   type MasterPurchaseOrderImportRow,
 } from '@client/lib/excelService';
-import { getFallbackHandovers } from '@client/lib/clientFallbackStore';
+import { getFallbackHandovers, getAllFallbackLogs } from '@client/lib/clientFallbackStore';
+import { fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import { formatDateVn, formatNumber } from '@client/lib/formatters';
 import { navigateTo } from '@client/lib/navigation';
 import {
@@ -73,13 +74,80 @@ export function OrdersAndTravelerTab({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
+  // Consolidated Production Logs from Supabase Cloud + Local Fallback
+  const [productionLogs, setProductionLogs] = useState<ProductionLogDto[]>(() => {
+    const local = getAllFallbackLogs();
+    const boot = bootstrap.recentLogs || [];
+    const map = new Map<string, ProductionLogDto>();
+    for (const l of boot) map.set(l.recordUid || String(l.id), l);
+    for (const l of local) map.set(l.recordUid || String(l.id), l);
+    return Array.from(map.values());
+  });
+
+  useEffect(() => {
+    let unmounted = false;
+    const fetchCloudLogs = async () => {
+      try {
+        const sbLogs = await fetchLogsFromSupabase();
+        if (sbLogs && sbLogs.length > 0 && !unmounted) {
+          setProductionLogs((prev) => {
+            const map = new Map<string, ProductionLogDto>();
+            for (const l of prev) map.set(l.recordUid || String(l.id), l);
+            for (const l of sbLogs) map.set(l.recordUid || String(l.id), l);
+            return Array.from(map.values());
+          });
+        }
+      } catch {}
+    };
+    void fetchCloudLogs();
+
+    const unsub = subscribeSupabaseLogChanges(() => {
+      void fetchCloudLogs();
+    });
+
+    const onSubmitted = (e: any) => {
+      if (e?.detail) {
+        setProductionLogs((prev) => [e.detail, ...prev]);
+      }
+    };
+    window.addEventListener('gcck:report-submitted', onSubmitted);
+
+    return () => {
+      unmounted = true;
+      if (unsub) unsub();
+      window.removeEventListener('gcck:report-submitted', onSubmitted);
+    };
+  }, []);
+
+  // Tổng sản lượng gia công hoàn thiện (Xong CK / End) thực tế từ Nhật ký ca của từng PO
+  const logFinishedMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of productionLogs) {
+      if (l.isVoided) continue;
+      const ok = Number(l.okQty || 0);
+      if (ok <= 0) continue;
+      const isFinal =
+        l.isFinalOp === 1 ||
+        l.stage === 'End' ||
+        String(l.opName || '').toLowerCase().includes('hoàn thiện') ||
+        String(l.opName || '').toLowerCase().includes('end');
+      if (!isFinal) continue;
+
+      const k = normalizePoKey(l.poId);
+      if (k) {
+        map.set(k, (map.get(k) || 0) + ok);
+      }
+    }
+    return map;
+  }, [productionLogs]);
+
   const handoverRawMap = useMemo(() => {
     const map = new Map<string, number>();
     try {
       const list = getFallbackHandovers();
       for (const h of list) {
         if (h.poId && Number(h.rawQtyTransferred || 0) > 0) {
-          const k = h.poId.trim().toLowerCase();
+          const k = normalizePoKey(h.poId);
           map.set(k, Math.max(map.get(k) || 0, Number(h.rawQtyTransferred)));
         }
       }
@@ -93,7 +161,7 @@ export function OrdersAndTravelerTab({
       const list = getFallbackHandovers();
       for (const h of list) {
         if (h.poId && Number(h.prodQtyTransferred || 0) > 0) {
-          const k = h.poId.trim().toLowerCase();
+          const k = normalizePoKey(h.poId);
           map.set(k, (map.get(k) || 0) + Number(h.prodQtyTransferred));
         }
       }
@@ -776,8 +844,26 @@ export function OrdersAndTravelerTab({
                         ? 'warning'
                         : 'neutral';
 
-                const displayFin = Math.max(Number(po.finishedQty || 0), handoverFinishedMap.get(po.poId.trim().toLowerCase()) || 0);
+                const k = normalizePoKey(po.poId);
+                const logFin = logFinishedMap.get(k) || 0;
+                const hovFin = handoverFinishedMap.get(k) || 0;
+                const manualFin = Number(po.finishedQty || 0);
+
+                // Xong CK (End): Kết hợp số liệu nhập tay ban đầu, số BTP bàn giao và số hoàn thành từ Nhật ký ca
+                const displayFin = Math.max(manualFin, hovFin, logFin, ((po as any).initialFinishedQty || 0) + logFin);
+
+                // Phôi nhận ban đầu: Lấy từ Sổ bàn giao hoặc số phôi quản đốc nhập tay
+                const hovRaw = handoverRawMap.get(k) || 0;
+                const manualRaw = Number((po as any).initialWipQty ?? po.wipQty ?? 0);
+                const totalRawAllocated = Math.max(hovRaw, manualRaw);
+
+                // ĐANG SX (PHÔI NHẬN/WIP) CÒN LẠI:
+                // = Số phôi nhận trừ đi số lượng đã gia công hoàn thành (khấu trừ thực tế)
+                // Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX (Phôi nhận/WIP)!
+                const displayWip = Math.max(0, totalRawAllocated - displayFin);
+
                 const displayStock = Math.max(0, displayFin - (po.deliveredQty || 0));
+                const displayRemain = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
                 const finishRatioPct = Math.min(
                   100,
                   Math.max(
@@ -803,14 +889,13 @@ export function OrdersAndTravelerTab({
                       <div className="font-mono-num font-bold text-blue-700">{po.poId}</div>
                       <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
                         <span>{po.materialLot || 'LOT-VICO'}</span>
-                        {po.faiStatus === 'PENDING_FAI' && (
+                        {Boolean(logFin > 0 || po.faiStatus === 'FAI_PASSED') ? (
+                          <Badge variant="success" className="text-[10px]" title="Đã có biên bản kiểm tra chất lượng đạt">
+                            QC Đạt
+                          </Badge>
+                        ) : (
                           <Badge variant="warning" className="text-[10px]">
                             Chờ FAI
-                          </Badge>
-                        )}
-                        {po.faiStatus === 'FAI_PASSED' && (
-                          <Badge variant="success" className="text-[10px]">
-                            FAI Đạt
                           </Badge>
                         )}
                       </div>
@@ -871,15 +956,14 @@ export function OrdersAndTravelerTab({
                       {formatNumber(po.qtyPo)}
                     </td>
                     {(() => {
-                      const displayWip = handoverRawMap.get(po.poId.trim().toLowerCase()) || 0;
                       return (
                         <td
                           className={`font-mono-num px-2.5 py-2.5 text-center ${
                             displayWip > 0 ? 'font-bold text-amber-700 bg-amber-50/60' : 'text-slate-400'
                           }`}
                           title={
-                            displayWip > 0
-                              ? `Đã nhận ${displayWip} phôi từ Sổ bàn giao chuyển công đoạn BM.GC.01.02`
+                            totalRawAllocated > 0
+                              ? `Đã nhận: ${totalRawAllocated} phôi. Đã làm xong: ${displayFin} SP -> Còn lại ${displayWip} phôi đang SX`
                               : 'Chưa nhập sổ bàn giao chuyển phôi (WIP = 0)'
                           }
                         >
@@ -889,8 +973,9 @@ export function OrdersAndTravelerTab({
                     })()}
                     <td
                       className={`font-mono-num px-2.5 py-2.5 text-center ${
-                        displayFin > 0 ? 'font-bold text-emerald-700' : 'text-slate-400'
+                        displayFin > 0 ? 'font-bold text-emerald-700 bg-emerald-50/40' : 'text-slate-400'
                       }`}
+                      title={`Tổng xong CK: ${displayFin} SP (Nhật ký ca thợ nộp: ${logFin} SP, Bàn giao BTP: ${hovFin} SP, Nhập trước: ${manualFin} SP)`}
                     >
                       {formatNumber(displayFin)}
                     </td>
@@ -1632,7 +1717,7 @@ export function OrdersAndTravelerTab({
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block font-bold uppercase text-emerald-800 text-[10px]">
-                  Đã Xong Trước Đó (Xong CK)
+                  Đã Xong Trước Đó (Xong CK ban đầu)
                 </label>
                 <input
                   type="number"
@@ -1643,11 +1728,14 @@ export function OrdersAndTravelerTab({
                   onChange={(e) => setEditFinishedQty(Math.max(0, Number(e.target.value) || 0))}
                   className={`${modalInputCls} font-mono-num font-black text-emerald-700`}
                 />
+                <p className="mt-1 text-[9.5px] text-emerald-700 leading-tight">
+                  * Nhập SL gia công xong trước đó ngoài phần mềm (nếu có).
+                </p>
               </div>
 
               <div>
                 <label className="mb-1 block font-bold uppercase text-amber-800 text-[10px]">
-                  Đang Dở Dang (WIP)
+                  Số Phôi Nhận Ban Đầu (Phôi Cấp / WIP)
                 </label>
                 <input
                   type="number"
@@ -1658,6 +1746,9 @@ export function OrdersAndTravelerTab({
                   onChange={(e) => setEditWipQty(Math.max(0, Number(e.target.value) || 0))}
                   className={`${modalInputCls} font-mono-num font-bold text-amber-800`}
                 />
+                <p className="mt-1 text-[9.5px] text-amber-700 leading-tight">
+                  * Số phôi cấp (sẽ tự động khấu trừ dần khi thợ làm xong chi tiết).
+                </p>
               </div>
 
               <div>
@@ -1679,29 +1770,39 @@ export function OrdersAndTravelerTab({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-semibold text-slate-700 border-t border-emerald-200/80 pt-2">
-              <div>
-                Tiến độ: <strong className="font-mono-num text-emerald-800">{editFinishedQty}</strong> / {editQtyPo} SP ({Math.min(100, Math.round((editFinishedQty / editQtyPo) * 100))}%)
-              </div>
-              <div>
-                Tồn kho TP (Chờ giao):{' '}
-                <strong className={`font-mono-num ${Math.max(0, editFinishedQty - editDeliveredQty) > 0 ? 'text-blue-700 font-black' : 'text-slate-600'}`}>
-                  {Math.max(0, editFinishedQty - editDeliveredQty)} SP
-                </strong>
-                <span className="block text-[9.5px] text-slate-500 font-normal leading-tight">(= Xong CK − Đã giao)</span>
-              </div>
-              <div>
-                Còn nợ giao:{' '}
-                <strong className="font-mono-num text-amber-800">
-                  {Math.max(0, editQtyPo - editDeliveredQty)} SP
-                </strong>
-                {editFinishedQty >= editQtyPo && (
-                  <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-emerald-600 px-1 py-0.2 text-[9.5px] font-black text-white">
-                    ✓ Đủ SL đặt
-                  </span>
-                )}
-              </div>
-            </div>
+            {(() => {
+              const k = normalizePoKey(editTargetPo?.poId);
+              const autoLogFin = logFinishedMap.get(k) || 0;
+              const effectiveFin = Math.max(editFinishedQty, autoLogFin, editFinishedQty + autoLogFin);
+              const effectiveWip = Math.max(0, editWipQty - effectiveFin);
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-semibold text-slate-700 border-t border-emerald-200/80 pt-2">
+                  <div>
+                    Tiến độ hoàn thành:{' '}
+                    <strong className="font-mono-num text-emerald-800">{effectiveFin}</strong> / {editQtyPo} SP
+                    {autoLogFin > 0 && (
+                      <span className="block text-[9.5px] text-emerald-600 font-normal">
+                        (Đã gồm +{autoLogFin} SP từ Nhật ký ca thợ nộp)
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    Số phôi đang SX còn lại:{' '}
+                    <strong className="font-mono-num text-amber-800">
+                      {effectiveWip} phôi
+                    </strong>
+                    <span className="block text-[9.5px] text-slate-500 font-normal">(= {editWipQty} phôi nhận − {effectiveFin} xong)</span>
+                  </div>
+                  <div>
+                    Tồn kho TP (Chờ giao):{' '}
+                    <strong className={`font-mono-num ${Math.max(0, effectiveFin - editDeliveredQty) > 0 ? 'text-blue-700 font-black' : 'text-slate-600'}`}>
+                      {Math.max(0, effectiveFin - editDeliveredQty)} SP
+                    </strong>
+                    <span className="block text-[9.5px] text-slate-500 font-normal leading-tight">(= Xong CK − Đã giao)</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
