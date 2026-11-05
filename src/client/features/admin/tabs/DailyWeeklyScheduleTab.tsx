@@ -1322,12 +1322,10 @@ export function DailyWeeklyScheduleTab({
               variant="primary"
               size="sm"
               onClick={() => {
-                const todayStr = new Date().toISOString().slice(0, 10);
+                const todayStr = getVietnamToday();
                 setNewPlanDate(todayStr);
                 setNewPlanMode('copy');
-                if (availableDates.length > 0) {
-                  setSourceCopyDate(availableDates[0].workDate);
-                }
+                setSourceCopyDate(selectedDate);
                 setShowNewDateModal(true);
               }}
               className="bg-blue-600 font-bold text-white shadow-sm hover:bg-blue-700"
@@ -1340,9 +1338,18 @@ export function DailyWeeklyScheduleTab({
               variant="secondary"
               size="sm"
               onClick={() => {
-                const tomorrow = new Date();
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                setCopyTargetDate(tomorrow.toISOString().slice(0, 10));
+                // Ngày đích mặc định = ngày kế tiếp của ngày đang xem (selectedDate + 1)
+                // Ví dụ: đang xem ngày 04/11 -> mặc định sao chép sang 05/11
+                const parts = selectedDate.split('-').map(Number);
+                let nextStr = getVietnamToday();
+                if (parts.length === 3) {
+                  const d = new Date(parts[0], parts[1] - 1, parts[2] + 1);
+                  const yr = d.getFullYear();
+                  const mo = String(d.getMonth() + 1).padStart(2, '0');
+                  const da = String(d.getDate()).padStart(2, '0');
+                  nextStr = `${yr}-${mo}-${da}`;
+                }
+                setCopyTargetDate(nextStr);
                 setShowCopyModal(true);
               }}
               className="font-bold text-slate-700 hover:text-slate-900"
@@ -3353,9 +3360,20 @@ export function DailyWeeklyScheduleTab({
       >
         <div className="space-y-4 text-xs text-slate-800">
           <div>
-            <label className="block font-bold text-slate-700 mb-1">
-              Ngày đích nhận kế hoạch sao chép:
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-bold text-slate-700">
+                Ngày đích nhận kế hoạch sao chép:
+              </label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCopyTargetDate(getVietnamToday())}
+                  className="rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Hôm nay ({formatDateVn(getVietnamToday())})
+                </button>
+              </div>
+            </div>
             <input
               type="date"
               value={copyTargetDate}
