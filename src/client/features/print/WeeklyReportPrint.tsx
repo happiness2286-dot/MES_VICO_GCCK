@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Printer } from 'lucide-react';
+import { ArrowLeft, Printer, Download } from 'lucide-react';
 import type { WeeklyReportData } from '@shared/types';
 import { apiClient } from '../../lib/apiClient';
 import { formatDateVn, formatNumber, formatVnd } from '../../lib/formatters';
 import { navigateTo } from '../../lib/navigation';
 import { VicoLogo } from '../../components/VicoLogo';
+import { downloadWeeklyReportExcel } from '../../lib/excelService';
 
 export function WeeklyReportPrint() {
   const [weekStart, setWeekStart] = useState<string>(() => {
@@ -66,6 +67,15 @@ export function WeeklyReportPrint() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => report && void downloadWeeklyReportExcel(report)}
+            disabled={!report}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-800 shadow-sm hover:bg-emerald-100 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4 text-emerald-700" />
+            Xuất File Excel (BM: GCCK.BC.02)
+          </button>
           <button
             type="button"
             onClick={() => window.print()}

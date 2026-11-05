@@ -44,7 +44,7 @@ import {
 import type { DailyPlanRow, WeeklyReportData } from '@shared/types';
 import { apiClient } from '@client/lib/apiClient';
 import { formatDateVn, formatNumber, formatVnd } from '@client/lib/formatters';
-import { downloadDailyScheduleExcel } from '@client/lib/excelService';
+import { downloadDailyScheduleExcel, downloadWeeklyReportExcel } from '@client/lib/excelService';
 import { navigateTo } from '@client/lib/navigation';
 import {
   Badge,
@@ -938,6 +938,26 @@ export function DailyWeeklyScheduleTab({
     }
   };
 
+  const [exportingWeeklyExcel, setExportingWeeklyExcel] = useState(false);
+
+  const handleExportWeeklyExcel = async () => {
+    if (!weeklyReport) {
+      toast.warning('Chưa có dữ liệu báo cáo tuần để xuất file Excel.');
+      return;
+    }
+    setExportingWeeklyExcel(true);
+    try {
+      await downloadWeeklyReportExcel(weeklyReport);
+      toast.success(
+        `Đã xuất file Excel Báo Cáo Tuần (${formatDateVn(weeklyReport.weekStart)} → ${formatDateVn(weeklyReport.weekEnd)}) thành công!`
+      );
+    } catch (err: any) {
+      toast.error(err?.message || 'Không thể xuất file Excel báo cáo tuần.');
+    } finally {
+      setExportingWeeklyExcel(false);
+    }
+  };
+
   // Generate clean Zalo group summary text
   const generateZaloSummary = () => {
     const [y, m, d] = (selectedDate || '').split('-');
@@ -1469,6 +1489,17 @@ export function DailyWeeklyScheduleTab({
 
         {subTab === 'weekly' && (
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleExportWeeklyExcel}
+              disabled={!weeklyReport || exportingWeeklyExcel}
+              className="font-bold text-emerald-800 bg-emerald-50 border-emerald-300 hover:bg-emerald-100 shadow-sm"
+            >
+              <Download className="h-4 w-4 text-emerald-700" />
+              {exportingWeeklyExcel ? 'Đang xuất Excel...' : '📥 Xuất File Excel Báo Cáo Tuần'}
+            </Button>
             <Button
               type="button"
               variant="secondary"

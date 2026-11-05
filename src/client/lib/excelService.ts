@@ -6,6 +6,7 @@ import type {
   Payroll3PRow,
   ProductCostingSummary,
   ProductionLogDto,
+  WeeklyReportData,
 } from '@shared/types';
 import { normalizeVn } from '@shared/vnSearch';
 
@@ -1237,6 +1238,227 @@ export async function downloadDailyQualityReportExcel(
   downloadWorkbookBytes(
     bytes,
     `BM.KTCN.04.03_BaoCaoNgay_${report.reportDate}.xlsx`
+  );
+}
+
+// ==================== WEEKLY PRODUCTION REPORT & CAPACITY BALANCING (FORM VICO GCCK.BC.02) ====================
+export async function buildWeeklyReportWorkbook(
+  report: WeeklyReportData
+): Promise<Uint8Array> {
+  const wb = await createExcelWorkbook();
+  wb.creator = 'GCCK Thắng Lợi Lean MES';
+
+  // SHEET 1: BÁO CÁO TỔNG HỢP TUẦN & CÂN BẰNG TẢI
+  const ws = wb.addWorksheet('BAO_CAO_TONG_HOP_TUAN', {
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9, // A4
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.4, right: 0.4, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
+    views: [{ state: 'frozen', ySplit: 5 }],
+  });
+
+  // Header Title
+  const r1 = ws.addRow(['CÔNG TY CỔ PHẦN CƠ KHÍ CHÍNH XÁC THẮNG LỢI (VICO)', '', '', '', '', '', 'Mã BM: GCCK.BC.02']);
+  r1.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+
+  const r2 = ws.addRow(['BÁO CÁO TỔNG HỢP SẢN XUẤT TUẦN & CÂN BẰNG NĂNG LỰC TẢI']);
+  r2.font = { bold: true, size: 14, color: { argb: 'FF0F172A' } };
+
+  const r3 = ws.addRow([`Chu kỳ tuần: Thứ 5 (${report.weekStart}) đến Thứ 4 (${report.weekEnd}) — ${report.weekLabel}`]);
+  r3.font = { italic: true, size: 10, color: { argb: 'FF475569' } };
+
+  ws.addRow([]); // Blank spacer
+
+  // BẢNG TÓM TẮT KPI TUẦN
+  appendSafeRow(
+    ws,
+    ['CHỈ SỐ SẢN XUẤT CHÍNH', 'KẾ HOẠCH (SP)', 'THỰC TẾ ĐẠT (SP)', 'TỶ LỆ HOÀN THÀNH', 'SỐ ĐH HOÀN THÀNH', 'SỐ ĐH CHẬM HẠN'],
+    { isHeader: true }
+  );
+  appendSafeRow(ws, [
+    'Toàn bộ phân xưởng GCCK',
+    report.summary.totalPlannedQty,
+    report.summary.totalActualQty,
+    `${report.summary.completionPct}%`,
+    report.summary.completedPoCount,
+    report.summary.delayedPoCount,
+  ]);
+
+  ws.addRow([]); // Blank spacer
+
+  // KHỐI 1: THEO KHÁCH HÀNG
+  const kh1Header = ws.addRow(['KHỐI 1: TỔNG HỢP SẢN LƯỢNG & TIẾN ĐỘ THEO KHÁCH HÀNG']);
+  kh1Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+
+  appendSafeRow(
+    ws,
+    ['STT', 'Khách Hàng', 'Số Chi Tiết SP', 'Kế Hoạch (SP)', 'Thực Tế (SP)', 'Tỷ Lệ Đạt', 'Trạng Thái'],
+    { isHeader: true }
+  );
+
+  (report.customerStats || []).forEach((c, idx) => {
+    appendSafeRow(ws, [
+      idx + 1,
+      c.customer,
+      c.productCount,
+      c.plannedQty,
+      c.actualQty,
+      `${c.completionPct}%`,
+      c.completionPct >= 90 ? 'Đạt chuẩn KH' : `Chậm ${Math.max(0, c.plannedQty - c.actualQty)} SP`,
+    ]);
+  });
+
+  ws.addRow([]); // Blank spacer
+
+  // KHỐI 2: THEO LAO ĐỘNG & CHẤM CÔNG
+  const kh2Header = ws.addRow(['KHỐI 2: TỔNG HỢP GIỜ CÔNG & LAO ĐỘNG (THEO PHÂN HỆ CHẤM CÔNG 7 NGÀY)']);
+  kh2Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+
+  appendSafeRow(
+    ws,
+    ['STT', 'Mã NV', 'Họ Và Tên', 'Công Chuẩn (Ca)', 'Thêm Giờ (OT h)', 'Tăng Ca CN (h)', 'Nghỉ / Phép (d)', 'Tổng Công Quy Đổi', 'Sản Lượng SP Làm Ra'],
+    { isHeader: true }
+  );
+
+  (report.workerLaborStats || []).forEach((w, idx) => {
+    appendSafeRow(ws, [
+      idx + 1,
+      w.workerId,
+      w.workerName,
+      w.standardShifts,
+      w.otHours,
+      w.sundayHours,
+      w.offDays + w.pDays,
+      w.totalConvertedShifts,
+      w.actualCompletedPieces,
+    ]);
+  });
+
+  ws.addRow([]); // Blank spacer
+
+  // KHỐI 3: DOWNTIME DỪNG MÁY
+  const kh3Header = ws.addRow(['KHỐI 3: THỐNG KÊ SỰ CỐ THIẾT BỊ & DỪNG MÁY (DOWNTIME)']);
+  kh3Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+
+  appendSafeRow(
+    ws,
+    ['STT', 'Ngày', 'Thiết Bị / Tên Máy', 'Thời Gian Dừng (Phút)', 'Nguyên Nhân & Xử Lý'],
+    { isHeader: true }
+  );
+
+  if (!report.downtimeIncidents || report.downtimeIncidents.length === 0) {
+    appendSafeRow(ws, ['—', '—', 'Không có sự cố dừng máy kỹ thuật', 0, 'Thiết bị hoạt động ổn định']);
+  } else {
+    report.downtimeIncidents.forEach((inc, idx) => {
+      appendSafeRow(ws, [
+        idx + 1,
+        inc.date,
+        inc.machineName,
+        inc.stopMinutes,
+        inc.reason,
+      ]);
+    });
+  }
+
+  ws.addRow([]); // Blank spacer
+
+  // KHỐI 4: DỰ BÁO TUẦN TỚI & CÂN BẰNG TẢI
+  const kh4Header = ws.addRow(['KHỐI 4: KẾ HOẠCH TUẦN TỚI & ĐỀ XUẤT GIA CÔNG NGOÀI (OUTSOURCE)']);
+  kh4Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+
+  appendSafeRow(ws, [
+    'Tình trạng cân bằng tải:',
+    report.nextWeekForecast.isOverloaded ? 'CẢNH BÁO QUÁ TẢI PHÂN XƯỞNG' : 'ĐỦ NĂNG LỰC ĐÁP ỨNG KẾ HOẠCH',
+    `Bù đơn hàng thiếu: ${report.nextWeekForecast.carryoverBacklogQty} SP`,
+    `Tổng giờ gia công yêu cầu: ${report.nextWeekForecast.totalRequiredHours}h`,
+    `Năng lực xưởng khả dụng: ${report.nextWeekForecast.machineCapacityHours}h`,
+  ]);
+
+  if (report.nextWeekForecast.outsourceRecommendations && report.nextWeekForecast.outsourceRecommendations.length > 0) {
+    appendSafeRow(
+      ws,
+      ['STT', 'Mã PO', 'Sản Phẩm Đề Xuất Outsource', 'Khách Hàng', 'SL Chuyển (SP)', 'Lý Do Đề Xuất', 'Chi Phí Dự Kiến (VNĐ)'],
+      { isHeader: true }
+    );
+    report.nextWeekForecast.outsourceRecommendations.forEach((rec, idx) => {
+      appendSafeRow(ws, [
+        idx + 1,
+        rec.poId,
+        rec.productName,
+        rec.customer,
+        rec.suggestedOutsourceQty,
+        rec.reason,
+        rec.estimatedOutsourceCost,
+      ]);
+    });
+  }
+
+  ws.addRow([]); // Blank spacer
+
+  // Chữ ký
+  const sigRow1 = ws.addRow(['Người Lập Biểu', '', 'Tổ Trưởng / Quản Đốc', '', '', 'Ban Giám Đốc Phê Duyệt']);
+  sigRow1.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
+  const sigRow2 = ws.addRow(['(Ký, ghi rõ họ tên)', '', '(Ký, ghi rõ họ tên)', '', '', '(Ký, đóng dấu)']);
+  sigRow2.font = { italic: true, size: 9, color: { argb: 'FF64748B' } };
+
+  autoFitColumns(ws, 10, 42);
+
+  // SHEET 2: CHI TIẾT DANH SÁCH ĐƠN HÀNG PO TRONG TUẦN
+  const ws2 = wb.addWorksheet('CHI_TIET_DON_HANG_PO', {
+    views: [{ state: 'frozen', ySplit: 2 }],
+  });
+
+  const ws2Title = ws2.addRow([`DANH SÁCH CHI TIẾT TẤT CẢ ĐƠN HÀNG SẢN XUẤT TUẦN (${report.weekStart} -> ${report.weekEnd})`]);
+  ws2Title.font = { bold: true, size: 12, color: { argb: 'FF1E3A8A' } };
+
+  appendSafeRow(
+    ws2,
+    [
+      'STT',
+      'Mã Lệnh PO',
+      'Khách Hàng',
+      'Tên Sản Phẩm / Chi Tiết',
+      'Số Lượng Đặt (SP)',
+      'Đã Xong CK (End)',
+      'Đang SX (WIP)',
+      'Hạn Giao Hàng',
+      'Trạng Thái Tiến Độ',
+      'Đánh Giá Tuần',
+    ],
+    { isHeader: true }
+  );
+
+  (report.poStatuses || []).forEach((po, idx) => {
+    appendSafeRow(ws2, [
+      idx + 1,
+      po.poId,
+      po.customer,
+      po.productName,
+      po.qtyPo,
+      po.finishedQty,
+      po.wipQty,
+      po.dueDate,
+      po.status,
+      po.isDelayed ? '⚠️ Chậm Hạn / Cần Xử Lý Bù' : '✅ Đạt Kế Hoạch',
+    ]);
+  });
+
+  autoFitColumns(ws2, 10, 40);
+
+  return workbookToBytes(wb);
+}
+
+export async function downloadWeeklyReportExcel(
+  report: WeeklyReportData
+): Promise<void> {
+  const bytes = await buildWeeklyReportWorkbook(report);
+  downloadWorkbookBytes(
+    bytes,
+    `VICO_BaoCaoTuan_${report.weekStart}_den_${report.weekEnd}.xlsx`
   );
 }
 
