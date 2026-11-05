@@ -871,13 +871,17 @@ export function OrdersAndTravelerTab({
                       {formatNumber(po.qtyPo)}
                     </td>
                     {(() => {
-                      const displayWip = Math.max(Number(po.wipQty || 0), handoverRawMap.get(po.poId.trim().toLowerCase()) || 0);
+                      const displayWip = handoverRawMap.get(po.poId.trim().toLowerCase()) || 0;
                       return (
                         <td
                           className={`font-mono-num px-2.5 py-2.5 text-center ${
-                            displayWip > 0 ? 'font-bold text-amber-700 bg-amber-50/40' : 'text-slate-400'
+                            displayWip > 0 ? 'font-bold text-amber-700 bg-amber-50/60' : 'text-slate-400'
                           }`}
-                          title={displayWip > 0 ? `Đã nhận ${displayWip} phôi vào gia công` : 'Chưa nhận phôi'}
+                          title={
+                            displayWip > 0
+                              ? `Đã nhận ${displayWip} phôi từ Sổ bàn giao chuyển công đoạn BM.GC.01.02`
+                              : 'Chưa nhập sổ bàn giao chuyển phôi (WIP = 0)'
+                          }
                         >
                           {formatNumber(displayWip)}
                         </td>

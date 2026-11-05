@@ -855,7 +855,6 @@ export const INITIAL_HANDOVERS: HandoverSlipRow[] = [];
 export function syncOrdersWithHandovers(): void {
   try {
     const handovers = getFallbackHandovers();
-    if (!handovers || handovers.length === 0) return;
     let changed = false;
 
     // Group cumulative handovers by PO
@@ -863,7 +862,7 @@ export function syncOrdersWithHandovers(): void {
       const cleanPoId = po.poId.trim().toLowerCase();
       const cleanProdName = po.productName.trim().toLowerCase();
 
-      const related = handovers.filter(
+      const related = (handovers || []).filter(
         (h) => (h.poId && h.poId.trim().toLowerCase() === cleanPoId) ||
                (h.productName && h.productName.trim().toLowerCase() === cleanProdName)
       );
@@ -871,10 +870,10 @@ export function syncOrdersWithHandovers(): void {
       if (related.length > 0) {
         // Cumulative finished BTP: sum all prodQtyTransferred
         const totalBtp = related.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
-        // Cumulative or max phôi transferred
+        // Cumulative or max phôi transferred from handover slips
         const totalRaw = related.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
 
-        if (totalRaw > Number(po.wipQty || 0)) {
+        if (po.wipQty !== totalRaw) {
           po.wipQty = totalRaw;
           changed = true;
         }
@@ -888,6 +887,17 @@ export function syncOrdersWithHandovers(): void {
             po.status = '📦 Xong CK - Chờ giao';
           } else if ((po.wipQty || 0) > 0 || (po.finishedQty || 0) > 0) {
             po.status = '⚙️ Đang gia công';
+          } else {
+            po.status = '⏳ Đang chờ SX';
+          }
+          changed = true;
+        }
+      } else {
+        // PO chưa có phiếu bàn giao chuyển phôi: wipQty bắt buộc = 0 (khử triệt để số giả)
+        if (Number(po.wipQty || 0) > 0) {
+          po.wipQty = 0;
+          if (Number(po.finishedQty || 0) === 0 && Number(po.deliveredQty || 0) === 0) {
+            po.status = '⏳ Đang chờ SX';
           }
           changed = true;
         }

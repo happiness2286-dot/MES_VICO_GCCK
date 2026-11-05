@@ -420,8 +420,9 @@ export function CockpitAndLoadTab({
             doneQty = directPoNc;
           } else if (Number(op.isFinalOp) === 1) {
             doneQty = Number(po.finishedQty) || 0;
-          } else if ((Number(po.finishedQty) || 0) > 0 || (Number(po.wipQty) || 0) > 0) {
-            doneQty = Math.max(Number(po.finishedQty) || 0, Number(po.wipQty) || 0);
+          } else if ((Number(po.finishedQty) || 0) > 0) {
+            // Khi đã có BTP chốt xong ở bước cuối thì các bước trước đó đương nhiên đã qua
+            doneQty = Number(po.finishedQty) || 0;
           }
 
           // Strictly cap ratio by real qtyPo (fixes legacy 100% credit on 1 pc bug!)
