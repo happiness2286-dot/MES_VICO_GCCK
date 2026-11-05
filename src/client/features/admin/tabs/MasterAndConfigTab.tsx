@@ -118,6 +118,32 @@ const TOOL_SWAP_REASONS = [
   'Gãy dao / vỡ mảnh sự cố (cần lập biên bản)',
 ];
 
+const STANDARD_MATERIALS_LIST = [
+  'Thép C45 / S45C (Thép chế tạo thông dụng)',
+  'Thép hợp kim SCM440 (Cr-Mo tôi cải thiện)',
+  'Thép hợp kim 40Cr / 40X (Trục & bánh răng)',
+  'Thép khuôn dập SKD11 / D2 (Độ cứng cao)',
+  'Thép khuôn SKD61 / H13 (Chịu nhiệt độ cao)',
+  'Thép gió HSS (W18Cr4V / M2)',
+  'Thép tấm kết cấu SS400 / Q235B / CT3',
+  'Thép tròn trơn S20C / S10C',
+  'Thép chống mài mòn Hardox 450 / 500',
+  'Inox SUS304 (Thép không gỉ austenit)',
+  'Inox SUS316 / 316L (Chịu axit / hóa chất)',
+  'Inox SUS201 (Tiết kiệm)',
+  'Gang cầu FCD450 / FCD600 (Bền uốn cao)',
+  'Gang xám FC200 / FC250 (Giảm chấn tốt)',
+  'Phôi đúc hợp kim chống mài mòn Cr-Mo',
+  'Nhôm hợp kim A6061-T6 (Gia công nhẹ)',
+  'Nhôm cường lực A7075 (Độ bền cao)',
+  'Đồng thau Brass C3604 (Dễ gia công)',
+  'Đồng thanh Bronze (Bạc lót chống mòn)',
+  'Nhựa kỹ thuật POM (Polyacetal)',
+  'Nhựa kỹ thuật MC Nylon (Bánh răng nhựa)',
+  'Nhựa Teflon PTFE (Chịu hóa chất / nhiệt)',
+  'Thép rèn 20CrMo / 42CrMo',
+];
+
 const MACHINE_STATUS_LABELS: Record<
   MachineStatus,
   { label: string; badge: 'success' | 'warning' | 'danger' | 'neutral' | 'purple' }
@@ -169,6 +195,16 @@ export function MasterAndConfigTab({
       setMachSearch(deepLink.masterSearch);
       setToolSearch(deepLink.masterSearch);
       setWorkerSearch(deepLink.masterSearch);
+      const term = deepLink.masterSearch.trim().toLowerCase();
+      if (term) {
+        const matchedPo = (bootstrap.ordersList || []).find(
+          (po) => po.productName.trim().toLowerCase() === term || po.productName.toLowerCase().includes(term)
+        );
+        if (matchedPo) {
+          setNewOpCustomer(matchedPo.customer);
+          setNewOpProductName(matchedPo.productName);
+        }
+      }
     }
   }, [deepLink]);
 
@@ -182,9 +218,11 @@ export function MasterAndConfigTab({
 
   // Quick Multi-Op Creator Modal
   const [createOpOpen, setCreateOpOpen] = useState(false);
-  const [newOpCustomer, setNewOpCustomer] = useState('Vico - Nội bộ / Khách lẻ');
+  const [newOpCustomer, setNewOpCustomer] = useState('Đại Phú');
   const [newOpProductName, setNewOpProductName] = useState('');
-  const [newOpMatName, setNewOpMatName] = useState('Thép hợp kim SCM440');
+  const [newOpMatName, setNewOpMatName] = useState('Thép C45 / S45C (Thép chế tạo thông dụng)');
+  const [isCustomCustomer, setIsCustomCustomer] = useState(false);
+  const [isCustomMaterial, setIsCustomMaterial] = useState(false);
   const [newOpMachine, setNewOpMachine] = useState('Máy Tiện CNC 1');
   const [newOpToolCode, setNewOpToolCode] = useState('T01');
   const [newOpCuttingRec, setNewOpCuttingRec] = useState('Vc=120m/p | f=0.15mm/v | ap=1.5mm');
@@ -220,11 +258,45 @@ export function MasterAndConfigTab({
 
   const uniqueCustomers = useMemo(() => {
     const s = new Set<string>();
-    operations.forEach((o) => {
-      if (o.customer) s.add(o.customer);
+    [
+      'Đại Phú',
+      'Vico - Nội bộ / Khách lẻ',
+      'Win-Win',
+      'Chieftain trailers PO524891',
+      'Taniguchi',
+      'Hạ Long',
+      'TFG',
+      'Vautid',
+      'Fico Tây Ninh',
+      'Molycop / Bi nghiền',
+      'Thép HP Dung Quất',
+      'Hải-Vinh Quảng Ninh',
+      'UCC',
+      'Nam Đuơng',
+    ].forEach((c) => s.add(c));
+
+    (bootstrap.ordersList || []).forEach((po) => {
+      if (po.customer) s.add(po.customer.trim());
     });
-    return Array.from(s).sort((a, b) => a.localeCompare(b, 'vi'));
-  }, [operations]);
+    (bootstrap.products || []).forEach((p) => {
+      if (p.customer) s.add(p.customer.trim());
+    });
+    operations.forEach((o) => {
+      if (o.customer) s.add(o.customer.trim());
+    });
+    return Array.from(s).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [bootstrap.ordersList, bootstrap.products, operations]);
+
+  const uniqueMaterials = useMemo(() => {
+    const s = new Set<string>(STANDARD_MATERIALS_LIST);
+    (bootstrap.products || []).forEach((p) => {
+      if (p.matName) s.add(p.matName.trim());
+    });
+    operations.forEach((o) => {
+      if (o.matName) s.add(o.matName.trim());
+    });
+    return Array.from(s).filter(Boolean).sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [bootstrap.products, operations]);
 
   const filteredOperations = useMemo(() => {
     return operations.filter((op) => {
@@ -964,7 +1036,21 @@ export function MasterAndConfigTab({
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => setCreateOpOpen(true)}
+                      onClick={() => {
+                        const searchKey = opSearch.trim().toLowerCase();
+                        if (searchKey) {
+                          const matchedPo = (bootstrap.ordersList || []).find(
+                            (p) => p.productName.trim().toLowerCase() === searchKey || p.productName.toLowerCase().includes(searchKey)
+                          );
+                          if (matchedPo) {
+                            setNewOpCustomer(matchedPo.customer);
+                            setNewOpProductName(matchedPo.productName);
+                          } else if (!newOpProductName) {
+                            setNewOpProductName(opSearch.trim());
+                          }
+                        }
+                        setCreateOpOpen(true);
+                      }}
                     >
                       <Plus className="h-4 w-4" />
                       Khai Báo Nhanh Nhiều NC
@@ -2487,21 +2573,53 @@ export function MasterAndConfigTab({
         <form noValidate onSubmit={handleCreateMultiOps} className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Khách hàng
-              </label>
-              <input
-                type="text"
-                value={newOpCustomer}
-                onChange={(e) => setNewOpCustomer(e.target.value)}
-                list="gcck-customer-list"
-                className={fieldInputCls}
-              />
-              <datalist id="gcck-customer-list">
-                {uniqueCustomers.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700">
+                  Khách hàng *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomCustomer(!isCustomCustomer);
+                    if (!isCustomCustomer && !newOpCustomer) setNewOpCustomer('');
+                  }}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
+                >
+                  {isCustomCustomer ? '← Chọn từ danh sách' : '➕ Nhập khách mới'}
+                </button>
+              </div>
+              {isCustomCustomer ? (
+                <input
+                  type="text"
+                  required
+                  value={newOpCustomer}
+                  onChange={(e) => setNewOpCustomer(e.target.value)}
+                  placeholder="Nhập tên khách hàng mới..."
+                  className={`${fieldInputCls} font-semibold`}
+                  autoFocus
+                />
+              ) : (
+                <select
+                  value={newOpCustomer}
+                  onChange={(e) => {
+                    if (e.target.value === '__NEW__') {
+                      setIsCustomCustomer(true);
+                      setNewOpCustomer('');
+                    } else {
+                      setNewOpCustomer(e.target.value);
+                    }
+                  }}
+                  className={`${fieldInputCls} font-semibold`}
+                >
+                  <option value="">-- Chọn Khách Hàng ({uniqueCustomers.length} đối tác) --</option>
+                  {uniqueCustomers.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  <option value="__NEW__">➕ Nhập khách hàng mới khác...</option>
+                </select>
+              )}
             </div>
 
             <div>
@@ -2553,15 +2671,53 @@ export function MasterAndConfigTab({
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">
-                Mác Vật Liệu Phôi
-              </label>
-              <input
-                type="text"
-                value={newOpMatName}
-                onChange={(e) => setNewOpMatName(e.target.value)}
-                className={fieldInputCls}
-              />
+              <div className="mb-1 flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700">
+                  Mác Vật Liệu Phôi *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomMaterial(!isCustomMaterial);
+                    if (!isCustomMaterial && !newOpMatName) setNewOpMatName('');
+                  }}
+                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800"
+                >
+                  {isCustomMaterial ? '← Chọn từ danh sách' : '➕ Nhập mác mới'}
+                </button>
+              </div>
+              {isCustomMaterial ? (
+                <input
+                  type="text"
+                  required
+                  value={newOpMatName}
+                  onChange={(e) => setNewOpMatName(e.target.value)}
+                  placeholder="Nhập mác vật liệu (VD: Thép SCM440, Gang FCD600...)"
+                  className={`${fieldInputCls} font-semibold`}
+                  autoFocus
+                />
+              ) : (
+                <select
+                  value={newOpMatName}
+                  onChange={(e) => {
+                    if (e.target.value === '__NEW__') {
+                      setIsCustomMaterial(true);
+                      setNewOpMatName('');
+                    } else {
+                      setNewOpMatName(e.target.value);
+                    }
+                  }}
+                  className={`${fieldInputCls} font-semibold`}
+                >
+                  <option value="">-- Chọn Mác Vật Liệu Phôi ({uniqueMaterials.length} mác) --</option>
+                  {uniqueMaterials.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                  <option value="__NEW__">➕ Nhập mác vật liệu khác...</option>
+                </select>
+              )}
             </div>
 
             <div>
