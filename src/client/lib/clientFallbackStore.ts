@@ -863,10 +863,16 @@ export function syncOrdersWithHandovers(): void {
       const cleanPoId = po.poId.trim().toLowerCase();
       const cleanProdName = po.productName.trim().toLowerCase();
 
-      const related = (handovers || []).filter(
-        (h) => (h.poId && h.poId.trim().toLowerCase() === cleanPoId) ||
-               (h.productName && h.productName.trim().toLowerCase() === cleanProdName)
-      );
+      // Chỉ lọc phiếu bàn giao thuộc đúng PO này.
+      // Nếu phiếu có ghi mã poId, bắt buộc phải khớp chính xác cleanPoId, tuyệt đối không được gộp nhầm sang PO khác có cùng tên sản phẩm!
+      // Chỉ khi phiếu hoàn toàn không ghi mã poId thì mới đối chiếu tạm theo tên sản phẩm.
+      const related = (handovers || []).filter((h) => {
+        const hPo = (h.poId || '').trim().toLowerCase();
+        if (hPo) {
+          return hPo === cleanPoId;
+        }
+        return Boolean(cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName);
+      });
 
       if (related.length > 0) {
         // Cumulative finished BTP: sum all prodQtyTransferred
@@ -894,13 +900,24 @@ export function syncOrdersWithHandovers(): void {
           changed = true;
         }
       } else {
-        // PO chưa có phiếu bàn giao chuyển phôi: wipQty bắt buộc = 0 (khử triệt để số giả)
+        // PO chưa có phiếu bàn giao chuyển phôi / thành phẩm của riêng mình:
+        // Đặt lại wipQty = 0 và nếu finishedQty từng bị lây nhầm từ đơn khác do lỗi trùng tên sản phẩm trước đó thì reset về 0
         if (Number(po.wipQty || 0) > 0) {
           po.wipQty = 0;
-          if (Number(po.finishedQty || 0) === 0 && Number(po.deliveredQty || 0) === 0) {
-            po.status = '⏳ Đang chờ SX';
-          }
           changed = true;
+        }
+        const hasSlipForPo = (handovers || []).some((h) => (h.poId || '').trim().toLowerCase() === cleanPoId);
+        if (!hasSlipForPo && Number(po.finishedQty || 0) > 0 && Number(po.deliveredQty || 0) === 0) {
+          po.finishedQty = 0;
+          po.stockQty = 0;
+          po.remainQty = po.qtyPo;
+          po.status = '⏳ Đang chờ SX';
+          changed = true;
+        } else if (Number(po.wipQty || 0) === 0 && Number(po.finishedQty || 0) === 0 && Number(po.deliveredQty || 0) === 0) {
+          if (po.status !== '⏳ Đang chờ SX') {
+            po.status = '⏳ Đang chờ SX';
+            changed = true;
+          }
         }
       }
     }
@@ -943,16 +960,18 @@ export function saveFallbackHandover(row: HandoverSlipRow): void {
     const cleanProdName = (row.productName || '').trim().toLowerCase();
 
     const matchingPo = FALLBACK_ORDERS.find(
-      (o) => (cleanPoId && o.poId.toLowerCase() === cleanPoId) ||
-             (cleanProdName && o.productName.trim().toLowerCase() === cleanProdName)
+      (o) => cleanPoId ? o.poId.toLowerCase() === cleanPoId : (cleanProdName && o.productName.trim().toLowerCase() === cleanProdName)
     );
 
     // Calculate prior transfers from other slips for the same PO/product
-    const otherSlips = list.filter((h) =>
-      h.id !== row.id &&
-      ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
-       (cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName))
-    );
+    const otherSlips = list.filter((h) => {
+      if (h.id === row.id) return false;
+      const hPo = (h.poId || '').trim().toLowerCase();
+      if (cleanPoId && hPo) {
+        return hPo === cleanPoId;
+      }
+      return Boolean(cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName);
+    });
 
     const priorProdTransferred = otherSlips.reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
     const priorRawTransferred = otherSlips.reduce((sum, h) => sum + (Number(h.rawQtyTransferred) || 0), 0);
