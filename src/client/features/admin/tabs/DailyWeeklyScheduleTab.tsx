@@ -41,7 +41,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import type { DailyPlanRow, WeeklyReportData } from '@shared/types';
+import type { DailyPlanRow, WeeklyReportData, ProductMeta } from '@shared/types';
 import { apiClient } from '@client/lib/apiClient';
 import { formatDateVn, formatNumber, formatVnd } from '@client/lib/formatters';
 import { downloadDailyScheduleExcel, downloadWeeklyReportExcel } from '@client/lib/excelService';
@@ -562,6 +562,35 @@ export function DailyWeeklyScheduleTab({
     return bootstrap.machines.map((m) => m.name);
   }, [bootstrap.machines]);
 
+  const availableProducts = useMemo(() => {
+    const map = new Map<string, ProductMeta>();
+    for (const p of bootstrap.products) {
+      if (p.productName) {
+        map.set(p.productName.trim().toLowerCase(), p);
+      }
+    }
+    for (const po of bootstrap.ordersList) {
+      const k = (po.productName || '').trim().toLowerCase();
+      if (k && !map.has(k)) {
+        map.set(k, {
+          spId: po.spId || `SP_${po.poId}`,
+          customer: po.customer || 'Vico - Nội bộ / Khách lẻ',
+          productName: po.productName,
+          matName: 'Thép C45 / S45C',
+          setupMinutesStd: 15,
+          opCount: 1,
+          totalStdSeconds: 1800,
+          drawingUrl: po.drawingUrl || '',
+          techDocUrl: po.techDocUrl || '',
+          quotedPrice: 0,
+          rawMaterialCost: 0,
+          outsourceCost: 0,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [bootstrap.products, bootstrap.ordersList]);
+
   // Handle row field change
   const handleRowChange = (index: number, field: keyof DailyPlanRow, value: any) => {
     setDailyRows((prev) => {
@@ -578,10 +607,17 @@ export function DailyWeeklyScheduleTab({
       }
       // If product changes, auto fill spId and customer if empty, and auto-select op and plannedQty by standard norm
       if (field === 'productName') {
-        const prod = bootstrap.products.find((p) => p.productName === value);
+        const prod = availableProducts.find((p) => p.productName === value);
+        const matchedPo = bootstrap.ordersList.find((p) => p.productName === value);
         if (prod) {
           cur.spId = prod.spId;
           if (!cur.customer) cur.customer = prod.customer;
+        } else if (matchedPo) {
+          cur.spId = matchedPo.spId || `SP_${matchedPo.poId}`;
+          if (!cur.customer) cur.customer = matchedPo.customer;
+        }
+        if (matchedPo) {
+          cur.poId = matchedPo.poId;
         }
 
         // Auto find operations for this product
@@ -599,9 +635,9 @@ export function DailyWeeklyScheduleTab({
           // Ưu tiên lấy theo định mức công đoạn
           cur.plannedQty = calculateOpStandardPlanQty(targetOp);
         } else {
-          cur.opName = '';
-          cur.ncId = '';
-          cur.plannedQty = 0;
+          cur.opName = 'G/c hoàn thiện (Theo bản vẽ)';
+          cur.ncId = `NC_${cur.spId || 'DEF'}`;
+          cur.plannedQty = matchedPo ? Math.min(matchedPo.qtyPo, 10) : 5;
         }
       }
       // If opName changes, auto fill ncId, default machine, and priority plannedQty by standard norm
@@ -1851,14 +1887,30 @@ export function DailyWeeklyScheduleTab({
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {workerRows.map(({ row, originalIdx }, rowSubIdx) => {
-                          // Cascade: products filtered by customer
-                          const filteredProducts = bootstrap.products.filter(
-                            (p) => !row.customer || p.customer === row.customer
+                          // Cascade: products filtered by customer (from availableProducts which merges products + POs)
+                          const filteredProducts = availableProducts.filter(
+                            (p) => !row.customer || (p.customer || '').trim().toLowerCase() === row.customer.trim().toLowerCase()
                           );
                           // Cascade: operations filtered by product
-                          const filteredOps = bootstrap.operations.filter(
-                            (o) => !row.spId || o.spId === row.spId
+                          let filteredOps = bootstrap.operations.filter(
+                            (o) => (row.spId && o.spId === row.spId) || (row.productName && o.productName === row.productName)
                           );
+                          if (filteredOps.length === 0 && row.productName) {
+                            filteredOps = [
+                              {
+                                ncId: `NC_${row.spId || 'DEF'}`,
+                                spId: row.spId || 'SP_DEF',
+                                customer: row.customer || 'Vico - Nội bộ / Khách lẻ',
+                                productName: row.productName,
+                                opName: 'G/c hoàn thiện (Theo bản vẽ)',
+                                stage: 'End',
+                                stepOrder: 1,
+                                isFinalOp: 1,
+                                stdSeconds: 1800,
+                                defaultMachine: row.machineName || 'Máy Tiện CNC 1',
+                              } as any,
+                            ];
+                          }
 
                           const qrCodeImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent(
                             `GCCK|${row.customer || 'VICO'}|${row.productName}|${row.workerName}`

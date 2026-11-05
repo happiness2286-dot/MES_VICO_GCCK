@@ -119,6 +119,19 @@ export function OrdersAndTravelerTab({
     };
   }, []);
 
+  // Active PO lookup per clean product name
+  const activePoByProduct = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const po of orders) {
+      const cleanProd = po.productName.trim().toLowerCase();
+      const isClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
+      if (!isClosed && cleanProd && !map.has(cleanProd)) {
+        map.set(cleanProd, normalizePoKey(po.poId));
+      }
+    }
+    return map;
+  }, [orders]);
+
   // Tổng sản lượng gia công hoàn thiện (Xong CK / End) thực tế từ Nhật ký ca của từng PO
   const logFinishedMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -130,44 +143,64 @@ export function OrdersAndTravelerTab({
         l.isFinalOp === 1 ||
         l.stage === 'End' ||
         String(l.opName || '').toLowerCase().includes('hoàn thiện') ||
-        String(l.opName || '').toLowerCase().includes('end');
+        String(l.opName || '').toLowerCase().includes('end') ||
+        String(l.opName || '').toLowerCase().includes('g/c') ||
+        String(l.opName || '').toLowerCase().includes('tiện') ||
+        String(l.opName || '').toLowerCase().includes('phay');
       if (!isFinal) continue;
 
-      const k = normalizePoKey(l.poId);
+      let k = normalizePoKey(l.poId);
+      const cleanProd = (l.productName || '').trim().toLowerCase();
+      const activePoKey = cleanProd ? activePoByProduct.get(cleanProd) : undefined;
+      if ((!k || k === 'potheokh' || k.startsWith('sp')) && activePoKey) {
+        k = activePoKey;
+      }
       if (k) {
         map.set(k, (map.get(k) || 0) + ok);
       }
     }
     return map;
-  }, [productionLogs]);
+  }, [productionLogs, activePoByProduct]);
 
   const handoverRawMap = useMemo(() => {
     const map = new Map<string, number>();
     try {
       const list = getFallbackHandovers();
       for (const h of list) {
-        if (h.poId && Number(h.rawQtyTransferred || 0) > 0) {
-          const k = normalizePoKey(h.poId);
-          map.set(k, Math.max(map.get(k) || 0, Number(h.rawQtyTransferred)));
+        const raw = Number(h.rawQtyTransferred || 0);
+        if (raw > 0) {
+          let k = h.poId ? normalizePoKey(h.poId) : '';
+          const cleanProd = (h.productName || '').trim().toLowerCase();
+          const activePoKey = cleanProd ? activePoByProduct.get(cleanProd) : undefined;
+          if (!k && activePoKey) k = activePoKey;
+          if (k) {
+            map.set(k, Math.max(map.get(k) || 0, raw));
+          }
         }
       }
     } catch {}
     return map;
-  }, [orders, bootstrap.ordersList]);
+  }, [orders, activePoByProduct]);
 
   const handoverFinishedMap = useMemo(() => {
     const map = new Map<string, number>();
     try {
       const list = getFallbackHandovers();
       for (const h of list) {
-        if (h.poId && Number(h.prodQtyTransferred || 0) > 0) {
-          const k = normalizePoKey(h.poId);
-          map.set(k, (map.get(k) || 0) + Number(h.prodQtyTransferred));
+        const fin = Number(h.prodQtyTransferred || 0);
+        if (fin > 0) {
+          let k = h.poId ? normalizePoKey(h.poId) : '';
+          const cleanProd = (h.productName || '').trim().toLowerCase();
+          const activePoKey = cleanProd ? activePoByProduct.get(cleanProd) : undefined;
+          if (!k && activePoKey) k = activePoKey;
+          if (k) {
+            map.set(k, (map.get(k) || 0) + fin);
+          }
         }
       }
     } catch {}
     return map;
-  }, [orders, bootstrap.ordersList]);
+  }, [orders, activePoByProduct]);
 
   // Create New PO Modal State
   const [createOpen, setCreateOpen] = useState(false);
@@ -857,10 +890,11 @@ export function OrdersAndTravelerTab({
                 const manualRaw = Number((po as any).initialWipQty ?? po.wipQty ?? 0);
                 const totalRawAllocated = Math.max(hovRaw, manualRaw);
 
+                const isClosed = c.isDelivered || (po.deliveredQty || 0) >= po.qtyPo;
                 // ĐANG SX (PHÔI NHẬN/WIP) CÒN LẠI:
                 // = Số phôi nhận trừ đi số lượng đã gia công hoàn thành (khấu trừ thực tế)
-                // Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX (Phôi nhận/WIP)!
-                const displayWip = Math.max(0, totalRawAllocated - displayFin);
+                // Nếu đơn đã giao đủ -> WIP = 0. Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX (Phôi nhận/WIP)!
+                const displayWip = isClosed ? 0 : Math.max(0, totalRawAllocated - displayFin);
 
                 const displayStock = Math.max(0, displayFin - (po.deliveredQty || 0));
                 const displayRemain = Math.max(0, po.qtyPo - (po.deliveredQty || 0));

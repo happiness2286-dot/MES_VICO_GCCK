@@ -340,13 +340,36 @@ export function WorkerPortal() {
       }
 
       // 2. PO:
-      let targetPoId = planRow.spId || '';
+      let targetPoId = (planRow as any).poId || '';
       const ordList = bootstrap?.ordersList || [];
       if (!targetPoId && planRow.productName) {
-        const matchedPo = ordList.find(
-          (p) => p.productName.toLowerCase() === planRow.productName.toLowerCase()
+        const cleanPName = planRow.productName.trim().toLowerCase();
+        // Priority 1: Open/active orders with remaining quantity to produce
+        const openPos = ordList.filter(
+          (p) =>
+            p.productName.trim().toLowerCase() === cleanPName &&
+            p.status !== '✅ Đã giao đủ' &&
+            (p.remainQty ?? (p.qtyPo - (p.deliveredQty || 0))) > 0
         );
-        if (matchedPo) targetPoId = matchedPo.poId;
+        if (openPos.length > 0) {
+          targetPoId = openPos[0].poId;
+        } else {
+          // Priority 2: Any open order for this product
+          const anyActive = ordList.filter(
+            (p) =>
+              p.productName.trim().toLowerCase() === cleanPName &&
+              p.status !== '✅ Đã giao đủ'
+          );
+          if (anyActive.length > 0) {
+            targetPoId = anyActive[0].poId;
+          } else {
+            // Priority 3: Any matching order
+            const anyMatch = ordList.find(
+              (p) => p.productName.trim().toLowerCase() === cleanPName
+            );
+            if (anyMatch) targetPoId = anyMatch.poId;
+          }
+        }
       }
       if (targetPoId) {
         setSelectedPoId(targetPoId);
@@ -761,7 +784,10 @@ export function WorkerPortal() {
         const poObj = ordersList.find((p) => p.poId === nextPoId);
         if (poObj?.materialLot) setMaterialLot(poObj.materialLot);
       } else if (selectedPo && selectedPo.spId && selectedPo.spId !== op.spId) {
-        const matchingPo = ordersList.find((p) => p.spId === op.spId && p.remainQty > 0);
+        const cleanOpProd = (op.productName || '').trim().toLowerCase();
+        const matchingPo = ordersList.find((p) => (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) && p.status !== '✅ Đã giao đủ' && p.remainQty > 0)
+          || ordersList.find((p) => (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) && p.status !== '✅ Đã giao đủ')
+          || ordersList.find((p) => p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd));
         setSelectedPoId(matchingPo ? matchingPo.poId : 'PO-THEO-KH');
         if (matchingPo?.materialLot) setMaterialLot(matchingPo.materialLot);
       }
@@ -817,7 +843,10 @@ export function WorkerPortal() {
         const firstProd = customerProducts[0];
         setSelectedSpId(firstProd.spId);
 
-        const matchingPo = ordersList.find((p) => p.spId === firstProd.spId && p.remainQty > 0);
+        const cleanFProd = (firstProd.productName || '').trim().toLowerCase();
+        const matchingPo = ordersList.find((p) => (p.spId === firstProd.spId || (cleanFProd && p.productName.trim().toLowerCase() === cleanFProd)) && p.status !== '✅ Đã giao đủ' && p.remainQty > 0)
+          || ordersList.find((p) => (p.spId === firstProd.spId || (cleanFProd && p.productName.trim().toLowerCase() === cleanFProd)) && p.status !== '✅ Đã giao đủ')
+          || ordersList.find((p) => p.spId === firstProd.spId || (cleanFProd && p.productName.trim().toLowerCase() === cleanFProd));
         const targetPoId = matchingPo ? matchingPo.poId : 'PO-THEO-KH';
 
         const firstOp = operationsList
@@ -1220,7 +1249,11 @@ export function WorkerPortal() {
           const firstOp = operationsList
             .filter((o) => o.spId === spId)
             .sort((a, b) => a.stepOrder - b.stepOrder)[0];
-          const matchingPo = ordersList.find((p) => p.spId === spId && p.remainQty > 0);
+          const prodObj = productsList.find((p) => p.spId === spId);
+          const cleanP = (prodObj?.productName || '').trim().toLowerCase();
+          const matchingPo = ordersList.find((p) => (p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP)) && p.status !== '✅ Đã giao đủ' && p.remainQty > 0)
+            || ordersList.find((p) => (p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP)) && p.status !== '✅ Đã giao đủ')
+            || ordersList.find((p) => p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP));
           if (firstOp) {
             applyOperationSelection(firstOp, matchingPo ? matchingPo.poId : 'PO-THEO-KH');
           }
@@ -1494,6 +1527,10 @@ export function WorkerPortal() {
       machineName,
       machineMode,
       poId: selectedPoId || 'PO-THEO-KH',
+      spId: selectedProduct?.spId || selectedPo?.spId || selectedSpId || undefined,
+      customer: selectedProduct?.customer || selectedPo?.customer || selectedOp?.customer || undefined,
+      productName: selectedProduct?.productName || selectedPo?.productName || selectedOp?.productName || undefined,
+      opName: selectedOp?.opName || undefined,
       ncId: effectiveNcId,
       toolCode,
       edgesUsed: toolEdgesState.edgesUsed,

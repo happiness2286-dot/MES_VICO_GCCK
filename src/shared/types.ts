@@ -421,6 +421,7 @@ export interface DailyPlanRow {
   workerName: string;
   customer: string;
   spId?: string;
+  poId?: string;
   productName: string;
   ncId?: string;
   opName: string;
@@ -672,6 +673,10 @@ export interface ReportSubmitPayload {
   machineName: string;
   machineMode?: 'FIRST' | 'SECOND';
   poId?: string;
+  spId?: string;
+  customer?: string;
+  productName?: string;
+  opName?: string;
   ncId: string;
   toolCode?: string;
   edgesUsed?: number;

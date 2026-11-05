@@ -54,6 +54,7 @@ export const GAS_WEBHOOK_URL =
 const LOCAL_LOGS_KEY = 'GCCK_LOCAL_CLIENT_LOGS_V2_NOV2026';
 const LOCAL_ORDERS_KEY = 'GCCK_LOCAL_ORDERS_V1';
 const LOCAL_DELIVERIES_KEY = 'GCCK_LOCAL_DELIVERIES_V1';
+const LOCAL_PRODUCTS_KEY = 'GCCK_LOCAL_PRODUCTS_V2';
 
 // One-time automatic purge of pre-November test logs across devices
 if (typeof window !== 'undefined') {
@@ -63,20 +64,51 @@ if (typeof window !== 'undefined') {
   } catch { }
 }
 
-export const FALLBACK_PRODUCTS: ProductMeta[] = (seedData.costingList || []).map((c: any) => ({
-  spId: String(c.spId || ''),
-  customer: String(c.customer || 'Vico - Nội bộ / Khách lẻ'),
-  productName: String(c.productName || ''),
-  matName: String(c.matName || ''),
-  setupMinutesStd: Number(c.setupMinutesStd || 0),
-  opCount: Number(c.opCount || 0),
-  totalStdSeconds: Number(c.totalSec || 0),
-  drawingUrl: String(c.drawingUrl || ''),
-  techDocUrl: String(c.techDocUrl || ''),
-  quotedPrice: Number(c.quotedPrice || 0),
-  rawMaterialCost: Number(c.rawMaterialCost || 0),
-  outsourceCost: Number(c.outsourceCost || 0),
-}));
+function initFallbackProducts(): ProductMeta[] {
+  const seedProds: ProductMeta[] = (seedData.costingList || []).map((c: any) => ({
+    spId: String(c.spId || ''),
+    customer: String(c.customer || 'Vico - Nội bộ / Khách lẻ'),
+    productName: String(c.productName || ''),
+    matName: String(c.matName || ''),
+    setupMinutesStd: Number(c.setupMinutesStd || 0),
+    opCount: Number(c.opCount || 0),
+    totalStdSeconds: Number(c.totalSec || 0),
+    drawingUrl: String(c.drawingUrl || ''),
+    techDocUrl: String(c.techDocUrl || ''),
+    quotedPrice: Number(c.quotedPrice || 0),
+    rawMaterialCost: Number(c.rawMaterialCost || 0),
+    outsourceCost: Number(c.outsourceCost || 0),
+  }));
+
+  if (typeof window === 'undefined') return seedProds;
+  try {
+    const raw = localStorage.getItem(LOCAL_PRODUCTS_KEY);
+    if (!raw) return seedProds;
+    const stored = JSON.parse(raw);
+    if (!Array.isArray(stored)) return seedProds;
+    const map = new Map<string, ProductMeta>();
+    for (const p of seedProds) {
+      if (p.productName) map.set(p.productName.trim().toLowerCase(), p);
+    }
+    for (const p of stored) {
+      if (p && p.productName) {
+        map.set(p.productName.trim().toLowerCase(), p);
+      }
+    }
+    return Array.from(map.values());
+  } catch {
+    return seedProds;
+  }
+}
+
+export const FALLBACK_PRODUCTS: ProductMeta[] = initFallbackProducts();
+
+export function saveFallbackProductsToStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(FALLBACK_PRODUCTS));
+  } catch { }
+}
 
 export const FALLBACK_TOOLS: CuttingTool[] = (seedData.toolsList || []).map((t: any) => ({
   code: String(t.code),
@@ -160,6 +192,83 @@ export function saveFallbackOperationsToStorage(): void {
       // ignore
     }
   }
+}
+
+export function ensureProductExists(customer: string, productName: string, spId?: string | null): ProductMeta {
+  const cleanName = (productName || '').trim();
+  const cleanCust = (customer || 'Vico - Nội bộ / Khách lẻ').trim();
+  const key = cleanName.toLowerCase();
+
+  let found = FALLBACK_PRODUCTS.find((p) => p.productName.trim().toLowerCase() === key);
+  if (!found && cleanName) {
+    const newSpId = (spId && String(spId).trim()) || `SP${String(FALLBACK_PRODUCTS.length + 380).padStart(3, '0')}`;
+    found = {
+      spId: newSpId,
+      customer: cleanCust,
+      productName: cleanName,
+      matName: 'Thép C45 / S45C',
+      setupMinutesStd: 15,
+      opCount: 1,
+      totalStdSeconds: 1800,
+      drawingUrl: '',
+      techDocUrl: '',
+      quotedPrice: 0,
+      rawMaterialCost: 0,
+      outsourceCost: 0,
+    };
+    FALLBACK_PRODUCTS.push(found);
+    saveFallbackProductsToStorage();
+  }
+
+  if (found) {
+    // Also ensure at least one operation exists for this product in FALLBACK_OPERATIONS
+    const hasOp = FALLBACK_OPERATIONS.some(
+      (o) => (found!.spId && o.spId === found!.spId) || o.productName.trim().toLowerCase() === key
+    );
+    if (!hasOp) {
+      const newNcId = `NC_${found.spId}`;
+      FALLBACK_OPERATIONS.push({
+        ncId: newNcId,
+        spId: found.spId,
+        customer: cleanCust,
+        productName: cleanName,
+        opName: 'G/c hoàn thiện (Theo bản vẽ)',
+        stdSeconds: 1800,
+        stage: 'End',
+        stepOrder: 1,
+        isFinalOp: 1,
+        defaultMachine: 'Máy Tiện CNC 1',
+        matName: 'Thép C45 / S45C',
+        cuttingRec: 'Tiện hoàn thiện theo dung sai bản vẽ',
+        toolCode: 'T01',
+        toolName: 'Mảnh tiện CNMG 120408',
+        costPerEdge: 15000,
+        stdEdgesPerPcs: 0.1,
+        stdLaborCost: 40000,
+        stdMachCost: 65000,
+        stdToolCost: 2000,
+        isCriticalCheck: 0,
+      });
+      saveFallbackOperationsToStorage();
+    }
+  }
+
+  return (
+    found || {
+      spId: spId || 'SP_DEFAULT',
+      customer: cleanCust,
+      productName: cleanName || 'Sản phẩm cơ khí',
+      matName: 'Thép C45 / S45C',
+      setupMinutesStd: 15,
+      opCount: 1,
+      totalStdSeconds: 1800,
+      drawingUrl: '',
+      techDocUrl: '',
+      quotedPrice: 0,
+      rawMaterialCost: 0,
+      outsourceCost: 0,
+    }
+  );
 }
 
 export function updateFallbackOperation(ncId: string, patch: Partial<OperationMeta>): OperationMeta {
@@ -860,11 +969,51 @@ export function syncOrdersWithHandovers(): void {
     const allLogs = getAllFallbackLogs();
     let changed = false;
 
-    // Group cumulative handovers and production logs by PO
+    // Identify active (open) orders per product name to route unconsumed phôi and logs accurately
+    const activePoByProduct = new Map<string, PurchaseOrderInfo>();
+    for (const po of FALLBACK_ORDERS) {
+      const cleanProd = po.productName.trim().toLowerCase();
+      const isClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
+      if (!isClosed && cleanProd && !activePoByProduct.has(cleanProd)) {
+        activePoByProduct.set(cleanProd, po);
+      }
+    }
+
+    // Pass 1: For any closed order that has leftover/unconsumed phôi (e.g. DH-343 with 122 phôi),
+    // transfer the unconsumed phôi to the open active PO of that product (e.g. P02611-193-01)!
+    for (const po of FALLBACK_ORDERS) {
+      const cleanProdName = po.productName.trim().toLowerCase();
+      const isClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
+      if (isClosed) {
+        const rawAlloc = Math.max(Number((po as any).initialWipQty || 0), Number(po.wipQty || 0));
+        if (rawAlloc > 0) {
+          const activePo = activePoByProduct.get(cleanProdName);
+          if (activePo && activePo.poId !== po.poId) {
+            const transferQty = rawAlloc;
+            const currentActiveRaw = Math.max(Number((activePo as any).initialWipQty || 0), Number(activePo.wipQty || 0));
+            if (transferQty > currentActiveRaw) {
+              (activePo as any).initialWipQty = transferQty;
+              activePo.wipQty = transferQty;
+              changed = true;
+            }
+          }
+          (po as any).initialWipQty = 0;
+          if (po.wipQty !== 0) {
+            po.wipQty = 0;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    // Pass 2: Synchronize logs and handovers for each PO
     for (const po of FALLBACK_ORDERS) {
       const cleanPoId = po.poId.trim().toLowerCase();
       const normPo = normalizePoKey(po.poId);
       const cleanProdName = po.productName.trim().toLowerCase();
+      const isThisPoClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
+      const activePo = activePoByProduct.get(cleanProdName);
+      const isActivePo = activePo?.poId === po.poId;
 
       // 1. Phôi nhận và BTP từ Sổ bàn giao thuộc đúng PO này
       const relatedHandovers = (handovers || []).filter((h) => {
@@ -872,25 +1021,37 @@ export function syncOrdersWithHandovers(): void {
         if (hPo) {
           return normalizePoKey(hPo) === normPo;
         }
-        return Boolean(cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName);
+        return isActivePo && Boolean(cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName);
       });
 
-      const hovRaw = relatedHandovers.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
+      let hovRaw = relatedHandovers.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
       const hovFin = relatedHandovers.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
 
       // 2. Sản lượng hoàn thiện thực tế từ Nhật ký ca (thợ nộp báo cáo ca)
       const matchingLogs = allLogs.filter((l) => {
         if (l.isVoided) return false;
-        if (!l.poId) return false;
-        return normalizePoKey(l.poId) === normPo;
+        const lPo = (l.poId || '').trim();
+        const lNorm = normalizePoKey(lPo);
+        if (lNorm && lNorm === normPo) return true;
+        // If this is the active open PO for this product, also claim logs under generic PO or matching product name
+        if (isActivePo) {
+          const lProd = (l.productName || '').trim().toLowerCase();
+          if (lProd && lProd === cleanProdName) return true;
+          if ((lPo === 'PO-THEO-KH' || lPo === po.spId || (po.spId && l.spId === po.spId)) && (!lProd || lProd === cleanProdName)) return true;
+        }
+        return false;
       });
 
       const logFin = matchingLogs.reduce((s, l) => {
         const isFinal =
           l.isFinalOp === 1 ||
           l.stage === 'End' ||
+          ((po as any).opCount !== undefined && (po as any).opCount <= 1) ||
           String(l.opName || '').toLowerCase().includes('hoàn thiện') ||
-          String(l.opName || '').toLowerCase().includes('end');
+          String(l.opName || '').toLowerCase().includes('end') ||
+          String(l.opName || '').toLowerCase().includes('g/c') ||
+          String(l.opName || '').toLowerCase().includes('tiện') ||
+          String(l.opName || '').toLowerCase().includes('phay');
         return isFinal ? s + (Number(l.okQty) || 0) : s;
       }, 0);
 
@@ -898,15 +1059,18 @@ export function syncOrdersWithHandovers(): void {
       const currentManualFin = Number((po as any).initialFinishedQty ?? po.finishedQty ?? 0);
       const totalFin = Math.max(currentManualFin, hovFin, logFin, ((po as any).initialFinishedQty || 0) + logFin);
 
-      // 4. Tổng phôi đã cấp / nhận (Phôi nhận):
-      // Quản đốc có thể nhập tay số phôi ban đầu (initialWipQty / wipQty) hoặc từ Sổ bàn giao (hovRaw)
-      const manualRaw = Number((po as any).initialWipQty ?? po.wipQty ?? 0);
-      const totalRawAllocated = Math.max(hovRaw, manualRaw);
+      // 4. Phôi nhận ban đầu
+      let manualRaw = Number((po as any).initialWipQty ?? po.wipQty ?? 0);
+      if (isThisPoClosed) {
+        manualRaw = 0;
+        hovRaw = 0;
+      }
+      const totalRawAllocated = isThisPoClosed ? 0 : Math.max(hovRaw, manualRaw);
 
       // 5. Số phôi ĐANG SX (Phôi nhận/WIP) CÒN LẠI:
       // = Số phôi nhận trừ đi số lượng đã gia công hoàn thành (khấu trừ thực tế)
-      // Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX (Phôi nhận/WIP)!
-      const remainingWip = Math.max(0, totalRawAllocated - totalFin);
+      // Nếu đơn đã giao đủ -> WIP = 0. Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX!
+      const remainingWip = isThisPoClosed ? 0 : Math.max(0, totalRawAllocated - totalFin);
 
       if (po.wipQty !== remainingWip) {
         po.wipQty = remainingWip;
@@ -920,7 +1084,7 @@ export function syncOrdersWithHandovers(): void {
         changed = true;
       }
 
-      if (logFin > 0 && po.faiStatus !== 'FAI_PASSED') {
+      if ((logFin > 0 || totalFin > 0) && po.faiStatus !== 'FAI_PASSED') {
         po.faiStatus = 'FAI_PASSED';
         changed = true;
       }
@@ -1064,6 +1228,12 @@ export function deleteFallbackHandover(id: string): void {
 }
 
 export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): BootstrapPayload {
+  // Ensure every order has a registered product and default operation in bootstrap
+  for (const po of FALLBACK_ORDERS) {
+    if (po.productName) {
+      ensureProductExists(po.customer, po.productName, po.spId);
+    }
+  }
   syncOrdersWithHandovers();
   const user = currentUser || getFallbackUser('NV00214');
   const combinedLogs = getAllFallbackLogs();
@@ -1167,6 +1337,11 @@ export async function submitDirectToGoogleAppsScript(
   const unitWage = Math.round(Number(op?.stdLaborCost) || 35000);
   const turnIncome = (payload.okQty || 0) * unitWage;
 
+  const effectiveCust = payload.customer || op?.customer || 'Vico - Nội bộ / Khách lẻ';
+  const effectiveProd = payload.productName || op?.productName || 'Sản phẩm GCCK';
+  const effectiveOpName = payload.opName || op?.opName || payload.ncId || 'Gia công';
+  const effectivePoId = payload.poId || 'PO-THEO-KH';
+
   const fullPayload: Record<string, any> = {
     workDate: payload.workDate || todayStr,
     shiftType: payload.shiftType || 'Ca 1 (Sáng 06h-14h)',
@@ -1182,11 +1357,11 @@ export async function submitDirectToGoogleAppsScript(
     machineMode: payload.machineMode || 'Chạy 1 máy',
     machineName: machName,
     machineCostPerHour: 250000,
-    customer: op?.customer || 'Vico - Nội bộ / Khách lẻ',
-    productName: op?.productName || 'Sản phẩm GCCK',
-    poId: payload.poId || 'PO485-01',
+    customer: effectiveCust,
+    productName: effectiveProd,
+    poId: effectivePoId,
     ncId: op?.ncId || payload.ncId,
-    opName: op?.opName || payload.ncId || 'Gia công',
+    opName: effectiveOpName,
     stage: op?.stage || 'End',
     stdSeconds: op?.stdSeconds || 1800,
     cuttingRec: op?.cuttingRec || '',
@@ -1217,10 +1392,10 @@ export async function submitDirectToGoogleAppsScript(
     date: payload.workDate || todayStr,
     worker: worker.name,
     worker_id: payload.workerId,
-    customer: op?.customer || 'Vico - Nội bộ / Khách lẻ',
-    product: op?.productName || 'Sản phẩm GCCK',
-    po: payload.poId || 'PO485-01',
-    op: op?.opName || payload.ncId || 'Gia công',
+    customer: effectiveCust,
+    product: effectiveProd,
+    po: effectivePoId,
+    op: effectiveOpName,
     machine: machName,
     qty_dat: Number(payload.okQty || 0),
     qty_xuly: Number(payload.reworkQty || 0),
@@ -1266,12 +1441,12 @@ export async function submitDirectToGoogleAppsScript(
     machineId: (payload as any).machineId || 'M01',
     machineName: machName,
     machineMode: payload.machineMode || 'FIRST',
-    poId: payload.poId || 'PO-THEO-KH',
+    poId: effectivePoId,
     spId: (payload as any).spId || op?.spId || null,
-    customer: (payload as any).customer || op?.customer || 'Vico - Nội bộ / Khách lẻ',
-    productName: (payload as any).productName || op?.productName || 'Sản phẩm GCCK',
+    customer: effectiveCust,
+    productName: effectiveProd,
     ncId: payload.ncId || op?.ncId || 'NC001',
-    opName: (payload as any).opName || op?.opName || payload.ncId || 'Gia công',
+    opName: effectiveOpName,
     stage: op?.stage || 'End',
     stepOrder: op?.stepOrder || 1,
     isFinalOp: op?.isFinalOp || 1,
@@ -1757,11 +1932,17 @@ export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>
       }
     }
 
+    const prodMeta = ensureProductExists(
+      String(raw.customer || 'Nội bộ'),
+      String(raw.productName || 'Chi tiết cơ khí'),
+      raw.spId
+    );
+
     const newPo: PurchaseOrderInfo = {
       poId,
-      spId: raw.spId ? String(raw.spId) : null,
-      customer: String(raw.customer || 'Nội bộ'),
-      productName: String(raw.productName || 'Chi tiết cơ khí'),
+      spId: raw.spId ? String(raw.spId) : prodMeta.spId,
+      customer: String(raw.customer || prodMeta.customer || 'Nội bộ'),
+      productName: String(raw.productName || prodMeta.productName || 'Chi tiết cơ khí'),
       qtyPo,
       dueDate: String(raw.dueDate || '2026-11-30'),
       wipQty,
