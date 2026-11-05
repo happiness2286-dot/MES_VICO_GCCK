@@ -26,6 +26,7 @@ import { formatDateVn, formatNumber } from '../../../lib/formatters';
 import { downloadDailyQualityReportExcel } from '../../../lib/excelService';
 import { Badge, Button, Card, Modal, useToast } from '../../../components/ui/IndustrialPrimitives';
 import { VicoLogo } from '../../../components/VicoLogo';
+import { getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
 
 export interface DailyQualityReportSectionProps {
   bootstrap: BootstrapPayload;
@@ -43,7 +44,18 @@ export function DailyQualityReportSection({ bootstrap }: DailyQualityReportSecti
     return d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
   };
 
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayStr);
+  // Mặc định: Nếu mở vào buổi sáng trước 09h00 (khi ca 3 đêm vừa kết thúc), báo cáo chuẩn là NGÀY HÔM TRƯỚC
+  const getDefaultReportDate = () => {
+    const now = new Date();
+    const vnHourStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: 'numeric',
+      hour12: false,
+    }).format(now);
+    return Number(vnHourStr) < 9 ? getYesterdayStr() : getTodayStr();
+  };
+
+  const [selectedDate, setSelectedDate] = useState<string>(getDefaultReportDate);
   const [reportCode] = useState('BM.KTCN.04.03');
   const [issueNo] = useState('01');
   const [effectiveDate] = useState('28/03/2026');
@@ -71,6 +83,13 @@ export function DailyQualityReportSection({ bootstrap }: DailyQualityReportSecti
   const loadReportForDate = useCallback(
     (targetDate: string) => {
       try {
+        // Xóa cache cũ nếu ngày 05/11 từng lưu nhầm sản lượng Ca 3 đêm 04/11
+        if (targetDate === '2026-11-05') {
+          const old05 = localStorage.getItem(`${STORAGE_PREFIX}2026-11-05`);
+          if (old05 && old05.includes('ISHIZUE 355Dw900')) {
+            localStorage.removeItem(`${STORAGE_PREFIX}2026-11-05`);
+          }
+        }
         const raw = localStorage.getItem(`${STORAGE_PREFIX}${targetDate}`);
         if (raw) {
           const parsed = JSON.parse(raw);
@@ -135,7 +154,11 @@ export function DailyQualityReportSection({ bootstrap }: DailyQualityReportSecti
         }
       }
 
-      const dayLogs = allLogs.filter((l) => l.workDate === targetDate && !l.isVoided);
+      const dayLogs = allLogs.filter((l) => {
+        if (l.isVoided) return false;
+        const effDate = getLogEffectiveWorkDate(l);
+        return effDate === targetDate;
+      });
 
       if (dayLogs.length === 0) {
         if (!silent) {

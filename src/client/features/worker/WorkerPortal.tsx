@@ -53,6 +53,7 @@ import {
   isObjectiveStopReason,
   isVietnamSunday,
 } from '@shared/payrollEngine';
+import { getShiftProductionWorkDate } from '@shared/shiftDateHelper';
 import { matchesSearch } from '@shared/vnSearch';
 import { getWinWinPreferredMachines } from '@shared/winWinMachineRouting';
 import { useAuth } from '../../context/AuthContext';
@@ -211,7 +212,7 @@ export function WorkerPortal() {
   const [openPhotoSection, setOpenPhotoSection] = useState<boolean>(false);
 
   // Shift, Date, OT & Lights-Out
-  const [workDate, setWorkDate] = useState<string>(() => getVietnamDateString());
+  const [workDate, setWorkDate] = useState<string>(() => getShiftProductionWorkDate(new Date()));
   const [shiftType, setShiftType] = useState<string>('Ca 1 (Sáng 06h-14h)');
   const [startTime, setStartTime] = useState<string>('06:00');
   const [endTime, setEndTime] = useState<string>('14:00');
@@ -1436,9 +1437,15 @@ export function WorkerPortal() {
         ? 'NC_STOP'
         : selectedNcId || 'NC_STOP';
 
+    // Chuẩn hóa ngày sản xuất: nếu làm ca 3 rạng sáng hôm sau thì tự động quy về ngày ca 3 bắt đầu
+    const effectiveWorkDate =
+      (shiftType.includes('Ca 3') || shiftType.includes('Đêm')) && new Date().getHours() < 7
+        ? getShiftProductionWorkDate(new Date(), shiftType)
+        : workDate;
+
     const payload: ReportSubmitPayload = {
       recordUid: pendingRecordUid,
-      workDate,
+      workDate: effectiveWorkDate,
       shiftType,
       startTime,
       endTime,
