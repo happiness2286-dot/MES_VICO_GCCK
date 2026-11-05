@@ -42,7 +42,7 @@ import { getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
 import { normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
-import { isSupabaseConnected, pushLogToSupabase } from './supabaseClient';
+import { isSupabaseConnected, pushLogToSupabase, pushDailyPlanToSupabase } from './supabaseClient';
 import { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from './baselinePlan';
 
 export { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from './baselinePlan';
@@ -1923,12 +1923,17 @@ export function copyFallbackDailyPlan(
   const sourceRows = getFallbackDailyPlan(sourceDate);
   const newRows = sourceRows.map((r, idx) => ({
     ...r,
+    id: undefined,
     workDate: targetDate,
     plannedQty: resetQty ? 0 : r.plannedQty,
     actualQty: 0,
     stt: idx + 1,
+    status: 'PLANNED',
   }));
   saveFallbackDailyPlan(targetDate, newRows);
+  if (isSupabaseConnected()) {
+    void pushDailyPlanToSupabase(targetDate, newRows);
+  }
   return { success: true, targetDate, rowCount: newRows.length };
 }
 

@@ -388,10 +388,8 @@ export function getBaselineDailyPlan(workDate: string): DailyPlanRow[] {
 }
 
 /**
- * Intelligently merges any partial daily plan (e.g. from cloud or local storage)
- * with the full factory roster so that NO workers are ever lost or erased.
- * If existingRows is missing workers (fewer than 11 distinct workers),
- * the missing workers are automatically restored from the baseline roster.
+ * Intelligently returns existing plan if available, or defaults to baseline template
+ * if completely empty. Never injects dummy baseline items into an existing configured plan.
  */
 export function mergePlanWithBaseline(
   existingRows: DailyPlanRow[],
@@ -400,48 +398,12 @@ export function mergePlanWithBaseline(
   const baseline = getBaselineDailyPlan(workDate);
   if (!existingRows || existingRows.length === 0) return baseline;
 
-  const existingWorkers = new Set(
-    existingRows
-      .map((r) => r.workerName?.trim())
-      .filter((n): n is string => Boolean(n))
-  );
-
-  // If existingRows already contains all 12 factory workers, keep it intact
-  if (existingWorkers.size >= 11) {
-    return existingRows;
-  }
-
-  // Otherwise, some workers were missing!
-  // Retain existing rows for workers present in existingRows,
-  // and pull in baseline rows for workers that were missing.
-  const merged: DailyPlanRow[] = [];
-  const handledWorkers = new Set<string>();
-
-  for (const bRow of baseline) {
-    const wName = bRow.workerName?.trim();
-    if (!wName) continue;
-    if (existingWorkers.has(wName)) {
-      if (!handledWorkers.has(wName)) {
-        const wRows = existingRows.filter((r) => r.workerName?.trim() === wName);
-        merged.push(...wRows);
-        handledWorkers.add(wName);
-      }
-    } else {
-      merged.push({ ...bRow, workDate });
-    }
-  }
-
-  // Also include any extra workers in existingRows that weren't in baseline
-  for (const eRow of existingRows) {
-    const wName = eRow.workerName?.trim();
-    if (wName && !handledWorkers.has(wName)) {
-      merged.push(eRow);
-      handledWorkers.add(wName);
-    }
-  }
-
-  // Reassign STT cleanly 1..N
-  return merged.map((r, idx) => ({ ...r, stt: idx + 1, workDate }));
+  // Real plan already exists: preserve the user's plan 100% without injecting dummy baseline rows
+  return existingRows.map((r, idx) => ({
+    ...r,
+    stt: r.stt || idx + 1,
+    workDate: r.workDate || workDate,
+  }));
 }
 
 /**

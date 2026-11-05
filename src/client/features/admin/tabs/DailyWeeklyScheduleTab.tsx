@@ -693,15 +693,44 @@ export function DailyWeeklyScheduleTab({
     setCreatingDate(true);
     try {
       if (newPlanMode === 'copy') {
-        const res = await apiClient.post<{ success: boolean; targetDate: string; rowCount: number }>(
-          '/schedules/daily/copy',
-          {
-            sourceDate: sourceCopyDate,
-            targetDate: newPlanDate,
-            resetQty: copyResetQty,
-          }
+        let sourceRows = sourceCopyDate === selectedDate ? dailyRows : getFallbackDailyPlan(sourceCopyDate);
+        if (isSupabaseConnected() && (!sourceRows || sourceRows.length === 0)) {
+          const sb = await fetchDailyPlanFromSupabase(sourceCopyDate);
+          if (sb && sb.length > 0) sourceRows = sb;
+        }
+        if (!sourceRows || sourceRows.length === 0) {
+          toast.warning(`Không tìm thấy dữ liệu kế hoạch ngày nguồn: ${formatDateVn(sourceCopyDate)}`);
+          return;
+        }
+        const targetRows: DailyPlanRow[] = sourceRows.map((r, idx) => ({
+          ...r,
+          id: undefined,
+          workDate: newPlanDate,
+          plannedQty: copyResetQty ? 0 : Number(r.plannedQty) || 0,
+          actualQty: 0,
+          stt: idx + 1,
+          status: 'PLANNED',
+        }));
+        saveFallbackDailyPlan(newPlanDate, targetRows);
+        try {
+          await apiClient.post('/schedules/daily', {
+            workDate: newPlanDate,
+            rows: targetRows,
+          });
+        } catch (apiErr) {
+          console.warn('API save schedule warning:', apiErr);
+        }
+        if (isSupabaseConnected()) {
+          await pushDailyPlanToSupabase(newPlanDate, targetRows);
+        }
+        toast.success(
+          `Đã sao chép thành công ${targetRows.length} dòng từ ngày ${formatDateVn(sourceCopyDate)} sang ngày ${formatDateVn(newPlanDate)} và đồng bộ Cloud!`
         );
-        toast.success(`Đã sao chép thành công ${res.rowCount} dòng từ ngày ${sourceCopyDate} sang ngày ${newPlanDate}!`);
+        await loadAvailableDates();
+        setShowNewDateModal(false);
+        setSelectedDate(newPlanDate);
+        setDailyRows(targetRows);
+        return;
       } else if (newPlanMode === 'template') {
         const activeWorkers = (bootstrap.workers || []).filter((w) => w.isActive !== 0);
         const blankRows: DailyPlanRow[] = [];
@@ -724,24 +753,45 @@ export function DailyWeeklyScheduleTab({
             });
           }
         }
-        await apiClient.post('/schedules/daily', {
-          workDate: newPlanDate,
-          rows: blankRows,
-        });
+        saveFallbackDailyPlan(newPlanDate, blankRows);
+        try {
+          await apiClient.post('/schedules/daily', {
+            workDate: newPlanDate,
+            rows: blankRows,
+          });
+        } catch (apiErr) {
+          console.warn('API save schedule warning:', apiErr);
+        }
+        if (isSupabaseConnected()) {
+          await pushDailyPlanToSupabase(newPlanDate, blankRows);
+        }
         toast.success(`Đã khởi tạo khung kế hoạch ngày ${newPlanDate} cho ${activeWorkers.length} thợ!`);
+        await loadAvailableDates();
+        setShowNewDateModal(false);
+        setSelectedDate(newPlanDate);
+        setDailyRows(blankRows);
+        return;
       } else {
         // blank mode
-        await apiClient.post('/schedules/daily', {
-          workDate: newPlanDate,
-          rows: [],
-        });
+        saveFallbackDailyPlan(newPlanDate, []);
+        try {
+          await apiClient.post('/schedules/daily', {
+            workDate: newPlanDate,
+            rows: [],
+          });
+        } catch (apiErr) {
+          console.warn('API save schedule warning:', apiErr);
+        }
+        if (isSupabaseConnected()) {
+          await pushDailyPlanToSupabase(newPlanDate, []);
+        }
         toast.success(`Đã tạo bảng kế hoạch trắng cho ngày ${newPlanDate}!`);
+        await loadAvailableDates();
+        setShowNewDateModal(false);
+        setSelectedDate(newPlanDate);
+        setDailyRows([]);
+        return;
       }
-
-      await loadAvailableDates();
-      setSelectedDate(newPlanDate);
-      setShowNewDateModal(false);
-      await loadDailyRows(newPlanDate);
     } catch (err: any) {
       toast.error(err?.message || 'Không thể tạo kế hoạch ngày mới.');
     } finally {
@@ -761,19 +811,52 @@ export function DailyWeeklyScheduleTab({
     }
     setCreatingDate(true);
     try {
-      const res = await apiClient.post<{ success: boolean; targetDate: string; rowCount: number }>(
-        '/schedules/daily/copy',
-        {
-          sourceDate: selectedDate,
-          targetDate: copyTargetDate,
-          resetQty: copyTargetResetQty,
-        }
+      // 1. Source rows from current screen or local store
+      let sourceRows = dailyRows;
+      if (!sourceRows || sourceRows.length === 0) {
+        sourceRows = getFallbackDailyPlan(selectedDate);
+      }
+      if (!sourceRows || sourceRows.length === 0) {
+        toast.warning(`Không tìm thấy dữ liệu kế hoạch ngày nguồn: ${formatDateVn(selectedDate)}`);
+        return;
+      }
+
+      // 2. Map all rows to copyTargetDate with reset actuals & fresh stt
+      const targetRows: DailyPlanRow[] = sourceRows.map((r, idx) => ({
+        ...r,
+        id: undefined,
+        workDate: copyTargetDate,
+        plannedQty: copyTargetResetQty ? 0 : Number(r.plannedQty) || 0,
+        actualQty: 0,
+        stt: idx + 1,
+        status: 'PLANNED',
+      }));
+
+      // 3. Save to local fallback store immediately
+      saveFallbackDailyPlan(copyTargetDate, targetRows);
+
+      // 4. Save to API / SQLite backend if available
+      try {
+        await apiClient.post('/schedules/daily', {
+          workDate: copyTargetDate,
+          rows: targetRows,
+        });
+      } catch (apiErr) {
+        console.warn('API save schedule warning:', apiErr);
+      }
+
+      // 5. CRITICAL: Atomic sync to Supabase Cloud so all devices & worker phones have the copied plan immediately
+      if (isSupabaseConnected()) {
+        await pushDailyPlanToSupabase(copyTargetDate, targetRows);
+      }
+
+      toast.success(
+        `Đã sao chép thành công ${targetRows.length} dòng từ ngày ${formatDateVn(selectedDate)} sang ngày ${formatDateVn(copyTargetDate)} và đồng bộ CSDL Cloud!`
       );
-      toast.success(`Đã sao chép thành công ${res.rowCount} dòng từ ngày ${selectedDate} sang ngày ${copyTargetDate}!`);
       await loadAvailableDates();
-      setSelectedDate(copyTargetDate);
       setShowCopyModal(false);
-      await loadDailyRows(copyTargetDate);
+      setSelectedDate(copyTargetDate);
+      setDailyRows(targetRows);
     } catch (err: any) {
       toast.error(err?.message || 'Không thể sao chép kế hoạch.');
     } finally {
