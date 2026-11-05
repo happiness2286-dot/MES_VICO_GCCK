@@ -9,6 +9,7 @@ import type {
   WeeklyReportData,
 } from '@shared/types';
 import { normalizeVn } from '@shared/vnSearch';
+import { VICO_LOGO_BASE64 } from '../components/VicoLogo';
 
 async function createExcelWorkbook(): Promise<ExcelJS.Workbook> {
   const mod = await import('exceljs');
@@ -1007,6 +1008,16 @@ export async function buildDailyQualityReportWorkbook(
     views: [{ state: 'frozen', ySplit: 6 }],
   });
 
+  // Gắn Logo VICO tại góc trên bên trái
+  const logoId = wb.addImage({
+    base64: VICO_LOGO_BASE64.includes(',') ? VICO_LOGO_BASE64.split(',')[1] : VICO_LOGO_BASE64,
+    extension: 'png',
+  });
+  ws.addImage(logoId, {
+    tl: { col: 0.1, row: 0.1 },
+    ext: { width: 120, height: 40 },
+  });
+
   const [y, m, d] = report.reportDate.split('-');
   const displayDate = d && m && y ? `${d}/${m}/${y}` : report.reportDate;
 
@@ -1242,11 +1253,138 @@ export async function downloadDailyQualityReportExcel(
 }
 
 // ==================== WEEKLY PRODUCTION REPORT & CAPACITY BALANCING (FORM VICO GCCK.BC.02) ====================
+// ==================== WEEKLY PRODUCTION REPORT & CAPACITY BALANCING (FORM VICO GCCK.BC.02) ====================
+// Theme Màu Nõn Chuối (Vibrant Lime Green) chuẩn mực Lean MES
+const LIME_THEME = {
+  headerBg: 'FF84CC16',    // Nõn chuối tươi sáng (Lime 500)
+  headerFg: 'FF142900',    // Chữ xanh đậm / đen tương phản cao, siêu sắc nét
+  bannerBg: 'FFECFCCB',    // Nõn chuối kem nhạt (Lime 100) cho tiêu đề khối
+  bannerFg: 'FF166534',    // Chữ xanh rừng đậm
+  totalBg: 'FFD9F99D',     // Nõn chuối trung tính (Lime 200) cho dòng Tổng cộng
+  zebraBg: 'FFF7FEE7',     // Nõn chuối siêu nhạt (Lime 50) cho dòng chẵn
+  borderCell: 'FFCBD5E1',  // Viền mảnh Slate nhạt
+  borderLime: 'FF65A30D',  // Viền xanh nõn chuối đậm
+};
+
+const THIN_GRID_BORDER = {
+  top: { style: 'thin' as const, color: { argb: LIME_THEME.borderCell } },
+  left: { style: 'thin' as const, color: { argb: LIME_THEME.borderCell } },
+  bottom: { style: 'thin' as const, color: { argb: LIME_THEME.borderCell } },
+  right: { style: 'thin' as const, color: { argb: LIME_THEME.borderCell } },
+};
+
+const LIME_HEADER_BORDER_STYLE = {
+  top: { style: 'thin' as const, color: { argb: LIME_THEME.borderLime } },
+  left: { style: 'thin' as const, color: { argb: LIME_THEME.borderLime } },
+  bottom: { style: 'medium' as const, color: { argb: 'FF365314' } },
+  right: { style: 'thin' as const, color: { argb: LIME_THEME.borderLime } },
+};
+
+function addLimeHeader(ws: ExcelJS.Worksheet, headers: string[]): ExcelJS.Row {
+  const row = ws.addRow(headers);
+  row.height = 26;
+  row.eachCell({ includeEmpty: true }, (cell) => {
+    cell.font = { bold: true, color: { argb: LIME_THEME.headerFg }, size: 10 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: LIME_THEME.headerBg },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = LIME_HEADER_BORDER_STYLE;
+  });
+  return row;
+}
+
+function addLimeSection(ws: ExcelJS.Worksheet, title: string): ExcelJS.Row {
+  const rowIdx = ws.rowCount + 1;
+  const row = ws.addRow([title, '', '', '', '', '', '']);
+  ws.mergeCells(`A${rowIdx}:G${rowIdx}`);
+  row.height = 24;
+  for (let c = 1; c <= 7; c++) {
+    const cell = row.getCell(c);
+    cell.font = { bold: true, color: { argb: LIME_THEME.bannerFg }, size: 11 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: LIME_THEME.bannerBg },
+    };
+    cell.border = {
+      top: { style: 'thin', color: { argb: LIME_THEME.borderLime } },
+      bottom: { style: 'thin', color: { argb: LIME_THEME.borderLime } },
+      left: { style: c === 1 ? 'medium' : 'thin', color: { argb: LIME_THEME.borderLime } },
+      right: { style: c === 7 ? 'thin' : 'thin', color: { argb: LIME_THEME.borderLime } },
+    };
+  }
+  row.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  return row;
+}
+
+function addLimeGridRow(
+  ws: ExcelJS.Worksheet,
+  values: Array<string | number>,
+  isEven = false,
+  alignments?: Array<'center' | 'left' | 'right'>
+): ExcelJS.Row {
+  const row = ws.addRow(values);
+  row.height = 22;
+  row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: isEven ? LIME_THEME.zebraBg : 'FFFFFFFF' },
+    };
+    const align = alignments?.[colNumber - 1] || (typeof cell.value === 'number' ? 'right' : 'left');
+    cell.alignment = { vertical: 'middle', horizontal: align };
+    cell.border = THIN_GRID_BORDER;
+    if (typeof cell.value === 'number') {
+      cell.numFmt = '#,##0';
+    }
+  });
+  return row;
+}
+
+function addLimeSummaryTotal(
+  ws: ExcelJS.Worksheet,
+  values: Array<string | number>,
+  alignments?: Array<'center' | 'left' | 'right'>
+): ExcelJS.Row {
+  const row = ws.addRow(values);
+  row.height = 24;
+  row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = { bold: true, size: 10, color: { argb: LIME_THEME.headerFg } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: LIME_THEME.totalBg },
+    };
+    const align = alignments?.[colNumber - 1] || (typeof cell.value === 'number' ? 'right' : 'center');
+    cell.alignment = { vertical: 'middle', horizontal: align };
+    cell.border = {
+      top: { style: 'thin', color: { argb: LIME_THEME.borderLime } },
+      bottom: { style: 'double', color: { argb: 'FF365314' } },
+      left: { style: 'thin', color: { argb: LIME_THEME.borderCell } },
+      right: { style: 'thin', color: { argb: LIME_THEME.borderCell } },
+    };
+    if (typeof cell.value === 'number') {
+      cell.numFmt = '#,##0';
+    }
+  });
+  return row;
+}
+
 export async function buildWeeklyReportWorkbook(
   report: WeeklyReportData
 ): Promise<Uint8Array> {
   const wb = await createExcelWorkbook();
   wb.creator = 'GCCK Thắng Lợi Lean MES';
+
+  // Nhúng Logo VICO chính thức vào Workbook
+  const logoId = wb.addImage({
+    base64: VICO_LOGO_BASE64.includes(',') ? VICO_LOGO_BASE64.split(',')[1] : VICO_LOGO_BASE64,
+    extension: 'png',
+  });
 
   // SHEET 1: BÁO CÁO TỔNG HỢP TUẦN & CÂN BẰNG TẢI
   const ws = wb.addWorksheet('BAO_CAO_TONG_HOP_TUAN', {
@@ -1256,198 +1394,569 @@ export async function buildWeeklyReportWorkbook(
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
-      margins: { left: 0.4, right: 0.4, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+      margins: { left: 0.35, right: 0.35, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
     },
-    views: [{ state: 'frozen', ySplit: 5 }],
+    views: [{ state: 'frozen', ySplit: 7 }],
   });
 
-  // Header Title
-  const r1 = ws.addRow(['CÔNG TY CỔ PHẦN CƠ KHÍ CHÍNH XÁC THẮNG LỢI (VICO)', '', '', '', '', '', 'Mã BM: GCCK.BC.02']);
-  r1.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+  // Gắn Logo VICO tại góc trên bên trái (A1:B2)
+  ws.addImage(logoId, {
+    tl: { col: 0.1, row: 0.1 },
+    ext: { width: 130, height: 44 },
+  });
 
-  const r2 = ws.addRow(['BÁO CÁO TỔNG HỢP SẢN XUẤT TUẦN & CÂN BẰNG NĂNG LỰC TẢI']);
-  r2.font = { bold: true, size: 14, color: { argb: 'FF0F172A' } };
+  // Thiết lập 7 cột chuẩn A4 ngang với độ rộng tối ưu, không bị dính chữ hay tràn lề
+  ws.columns = [
+    { key: 'colA', width: 8 },   // STT / Logo
+    { key: 'colB', width: 32 },  // Khách hàng / Nội dung / Thiết bị / Họ tên
+    { key: 'colC', width: 16 },  // Số chi tiết / Kế hoạch / Giờ dừng
+    { key: 'colD', width: 16 },  // Kế hoạch (SP) / Thực tế
+    { key: 'colE', width: 16 },  // Thực tế (SP) / Tỷ lệ %
+    { key: 'colF', width: 16 },  // Tỷ lệ % / Số ĐH / Công quy đổi
+    { key: 'colG', width: 24 },  // Trạng thái / Đánh giá
+  ];
 
-  const r3 = ws.addRow([`Chu kỳ tuần: Thứ 5 (${report.weekStart}) đến Thứ 4 (${report.weekEnd}) — ${report.weekLabel}`]);
-  r3.font = { italic: true, size: 10, color: { argb: 'FF475569' } };
+  // Header dòng 1: Tên đơn vị và Mã Biểu Mẫu (Cột A để trống cho Logo VICO)
+  const r1 = ws.addRow(['', 'CÔNG TY CỔ PHẦN CƠ KHÍ CHÍNH XÁC THẮNG LỢI (VICO)', '', '', '', '', 'Mã BM: GCCK.BC.02']);
+  ws.mergeCells('B1:F1');
+  r1.height = 22;
+  r1.getCell(2).font = { bold: true, size: 9.5, color: { argb: 'FF1E293B' } };
+  r1.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  r1.getCell(7).font = { bold: true, size: 9.5, color: { argb: 'FF1E293B' } };
+  r1.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' };
 
-  ws.addRow([]); // Blank spacer
+  // Dòng 2: Hệ thống quản lý chất lượng & Lần ban hành
+  const r2 = ws.addRow(['', 'HỆ THỐNG QUẢN LÝ CHẤT LƯỢNG ISO 9001', '', '', '', '', 'Lần ban hành: 01']);
+  ws.mergeCells('B2:F2');
+  r2.height = 20;
+  r2.getCell(2).font = { italic: true, size: 8.5, color: { argb: 'FF64748B' } };
+  r2.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+  r2.getCell(7).font = { italic: true, size: 8.5, color: { argb: 'FF64748B' } };
+  r2.getCell(7).alignment = { vertical: 'middle', horizontal: 'right' };
 
-  // BẢNG TÓM TẮT KPI TUẦN
-  appendSafeRow(
-    ws,
-    ['CHỈ SỐ SẢN XUẤT CHÍNH', 'KẾ HOẠCH (SP)', 'THỰC TẾ ĐẠT (SP)', 'TỶ LỆ HOÀN THÀNH', 'SỐ ĐH HOÀN THÀNH', 'SỐ ĐH CHẬM HẠN'],
-    { isHeader: true }
-  );
-  appendSafeRow(ws, [
+  // Dòng 3: Tiêu đề báo cáo nổi bật (Màu Nõn Chuối đậm)
+  const r3 = ws.addRow(['BÁO CÁO TỔNG HỢP SẢN XUẤT TUẦN & CÂN BẰNG NĂNG LỰC TẢI', '', '', '', '', '', '']);
+  ws.mergeCells('A3:G3');
+  r3.height = 28;
+  const titleCell = r3.getCell(1);
+  titleCell.font = { bold: true, size: 14, color: { argb: 'FF142900' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Dòng 4: Chu kỳ tuần
+  const r4 = ws.addRow([`Chu kỳ tuần: Thứ 5 (${report.weekStart}) đến Thứ 4 (${report.weekEnd}) — ${report.weekLabel}`, '', '', '', '', '', '']);
+  ws.mergeCells('A4:G4');
+  r4.height = 18;
+  const subCell = r4.getCell(1);
+  subCell.font = { italic: true, size: 10, color: { argb: 'FF475569' } };
+  subCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Dòng 5: Dòng trống ngăn cách
+  const rBlank1 = ws.addRow(['', '', '', '', '', '', '']);
+  rBlank1.height = 6;
+
+  // BẢNG CHỈ SỐ SẢN XUẤT CHÍNH (KPI TUẦN) - Phủ Màu Nõn Chuối
+  const kpiHRow = addLimeHeader(ws, [
+    'CHỈ SỐ SẢN XUẤT CHÍNH',
+    '',
+    'KẾ HOẠCH (SP)',
+    'THỰC TẾ ĐẠT (SP)',
+    'TỶ LỆ HOÀN THÀNH',
+    'SỐ ĐH HOÀN THÀNH',
+    'SỐ ĐH CHẬM HẠN',
+  ]);
+  const kpiHIdx = kpiHRow.number;
+  ws.mergeCells(`A${kpiHIdx}:B${kpiHIdx}`);
+  kpiHRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+  const kpiDataRow = ws.addRow([
     'Toàn bộ phân xưởng GCCK',
+    '',
     report.summary.totalPlannedQty,
     report.summary.totalActualQty,
     `${report.summary.completionPct}%`,
     report.summary.completedPoCount,
     report.summary.delayedPoCount,
   ]);
+  const kpiDataIdx = kpiDataRow.number;
+  ws.mergeCells(`A${kpiDataIdx}:B${kpiDataIdx}`);
+  kpiDataRow.height = 24;
+  kpiDataRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    cell.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
+    cell.border = THIN_GRID_BORDER;
+    if (colNumber === 1) {
+      cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    } else if (colNumber === 3 || colNumber === 4) {
+      cell.alignment = { vertical: 'middle', horizontal: 'right' };
+      cell.numFmt = '#,##0';
+    } else if (colNumber === 5) {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: report.summary.completionPct >= 90 ? 'FFDCFCE7' : 'FFFEE2E2' },
+      };
+      cell.font = { bold: true, color: { argb: report.summary.completionPct >= 90 ? 'FF166534' : 'FF991B1B' } };
+    } else if (colNumber === 6) {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.numFmt = '#,##0';
+    } else if (colNumber === 7) {
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.numFmt = '#,##0';
+      if (report.summary.delayedPoCount > 0) {
+        cell.font = { bold: true, color: { argb: 'FFDC2626' } };
+      }
+    }
+  });
 
-  ws.addRow([]); // Blank spacer
+  const rBlank2 = ws.addRow(['', '', '', '', '', '', '']);
+  rBlank2.height = 8;
 
-  // KHỐI 1: THEO KHÁCH HÀNG
-  const kh1Header = ws.addRow(['KHỐI 1: TỔNG HỢP SẢN LƯỢNG & TIẾN ĐỘ THEO KHÁCH HÀNG']);
-  kh1Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+  // ==================== KHỐI 1: THEO KHÁCH HÀNG ====================
+  addLimeSection(ws, 'KHỐI 1: TỔNG HỢP SẢN LƯỢNG & TIẾN ĐỘ THEO KHÁCH HÀNG');
+  addLimeHeader(ws, ['STT', 'Khách Hàng', 'Số Chi Tiết SP', 'Kế Hoạch (SP)', 'Thực Tế (SP)', 'Tỷ Lệ Đạt', 'Trạng Thái']);
 
-  appendSafeRow(
-    ws,
-    ['STT', 'Khách Hàng', 'Số Chi Tiết SP', 'Kế Hoạch (SP)', 'Thực Tế (SP)', 'Tỷ Lệ Đạt', 'Trạng Thái'],
-    { isHeader: true }
-  );
+  let sumKhProduct = 0;
+  let sumKhPlanned = 0;
+  let sumKhActual = 0;
 
   (report.customerStats || []).forEach((c, idx) => {
-    appendSafeRow(ws, [
-      idx + 1,
-      c.customer,
-      c.productCount,
-      c.plannedQty,
-      c.actualQty,
-      `${c.completionPct}%`,
-      c.completionPct >= 90 ? 'Đạt chuẩn KH' : `Chậm ${Math.max(0, c.plannedQty - c.actualQty)} SP`,
-    ]);
+    sumKhProduct += c.productCount || 0;
+    sumKhPlanned += c.plannedQty || 0;
+    sumKhActual += c.actualQty || 0;
+
+    const row = addLimeGridRow(
+      ws,
+      [
+        idx + 1,
+        c.customer,
+        c.productCount,
+        c.plannedQty,
+        c.actualQty,
+        `${c.completionPct}%`,
+        c.completionPct >= 90 ? '✅ Đạt chuẩn KH' : `⚠️ Chậm ${Math.max(0, c.plannedQty - c.actualQty)} SP`,
+      ],
+      idx % 2 === 1,
+      ['center', 'left', 'center', 'right', 'right', 'center', 'center']
+    );
+
+    // Tô nhẹ trạng thái
+    const statusCell = row.getCell(7);
+    if (c.completionPct < 90) {
+      statusCell.font = { bold: true, color: { argb: 'FFB91C1C' }, size: 9.5 };
+    } else {
+      statusCell.font = { bold: true, color: { argb: 'FF15803D' }, size: 9.5 };
+    }
   });
 
-  ws.addRow([]); // Blank spacer
-
-  // KHỐI 2: THEO LAO ĐỘNG & CHẤM CÔNG
-  const kh2Header = ws.addRow(['KHỐI 2: TỔNG HỢP GIỜ CÔNG & LAO ĐỘNG (THEO PHÂN HỆ CHẤM CÔNG 7 NGÀY)']);
-  kh2Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
-
-  appendSafeRow(
+  // Dòng tổng cộng Khối 1
+  const kh1TotalPct = sumKhPlanned > 0 ? Math.round((sumKhActual / sumKhPlanned) * 100) : 100;
+  const kh1TotalRow = addLimeSummaryTotal(
     ws,
-    ['STT', 'Mã NV', 'Họ Và Tên', 'Công Chuẩn (Ca)', 'Thêm Giờ (OT h)', 'Tăng Ca CN (h)', 'Nghỉ / Phép (d)', 'Tổng Công Quy Đổi', 'Sản Lượng SP Làm Ra'],
-    { isHeader: true }
+    [
+      'TỔNG CỘNG KHÁCH HÀNG',
+      '',
+      sumKhProduct,
+      sumKhPlanned,
+      sumKhActual,
+      `${kh1TotalPct}%`,
+      kh1TotalPct >= 90 ? '✅ Đạt mục tiêu tuần' : '⚠️ Cần xử lý bù',
+    ],
+    ['center', 'center', 'center', 'right', 'right', 'center', 'center']
   );
+  ws.mergeCells(`A${kh1TotalRow.number}:B${kh1TotalRow.number}`);
+
+  const rBlank3 = ws.addRow(['', '', '', '', '', '', '']);
+  rBlank3.height = 8;
+
+  // ==================== KHỐI 2: THEO LAO ĐỘNG & CHẤM CÔNG ====================
+  addLimeSection(ws, 'KHỐI 2: TỔNG HỢP GIỜ CÔNG & LAO ĐỘNG (THEO PHÂN HỆ CHẤM CÔNG 7 NGÀY)');
+
+  const totalWorkers = (report.workerLaborStats || []).length;
+  const totalStandardShifts = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.standardShifts || 0), 0);
+  const totalOtHours = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.otHours || 0), 0);
+  const totalSundayHours = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.sundayHours || 0), 0);
+  const totalConvertedShifts = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.totalConvertedShifts || 0), 0);
+  const totalCompletedPieces = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.actualCompletedPieces || 0), 0);
+
+  // 3 dòng tóm tắt xúc tích chuẩn chỉnh như ảnh thực tế của người dùng
+  const addSummaryBullet = (stt: number, text: string, isEvenBg: boolean) => {
+    const rowIdx = ws.rowCount + 1;
+    const row = ws.addRow([stt, text, '', '', '', '', '']);
+    ws.mergeCells(`B${rowIdx}:G${rowIdx}`);
+    row.height = 22;
+    for (let c = 1; c <= 7; c++) {
+      const cell = row.getCell(c);
+      cell.border = THIN_GRID_BORDER;
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: isEvenBg ? LIME_THEME.zebraBg : 'FFFFFFFF' },
+      };
+      if (c === 1) {
+        cell.font = { bold: true, color: { argb: LIME_THEME.headerFg }, size: 10 };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      } else if (c === 2) {
+        cell.font = { bold: true, color: { argb: 'FF1E293B' }, size: 10 };
+        cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+      }
+    }
+    return row;
+  };
+
+  addSummaryBullet(
+    1,
+    `Tổng công lao động chính ${totalStandardShifts}/${totalWorkers * 7} công lao động chính (${totalWorkers} thợ)`,
+    false
+  );
+  addSummaryBullet(
+    2,
+    `Tăng ca ngày thường ${totalOtHours} giờ  --->  ${(totalOtHours / 8).toFixed(1)} công quy đổi`,
+    true
+  );
+  addSummaryBullet(
+    3,
+    `Tăng ca ngày chủ nhật ${totalSundayHours} giờ  --->  ${(totalSundayHours / 8).toFixed(1)} công quy đổi`,
+    false
+  );
+
+  // Bảng phân bổ chi tiết theo từng thợ (chuẩn 7 cột, không bị bè sang cột I)
+  addLimeHeader(ws, [
+    'STT',
+    'Họ Và Tên Thợ (Mã NV)',
+    'Công Chuẩn (Ca)',
+    'Thêm Giờ OT (h)',
+    'Tăng Ca CN (h)',
+    'Tổng Công QĐ',
+    'Sản Lượng SP Làm Ra',
+  ]);
 
   (report.workerLaborStats || []).forEach((w, idx) => {
-    appendSafeRow(ws, [
-      idx + 1,
-      w.workerId,
-      w.workerName,
-      w.standardShifts,
-      w.otHours,
-      w.sundayHours,
-      w.offDays + w.pDays,
-      w.totalConvertedShifts,
-      w.actualCompletedPieces,
-    ]);
+    addLimeGridRow(
+      ws,
+      [
+        idx + 1,
+        `${w.workerName} (${w.workerId})`,
+        w.standardShifts,
+        w.otHours,
+        w.sundayHours,
+        w.totalConvertedShifts,
+        w.actualCompletedPieces,
+      ],
+      idx % 2 === 1,
+      ['center', 'left', 'center', 'center', 'center', 'center', 'right']
+    );
   });
 
-  ws.addRow([]); // Blank spacer
-
-  // KHỐI 3: DOWNTIME DỪNG MÁY
-  const kh3Header = ws.addRow(['KHỐI 3: THỐNG KÊ SỰ CỐ THIẾT BỊ & DỪNG MÁY (DOWNTIME)']);
-  kh3Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
-
-  appendSafeRow(
+  const kh2TotalRow = addLimeSummaryTotal(
     ws,
-    ['STT', 'Ngày', 'Thiết Bị / Tên Máy', 'Thời Gian Dừng (Phút)', 'Nguyên Nhân & Xử Lý'],
-    { isHeader: true }
+    [
+      'TỔNG CỘNG LAO ĐỘNG',
+      '',
+      totalStandardShifts,
+      totalOtHours,
+      totalSundayHours,
+      Number(totalConvertedShifts.toFixed(1)),
+      totalCompletedPieces,
+    ],
+    ['center', 'center', 'center', 'center', 'center', 'center', 'right']
   );
+  ws.mergeCells(`A${kh2TotalRow.number}:B${kh2TotalRow.number}`);
+
+  const rBlank4 = ws.addRow(['', '', '', '', '', '', '']);
+  rBlank4.height = 8;
+
+  // ==================== KHỐI 3: DOWNTIME DỪNG MÁY ====================
+  addLimeSection(ws, 'KHỐI 3: THỐNG KÊ SỰ CỐ THIẾT BỊ & DỪNG MÁY (DOWNTIME)');
+  const dtHeader = addLimeHeader(ws, [
+    'STT',
+    'Ngày',
+    'Thiết Bị / Tên Máy',
+    'Thời Gian Dừng (Phút)',
+    'Nguyên Nhân & Xử Lý Khắc Phục',
+    '',
+    '',
+  ]);
+  ws.mergeCells(`E${dtHeader.number}:G${dtHeader.number}`);
 
   if (!report.downtimeIncidents || report.downtimeIncidents.length === 0) {
-    appendSafeRow(ws, ['—', '—', 'Không có sự cố dừng máy kỹ thuật', 0, 'Thiết bị hoạt động ổn định']);
+    const emptyRowIdx = ws.rowCount + 1;
+    const emptyRow = ws.addRow(['—', '—', 'Tất cả máy móc thiết bị', 0, 'Thiết bị hoạt động ổn định 100%, không có sự cố dừng máy kỹ thuật', '', '']);
+    ws.mergeCells(`E${emptyRowIdx}:G${emptyRowIdx}`);
+    emptyRow.height = 22;
+    emptyRow.eachCell({ includeEmpty: true }, (cell, c) => {
+      cell.border = THIN_GRID_BORDER;
+      cell.font = { size: 10, color: { argb: 'FF475569' } };
+      cell.alignment = { vertical: 'middle', horizontal: c <= 2 ? 'center' : c === 4 ? 'right' : 'left' };
+    });
   } else {
     report.downtimeIncidents.forEach((inc, idx) => {
-      appendSafeRow(ws, [
+      const rowIdx = ws.rowCount + 1;
+      const row = ws.addRow([
         idx + 1,
         inc.date,
         inc.machineName,
         inc.stopMinutes,
         inc.reason,
+        '',
+        '',
       ]);
+      ws.mergeCells(`E${rowIdx}:G${rowIdx}`);
+      row.height = 22;
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        cell.border = THIN_GRID_BORDER;
+        cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: idx % 2 === 1 ? LIME_THEME.zebraBg : 'FFFFFFFF' },
+        };
+        if (colNumber === 1 || colNumber === 2) {
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        } else if (colNumber === 3) {
+          cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        } else if (colNumber === 4) {
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          cell.numFmt = '#,##0';
+        } else if (colNumber === 5) {
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        }
+      });
     });
   }
 
-  ws.addRow([]); // Blank spacer
+  const rBlank5 = ws.addRow(['', '', '', '', '', '', '']);
+  rBlank5.height = 8;
 
-  // KHỐI 4: DỰ BÁO TUẦN TỚI & CÂN BẰNG TẢI
-  const kh4Header = ws.addRow(['KHỐI 4: KẾ HOẠCH TUẦN TỚI & ĐỀ XUẤT GIA CÔNG NGOÀI (OUTSOURCE)']);
-  kh4Header.font = { bold: true, size: 11, color: { argb: 'FF1E3A8A' } };
+  // ==================== KHỐI 4: DỰ BÁO TUẦN TỚI & CÂN BẰNG TẢI ====================
+  addLimeSection(ws, 'KHỐI 4: KẾ HOẠCH TUẦN TỚI & ĐỀ XUẤT GIA CÔNG NGOÀI (OUTSOURCE)');
 
-  appendSafeRow(ws, [
+  // Hộp chỉ số cân bằng tải (2 dòng căn chỉnh chuyên nghiệp, không tràn ô)
+  const isOverloaded = report.nextWeekForecast.isOverloaded;
+  const capRow1Idx = ws.rowCount + 1;
+  const capRow1 = ws.addRow([
     'Tình trạng cân bằng tải:',
-    report.nextWeekForecast.isOverloaded ? 'CẢNH BÁO QUÁ TẢI PHÂN XƯỞNG' : 'ĐỦ NĂNG LỰC ĐÁP ỨNG KẾ HOẠCH',
-    `Bù đơn hàng thiếu: ${report.nextWeekForecast.carryoverBacklogQty} SP`,
-    `Tổng giờ gia công yêu cầu: ${report.nextWeekForecast.totalRequiredHours}h`,
-    `Năng lực xưởng khả dụng: ${report.nextWeekForecast.machineCapacityHours}h`,
+    '',
+    isOverloaded ? '⚠️ CẢNH BÁO QUÁ TẢI PHÂN XƯỞNG' : '✅ ĐỦ NĂNG LỰC ĐÁP ỨNG KẾ HOẠCH',
+    '',
+    'Bù đơn hàng thiếu:',
+    `${report.nextWeekForecast.carryoverBacklogQty} SP`,
+    '',
   ]);
+  ws.mergeCells(`A${capRow1Idx}:B${capRow1Idx}`);
+  ws.mergeCells(`C${capRow1Idx}:D${capRow1Idx}`);
+  ws.mergeCells(`F${capRow1Idx}:G${capRow1Idx}`);
+  capRow1.height = 24;
+  capRow1.eachCell({ includeEmpty: true }, (cell, c) => {
+    cell.border = THIN_GRID_BORDER;
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: isOverloaded ? 'FFFEE2E2' : 'FFECFCCB' },
+    };
+    if (c === 1 || c === 5) {
+      cell.font = { bold: true, color: { argb: 'FF1E293B' }, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    } else if (c === 3) {
+      cell.font = { bold: true, color: { argb: isOverloaded ? 'FFB91C1C' : 'FF15803D' }, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    } else if (c === 6) {
+      cell.font = { bold: true, color: { argb: 'FF0F172A' }, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    }
+  });
 
+  const capRow2Idx = ws.rowCount + 1;
+  const capRow2 = ws.addRow([
+    'Tổng giờ gia công yêu cầu:',
+    '',
+    `${report.nextWeekForecast.totalRequiredHours} giờ máy`,
+    '',
+    'Năng lực xưởng khả dụng:',
+    `${report.nextWeekForecast.machineCapacityHours} giờ máy`,
+    '',
+  ]);
+  ws.mergeCells(`A${capRow2Idx}:B${capRow2Idx}`);
+  ws.mergeCells(`C${capRow2Idx}:D${capRow2Idx}`);
+  ws.mergeCells(`F${capRow2Idx}:G${capRow2Idx}`);
+  capRow2.height = 24;
+  capRow2.eachCell({ includeEmpty: true }, (cell, c) => {
+    cell.border = THIN_GRID_BORDER;
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFFFFF' },
+    };
+    if (c === 1 || c === 5) {
+      cell.font = { bold: true, color: { argb: 'FF475569' }, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    } else if (c === 3 || c === 6) {
+      cell.font = { bold: true, color: { argb: 'FF0F172A' }, size: 10 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    }
+  });
+
+  // Bảng đề xuất Outsource (nếu có)
   if (report.nextWeekForecast.outsourceRecommendations && report.nextWeekForecast.outsourceRecommendations.length > 0) {
-    appendSafeRow(
-      ws,
-      ['STT', 'Mã PO', 'Sản Phẩm Đề Xuất Outsource', 'Khách Hàng', 'SL Chuyển (SP)', 'Lý Do Đề Xuất', 'Chi Phí Dự Kiến (VNĐ)'],
-      { isHeader: true }
-    );
+    const outHeader = addLimeHeader(ws, [
+      'STT',
+      'Mã Lệnh PO & Khách Hàng',
+      'Sản Phẩm Đề Xuất Outsource',
+      'SL Chuyển (SP)',
+      'Chi Phí Dự Kiến (VNĐ)',
+      'Lý Do Đề Xuất & Biện Pháp Giảm Tải',
+      '',
+    ]);
+    ws.mergeCells(`F${outHeader.number}:G${outHeader.number}`);
+
     report.nextWeekForecast.outsourceRecommendations.forEach((rec, idx) => {
-      appendSafeRow(ws, [
+      const rowIdx = ws.rowCount + 1;
+      const row = ws.addRow([
         idx + 1,
-        rec.poId,
+        `${rec.poId} - ${rec.customer}`,
         rec.productName,
-        rec.customer,
         rec.suggestedOutsourceQty,
-        rec.reason,
         rec.estimatedOutsourceCost,
+        rec.reason,
+        '',
       ]);
+      ws.mergeCells(`F${rowIdx}:G${rowIdx}`);
+      row.height = 22;
+      row.eachCell({ includeEmpty: true }, (cell, c) => {
+        cell.border = THIN_GRID_BORDER;
+        cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: idx % 2 === 1 ? LIME_THEME.zebraBg : 'FFFFFFFF' },
+        };
+        if (c === 1) cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        else if (c === 2 || c === 3) cell.alignment = { vertical: 'middle', horizontal: 'left' };
+        else if (c === 4) {
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          cell.numFmt = '#,##0';
+        } else if (c === 5) {
+          cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          cell.numFmt = '#,##0" đ"';
+        } else if (c === 6) {
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        }
+      });
     });
+  } else {
+    // Không cần outsource
+    const noOutIdx = ws.rowCount + 1;
+    const noOutRow = ws.addRow(['✅ Phân xưởng đảm bảo 100% năng lực tự gia công cho tuần tới, không phát sinh nhu cầu thuê gia công ngoài (Outsource).', '', '', '', '', '', '']);
+    ws.mergeCells(`A${noOutIdx}:G${noOutIdx}`);
+    noOutRow.height = 24;
+    noOutRow.getCell(1).font = { italic: true, bold: true, color: { argb: 'FF166534' }, size: 10 };
+    noOutRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    for (let c = 1; c <= 7; c++) noOutRow.getCell(c).border = THIN_GRID_BORDER;
   }
 
-  ws.addRow([]); // Blank spacer
+  const rBlank6 = ws.addRow(['', '', '', '', '', '', '']);
+  rBlank6.height = 16;
 
-  // Chữ ký
-  const sigRow1 = ws.addRow(['Người Lập Biểu', '', 'Tổ Trưởng / Quản Đốc', '', '', 'Ban Giám Đốc Phê Duyệt']);
-  sigRow1.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
-  const sigRow2 = ws.addRow(['(Ký, ghi rõ họ tên)', '', '(Ký, ghi rõ họ tên)', '', '', '(Ký, đóng dấu)']);
-  sigRow2.font = { italic: true, size: 9, color: { argb: 'FF64748B' } };
+  // ==================== KHỐI CHỮ KÝ (PHÊ DUYỆT) ====================
+  const sigRow1Idx = ws.rowCount + 1;
+  const sigRow1 = ws.addRow(['Người Lập Biểu', '', 'Tổ Trưởng / Quản Đốc', '', '', 'Ban Giám Đốc Phê Duyệt', '']);
+  ws.mergeCells(`A${sigRow1Idx}:B${sigRow1Idx}`);
+  ws.mergeCells(`C${sigRow1Idx}:E${sigRow1Idx}`);
+  ws.mergeCells(`F${sigRow1Idx}:G${sigRow1Idx}`);
+  sigRow1.height = 22;
+  sigRow1.eachCell((cell) => {
+    cell.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+  });
 
-  autoFitColumns(ws, 10, 42);
+  const sigRow2Idx = ws.rowCount + 1;
+  const sigRow2 = ws.addRow(['(Ký, ghi rõ họ tên)', '', '(Ký, ghi rõ họ tên)', '', '', '(Ký, đóng dấu)', '']);
+  ws.mergeCells(`A${sigRow2Idx}:B${sigRow2Idx}`);
+  ws.mergeCells(`C${sigRow2Idx}:E${sigRow2Idx}`);
+  ws.mergeCells(`F${sigRow2Idx}:G${sigRow2Idx}`);
+  sigRow2.height = 18;
+  sigRow2.eachCell((cell) => {
+    cell.font = { italic: true, size: 9, color: { argb: 'FF64748B' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+  });
 
-  // SHEET 2: CHI TIẾT DANH SÁCH ĐƠN HÀNG PO TRONG TUẦN
+  // 3 dòng trống để ký tay
+  const sigBlank1 = ws.addRow(['', '', '', '', '', '', '']);
+  sigBlank1.height = 16;
+  const sigBlank2 = ws.addRow(['', '', '', '', '', '', '']);
+  sigBlank2.height = 16;
+  const sigBlank3 = ws.addRow(['', '', '', '', '', '', '']);
+  sigBlank3.height = 16;
+
+  // ==================== SHEET 2: CHI TIẾT DANH SÁCH ĐƠN HÀNG PO TRONG TUẦN ====================
   const ws2 = wb.addWorksheet('CHI_TIET_DON_HANG_PO', {
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.35, right: 0.35, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
     views: [{ state: 'frozen', ySplit: 2 }],
   });
 
-  const ws2Title = ws2.addRow([`DANH SÁCH CHI TIẾT TẤT CẢ ĐƠN HÀNG SẢN XUẤT TUẦN (${report.weekStart} -> ${report.weekEnd})`]);
-  ws2Title.font = { bold: true, size: 12, color: { argb: 'FF1E3A8A' } };
-
-  appendSafeRow(
-    ws2,
-    [
-      'STT',
-      'Mã Lệnh PO',
-      'Khách Hàng',
-      'Tên Sản Phẩm / Chi Tiết',
-      'Số Lượng Đặt (SP)',
-      'Đã Xong CK (End)',
-      'Đang SX (WIP)',
-      'Hạn Giao Hàng',
-      'Trạng Thái Tiến Độ',
-      'Đánh Giá Tuần',
-    ],
-    { isHeader: true }
-  );
-
-  (report.poStatuses || []).forEach((po, idx) => {
-    appendSafeRow(ws2, [
-      idx + 1,
-      po.poId,
-      po.customer,
-      po.productName,
-      po.qtyPo,
-      po.finishedQty,
-      po.wipQty,
-      po.dueDate,
-      po.status,
-      po.isDelayed ? '⚠️ Chậm Hạn / Cần Xử Lý Bù' : '✅ Đạt Kế Hoạch',
-    ]);
+  ws2.addImage(logoId, {
+    tl: { col: 0.05, row: 0.05 },
+    ext: { width: 85, height: 26 },
   });
 
-  autoFitColumns(ws2, 10, 40);
+  const ws2Title = ws2.addRow(['', `DANH SÁCH CHI TIẾT TẤT CẢ ĐƠN HÀNG SẢN XUẤT TUẦN (${report.weekStart} -> ${report.weekEnd})`]);
+  ws2.mergeCells('B1:J1');
+  ws2Title.height = 28;
+  ws2Title.getCell(2).font = { bold: true, size: 12, color: { argb: LIME_THEME.bannerFg } };
+  ws2Title.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+
+  addLimeHeader(ws2, [
+    'STT',
+    'Mã Lệnh PO',
+    'Khách Hàng',
+    'Tên Sản Phẩm / Chi Tiết',
+    'Số Lượng Đặt (SP)',
+    'Đã Xong CK (End)',
+    'Đang SX (WIP)',
+    'Hạn Giao Hàng',
+    'Trạng Thái Tiến Độ',
+    'Đánh Giá Tuần',
+  ]);
+
+  (report.poStatuses || []).forEach((po, idx) => {
+    const r = addLimeGridRow(
+      ws2,
+      [
+        idx + 1,
+        po.poId,
+        po.customer,
+        po.productName,
+        po.qtyPo,
+        po.finishedQty,
+        po.wipQty,
+        po.dueDate,
+        po.status,
+        po.isDelayed ? '⚠️ Chậm Hạn / Cần Xử Lý Bù' : '✅ Đạt Kế Hoạch',
+      ],
+      idx % 2 === 1,
+      ['center', 'left', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'center']
+    );
+
+    const evalCell = r.getCell(10);
+    if (po.isDelayed) {
+      evalCell.font = { bold: true, color: { argb: 'FFDC2626' } };
+      evalCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFEE2E2' },
+      };
+    } else {
+      evalCell.font = { bold: true, color: { argb: 'FF15803D' } };
+    }
+  });
+
+  autoFitColumns(ws2, 10, 38);
 
   return workbookToBytes(wb);
 }
