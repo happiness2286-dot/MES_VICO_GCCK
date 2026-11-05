@@ -38,6 +38,7 @@ import {
   getDefShiftCode,
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
+import { getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
 import { normalizeVn, removeVietnameseTones } from '@shared/vnSearch';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
@@ -1035,6 +1036,17 @@ export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): Boot
   const dd = String(now.getDate()).padStart(2, '0');
   const vnToday = `${yyyy}-${mm}-${dd}`;
 
+  const todayAccumulated: Record<string, number> = {};
+  for (const log of combinedLogs) {
+    if (!log.isVoided && log.workerId) {
+      const effDate = getLogEffectiveWorkDate(log);
+      if (effDate === vnToday) {
+        const inc = Number((log as any).income ?? (log as any).batchCost ?? (log as any).turnTotalIncome ?? 0);
+        todayAccumulated[log.workerId] = (todayAccumulated[log.workerId] || 0) + inc;
+      }
+    }
+  }
+
   return {
     user,
     authMode: 'DEMO_QUICK',
@@ -1050,7 +1062,7 @@ export function getFallbackBootstrap(currentUser?: AuthSessionUser | null): Boot
     machineLoads: [],
     qcInspections: [],
     recentLogs: combinedLogs,
-    todayAccumulated: {},
+    todayAccumulated,
     opDoneMap: {},
     kpiSummary: {
       totalOk: 0,

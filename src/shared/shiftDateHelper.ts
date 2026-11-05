@@ -102,3 +102,4 @@ export function getLogEffectiveWorkDate(log: {
 
   return rawDate;
 }
+

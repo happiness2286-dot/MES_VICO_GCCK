@@ -53,7 +53,7 @@ import {
   isObjectiveStopReason,
   isVietnamSunday,
 } from '@shared/payrollEngine';
-import { getShiftProductionWorkDate } from '@shared/shiftDateHelper';
+import { getShiftProductionWorkDate, getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
 import { matchesSearch } from '@shared/vnSearch';
 import { getWinWinPreferredMachines } from '@shared/winWinMachineRouting';
 import { useAuth } from '../../context/AuthContext';
@@ -197,7 +197,7 @@ export function WorkerPortal() {
   const [machineMode, setMachineMode] = useState<'FIRST' | 'SECOND'>('FIRST');
 
   // Quantities & Quality
-  const [okQty, setOkQty] = useState<number>(1);
+  const [okQty, setOkQty] = useState<number>(0);
   const [reworkQty, setReworkQty] = useState<number>(0);
   const [scrapQty, setScrapQty] = useState<number>(0);
   const [defectType, setDefectType] = useState<string>('Lỗi Phôi Đúc / Nguyên liệu');
@@ -233,7 +233,7 @@ export function WorkerPortal() {
   // Cutting Tool & 1-for-1 Swap
   const [toolCode, setToolCode] = useState<string>('T03');
   const [toolEdgesState, setToolEdgesState] = useState<ToolEdgesState>({
-    edgesUsed: 0.22,
+    edgesUsed: 0,
     isEdgesDirty: false,
   });
   const [oldInsertReturned, setOldInsertReturned] = useState<boolean>(true);
@@ -592,7 +592,7 @@ export function WorkerPortal() {
                 setToolEdgesState(
                   syncAutoToolEdges(
                     { edgesUsed: 0, isEdgesDirty: false },
-                    1,
+                    0,
                     matchedOp.stdEdgesPerPcs,
                     true
                   )
@@ -623,7 +623,7 @@ export function WorkerPortal() {
               setToolEdgesState(
                 syncAutoToolEdges(
                   { edgesUsed: 0, isEdgesDirty: false },
-                  1,
+                  0,
                   defaultOp.stdEdgesPerPcs,
                   true
                 )
@@ -1044,10 +1044,48 @@ export function WorkerPortal() {
 
   const effectivePayroll = serverPreview?.payroll ?? localPayroll;
   const myTodayIncome = useMemo(() => {
-    if (todayOverrideIncome !== null) return todayOverrideIncome;
-    if (!user || !bootstrap?.todayAccumulated) return 0;
-    return Number(bootstrap.todayAccumulated[user.workerId] || 0);
-  }, [todayOverrideIncome, user, bootstrap?.todayAccumulated]);
+    if (!user) return 0;
+    const targetDate = workDate;
+    let sumFromLogs = 0;
+
+    const allLogs = [
+      ...(bootstrap?.recentLogs || []),
+      ...getAllFallbackLogs(),
+    ];
+    const seenUids = new Set<string>();
+    for (const log of allLogs) {
+      const uid = log.recordUid || String((log as any).id || '');
+      if (uid && seenUids.has(uid)) continue;
+      if (uid) seenUids.add(uid);
+
+      if (log.workerId === user.workerId && !log.isVoided) {
+        const logEffDate = getLogEffectiveWorkDate(log);
+        if (logEffDate === targetDate) {
+          sumFromLogs += Number((log as any).income ?? (log as any).batchCost ?? (log as any).turnTotalIncome ?? 0);
+        }
+      }
+    }
+
+    if (outboxItems && Array.isArray(outboxItems)) {
+      for (const item of outboxItems) {
+        const p = item.payload;
+        if (p && p.workerId === user.workerId) {
+          const itemDate = p.workDate || getLogEffectiveWorkDate(p as any);
+          if (itemDate === targetDate) {
+            const op = bootstrap?.operations.find((o) => o.ncId === p.ncId);
+            const stdSec = Number(op?.stdSeconds || 0);
+            const costPerSec = Number(user.costPerSec || 13.37);
+            const estPiece = Math.round(Number(p.okQty || 0) * stdSec * costPerSec);
+            sumFromLogs += estPiece;
+          }
+        }
+      }
+    }
+
+    const fromBootstrap = Number(bootstrap?.todayAccumulated?.[user.workerId] || 0);
+    const fromOverride = todayOverrideIncome !== null ? todayOverrideIncome : 0;
+    return Math.max(fromBootstrap, sumFromLogs, fromOverride);
+  }, [todayOverrideIncome, user, bootstrap?.todayAccumulated, bootstrap?.recentLogs, outboxItems, workDate]);
 
   // Shift Handover Alert matching selected machine or PO
   const matchingHandoverAlerts = useMemo(() => {
@@ -1485,6 +1523,9 @@ export function WorkerPortal() {
         toast.success(
           `✅ ${result.response.message} | Thu nhập ca: +${formatVnd(result.response.payroll.turnTotalIncome)}`
         );
+        if (result.response.log) {
+          saveClientStoredLog(result.response.log);
+        }
         if (result.response.warnings?.length) {
           toast.warning(result.response.warnings[0]);
         }
@@ -1492,7 +1533,7 @@ export function WorkerPortal() {
       }
 
       // Reset form turn counters & generate fresh idempotency UID for next submission
-      setOkQty(1);
+      setOkQty(0);
       setReworkQty(0);
       setScrapQty(0);
       setIsDamageDirty(false);
@@ -1505,7 +1546,7 @@ export function WorkerPortal() {
       setToolEdgesState(
         syncAutoToolEdges(
           { edgesUsed: 0, isEdgesDirty: false },
-          1,
+          0,
           selectedOp?.stdEdgesPerPcs ?? 0,
           true
         )
