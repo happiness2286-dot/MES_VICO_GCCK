@@ -34,7 +34,9 @@ import {
   deleteFallbackWorker,
   saveFallbackTool,
   updateFallbackLog,
+  voidFallbackLog,
   clearAllClientStoredLogs,
+  getClientStoredLogs,
   clearAllFallbackHandovers,
   getFallbackDailyDates,
   getFallbackDailyPlan,
@@ -534,11 +536,57 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       warnings: [],
     } as unknown as T;
   }
-  if (norm.includes('/reports') && options.method === 'POST') {
-    const body = (options.json || {}) as any;
-    void submitDirectToGoogleAppsScript(body);
-    const mockRes = submitDirectToGoogleAppsScript(body);
-    return mockRes as unknown as T;
+  if (norm.includes('/reports')) {
+    if (options.method === 'PATCH') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const logId = parts[parts.length - 1] || '';
+      const body = (options.json || {}) as any;
+      const op = FALLBACK_OPERATIONS.find((o) => o.ncId === body.ncId);
+      const stdSeconds = Number(op?.stdSeconds || 1800);
+      const costPerSec = 13.37;
+      const newWage = Math.round((Number(body.okQty) || 0) * stdSeconds * costPerSec);
+
+      const patchData = {
+        ...body,
+        opName: op?.opName,
+        spId: op?.spId,
+        productName: op?.productName,
+        stdSeconds,
+        income: newWage,
+        pieceWage: newWage,
+        turnTotalIncome: newWage,
+      };
+      if (logId) {
+        updateFallbackLog(logId, patchData);
+      }
+      return {
+        success: true,
+        message: 'Đã cập nhật báo cáo thành công!',
+        log: {
+          id: logId,
+          ...patchData,
+        },
+        todayTotalIncome: newWage,
+      } as unknown as T;
+    }
+    if (options.method === 'DELETE') {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const logId = parts[parts.length - 1] || '';
+      if (logId) {
+        voidFallbackLog(logId);
+      }
+      return {
+        success: true,
+        message: 'Đã xóa báo cáo thành công.',
+        todayTotalIncome: 0,
+      } as unknown as T;
+    }
+    if (options.method === 'POST') {
+      const body = (options.json || {}) as any;
+      void submitDirectToGoogleAppsScript(body);
+      const mockRes = submitDirectToGoogleAppsScript(body);
+      return mockRes as unknown as T;
+    }
   }
   if (norm.includes('/handovers')) {
     if (options.method === 'DELETE') {

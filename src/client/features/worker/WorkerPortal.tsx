@@ -1609,9 +1609,14 @@ export function WorkerPortal() {
 
     setDeletingLogId(log.id);
     try {
-      const res = await apiClient.delete<{ success: boolean; message: string; todayTotalIncome: number }>(
-        `/reports/${log.id}`
-      );
+      let res: any = null;
+      try {
+        res = await apiClient.delete<{ success: boolean; message: string; todayTotalIncome: number }>(
+          `/reports/${log.id}`
+        );
+      } catch (err) {
+        console.warn('Backend API delete failed (static/offline), falling back to client/cloud void:', err);
+      }
 
       void voidLogOnSupabase(log.id, log.recordUid);
       void voidFallbackLog(log.id);
@@ -4004,6 +4009,7 @@ export function WorkerPortal() {
         purchaseOrders={ordersList}
         costPerSec={user?.costPerSec}
         salaryMode={user?.salaryMode}
+        currentTodayIncome={todayOverrideIncome ?? myTodayIncome}
         onSaveSuccess={(updatedLog, newTodayIncome) => {
           toast.success(
             `Đã sửa thành công phiếu [${updatedLog.ncId}]! Lương khoán mới: +${formatVnd(updatedLog.income)}`

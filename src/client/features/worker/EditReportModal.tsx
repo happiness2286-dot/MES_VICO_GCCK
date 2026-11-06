@@ -24,6 +24,7 @@ interface EditReportModalProps {
   purchaseOrders: PurchaseOrderInfo[];
   costPerSec?: number;
   salaryMode?: string;
+  currentTodayIncome?: number;
   onSaveSuccess: (updatedLog: ProductionLogDto, newTodayIncome: number) => void;
 }
 
@@ -35,6 +36,7 @@ export function EditReportModal({
   purchaseOrders,
   costPerSec = 13.37,
   salaryMode = 'Khoán 1 + 0.33 máy',
+  currentTodayIncome,
   onSaveSuccess,
 }: EditReportModalProps) {
   if (!isOpen || !log) return null;
@@ -97,46 +99,75 @@ export function EditReportModal({
         stopReason: stopMinutes > 0 ? (stopReason || 'Dừng máy sự cố/điều chỉnh') : 'Không có dừng máy',
       };
 
-      // 1. Send update to Backend API
-      const res = await apiClient.patch<{
-        success: boolean;
-        message: string;
-        log: ProductionLogDto;
-        todayTotalIncome: number;
-      }>(`/reports/${log.id}`, payload);
-
-      if (res && res.log) {
-        // 2. Sync to Supabase Cloud directly if active
-        void updateLogOnSupabase(log.id, log.recordUid, {
-          po_id: res.log.poId,
-          nc_id: res.log.ncId,
-          op_name: res.log.opName,
-          sp_id: res.log.spId,
-          product_name: res.log.productName,
-          machine_name: res.log.machineName,
-          ok_qty: res.log.okQty,
-          rework_qty: res.log.reworkQty,
-          scrap_qty: res.log.scrapQty,
-          stop_minutes: res.log.stopMinutes,
-          stop_reason: res.log.stopReason,
-          income: res.log.income,
-          piece_wage: res.log.pieceWage,
-          kpi_pct: res.log.kpiPct,
-          kpi_status: res.log.kpiStatus,
-        });
-
-        // 3. Update localStorage fallback
-        updateFallbackLog(log.id, {
-          ...payload,
-          opName: res.log.opName,
-          productName: res.log.productName,
-          income: res.log.income,
-          pieceWage: res.log.pieceWage,
-        });
-
-        onSaveSuccess(res.log, res.todayTotalIncome);
-        onClose();
+      // 1. Try sending update to Backend API (if active)
+      let res: any = null;
+      try {
+        res = await apiClient.patch<{
+          success: boolean;
+          message: string;
+          log: ProductionLogDto;
+          todayTotalIncome: number;
+        }>(`/reports/${log.id}`, payload);
+      } catch (patchErr) {
+        console.warn('Backend API patch failed (likely static/serverless deployment), applying client/cloud sync directly:', patchErr);
       }
+
+      const updatedLog: ProductionLogDto = res?.log || {
+        ...log,
+        poId: selectedPoId,
+        ncId: selectedNcId,
+        opName: currentOp?.opName || log.opName,
+        spId: currentOp?.spId || log.spId,
+        productName: currentOp?.productName || log.productName,
+        machineName,
+        okQty,
+        reworkQty,
+        scrapQty,
+        stopMinutes,
+        stopReason: stopMinutes > 0 ? (stopReason || 'Dừng máy sự cố/điều chỉnh') : 'Không có dừng máy',
+        income: estNewWage,
+        pieceWage: estNewWage,
+        stdSeconds: Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0),
+        kpiPct: 100,
+        kpiStatus: 'DAT_MUC',
+      };
+
+      const newTodayIncome =
+        res?.todayTotalIncome !== undefined
+          ? res.todayTotalIncome
+          : Math.max(0, (Number(currentTodayIncome ?? 0) - Number(log.income || 0)) + estNewWage);
+
+      // 2. Sync to Supabase Cloud directly if active
+      void updateLogOnSupabase(log.id, log.recordUid, {
+        po_id: updatedLog.poId,
+        nc_id: updatedLog.ncId,
+        op_name: updatedLog.opName,
+        sp_id: updatedLog.spId,
+        product_name: updatedLog.productName,
+        machine_name: updatedLog.machineName,
+        ok_qty: updatedLog.okQty,
+        rework_qty: updatedLog.reworkQty,
+        scrap_qty: updatedLog.scrapQty,
+        stop_minutes: updatedLog.stopMinutes,
+        stop_reason: updatedLog.stopReason,
+        income: updatedLog.income,
+        piece_wage: updatedLog.pieceWage,
+        kpi_pct: updatedLog.kpiPct,
+        kpi_status: updatedLog.kpiStatus,
+      });
+
+      // 3. Update localStorage fallback
+      updateFallbackLog(log.id, {
+        ...payload,
+        opName: updatedLog.opName,
+        productName: updatedLog.productName,
+        income: updatedLog.income,
+        pieceWage: updatedLog.pieceWage,
+        stdSeconds: updatedLog.stdSeconds,
+      });
+
+      onSaveSuccess(updatedLog, newTodayIncome);
+      onClose();
     } catch (err: any) {
       setErrorMsg(String(err?.message || 'Có lỗi xảy ra khi lưu phiếu. Vui lòng thử lại!'));
     } finally {
