@@ -592,6 +592,25 @@ export function WorkerPortal() {
         });
 
         data.recentLogs = mergedList;
+
+        // Recalculate todayAccumulated for active user from mergedList so edits/voids are immediately reflected
+        if (user?.workerId) {
+          const targetDate = data.vietnamToday || getShiftProductionWorkDate(new Date());
+          let userTodaySum = 0;
+          for (const l of mergedList) {
+            if (l.workerId === user.workerId && !l.isVoided) {
+              const eff = getLogEffectiveWorkDate(l);
+              if (eff === targetDate) {
+                userTodaySum += Number(l.income ?? l.batchCost ?? l.turnTotalIncome ?? 0);
+              }
+            }
+          }
+          data.todayAccumulated = {
+            ...(data.todayAccumulated || {}),
+            [user.workerId]: userTodaySum,
+          };
+        }
+
         setBootstrap(data);
         setTodayOverrideIncome(null);
 
@@ -1118,9 +1137,18 @@ export function WorkerPortal() {
       }
     }
 
+    if (todayOverrideIncome !== null && todayOverrideIncome !== undefined) {
+      return todayOverrideIncome;
+    }
+    // If worker has records/logs today, the dynamic sumFromLogs is the exact source of truth (including voids/reductions)
+    const hasLogsToday = allLogs.some(
+      (l) => l.workerId === user.workerId && getLogEffectiveWorkDate(l) === targetDate
+    );
+    if (hasLogsToday || sumFromLogs > 0) {
+      return sumFromLogs;
+    }
     const fromBootstrap = Number(bootstrap?.todayAccumulated?.[user.workerId] || 0);
-    const fromOverride = todayOverrideIncome !== null ? todayOverrideIncome : 0;
-    return Math.max(fromBootstrap, sumFromLogs, fromOverride);
+    return Math.max(fromBootstrap, sumFromLogs);
   }, [todayOverrideIncome, user, bootstrap?.todayAccumulated, bootstrap?.recentLogs, outboxItems, workDate]);
 
   // Shift Handover Alert matching selected machine or PO
@@ -3808,7 +3836,19 @@ export function WorkerPortal() {
                             </span>
                           ) : (
                             <span className="text-slate-500">
-                              Đơn giá: {formatVnd(Math.round((log.stdSeconds || 0) * (user?.costPerSec || 13.37)))}/SP
+                              Đơn giá:{' '}
+                              {formatVnd(
+                                log.okQty && log.income
+                                  ? Math.round(log.income / log.okQty)
+                                  : Math.round(
+                                      (Number(
+                                        operationsList.find((o) => o.ncId === log.ncId)?.stdSeconds ??
+                                          log.stdSeconds ??
+                                          0
+                                      )) * (user?.costPerSec || 13.37)
+                                    )
+                              )}
+                              /SP
                             </span>
                           )}
                         </div>
@@ -4019,10 +4059,19 @@ export function WorkerPortal() {
             if (!prev) return prev;
             return {
               ...prev,
-              recentLogs: prev.recentLogs.map((l) => (l.id === updatedLog.id ? updatedLog : l)),
+              recentLogs: prev.recentLogs.map((l) =>
+                String(l.id) === String(updatedLog.id) ||
+                (Boolean(l.recordUid) && Boolean(updatedLog.recordUid) && l.recordUid === updatedLog.recordUid)
+                  ? { ...l, ...updatedLog }
+                  : l
+              ),
+              todayAccumulated: {
+                ...(prev.todayAccumulated || {}),
+                [user?.workerId || '']: newTodayIncome,
+              },
             };
           });
-          void loadBootstrapData(false);
+          void loadBootstrapData(true);
         }}
       />
 

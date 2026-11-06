@@ -13,7 +13,7 @@ import {
 import type { ProductionLogDto, OperationMeta, PurchaseOrderInfo } from '@shared/types';
 import { apiClient } from '../../lib/apiClient';
 import { updateLogOnSupabase } from '../../lib/supabaseClient';
-import { updateFallbackLog } from '../../lib/clientFallbackStore';
+import { updateFallbackLog, saveClientStoredLog } from '../../lib/clientFallbackStore';
 import { formatVnd } from '../../lib/formatters';
 
 interface EditReportModalProps {
@@ -138,13 +138,14 @@ export function EditReportModal({
           : Math.max(0, (Number(currentTodayIncome ?? 0) - Number(log.income || 0)) + estNewWage);
 
       // 2. Sync to Supabase Cloud directly if active
-      void updateLogOnSupabase(log.id, log.recordUid, {
+      await updateLogOnSupabase(log.id, log.recordUid, {
         po_id: updatedLog.poId,
         nc_id: updatedLog.ncId,
         op_name: updatedLog.opName,
         sp_id: updatedLog.spId,
         product_name: updatedLog.productName,
         machine_name: updatedLog.machineName,
+        std_seconds: updatedLog.stdSeconds,
         ok_qty: updatedLog.okQty,
         rework_qty: updatedLog.reworkQty,
         scrap_qty: updatedLog.scrapQty,
@@ -156,7 +157,8 @@ export function EditReportModal({
         kpi_status: updatedLog.kpiStatus,
       });
 
-      // 3. Update localStorage fallback
+      // 3. Update localStorage fallback immediately
+      saveClientStoredLog(updatedLog);
       updateFallbackLog(log.id, {
         ...payload,
         opName: updatedLog.opName,
@@ -165,6 +167,16 @@ export function EditReportModal({
         pieceWage: updatedLog.pieceWage,
         stdSeconds: updatedLog.stdSeconds,
       });
+      if (log.recordUid && String(log.recordUid) !== String(log.id)) {
+        updateFallbackLog(log.recordUid, {
+          ...payload,
+          opName: updatedLog.opName,
+          productName: updatedLog.productName,
+          income: updatedLog.income,
+          pieceWage: updatedLog.pieceWage,
+          stdSeconds: updatedLog.stdSeconds,
+        });
+      }
 
       onSaveSuccess(updatedLog, newTodayIncome);
       onClose();

@@ -542,9 +542,12 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       const logId = parts[parts.length - 1] || '';
       const body = (options.json || {}) as any;
       const op = FALLBACK_OPERATIONS.find((o) => o.ncId === body.ncId);
-      const stdSeconds = Number(op?.stdSeconds || 1800);
+      const stdSeconds = Number(body.stdSeconds || op?.stdSeconds || 1800);
       const costPerSec = 13.37;
-      const newWage = Math.round((Number(body.okQty) || 0) * stdSeconds * costPerSec);
+      const newWage =
+        body.income !== undefined
+          ? Number(body.income)
+          : Math.round((Number(body.okQty) || 0) * stdSeconds * costPerSec);
 
       const patchData = {
         ...body,
