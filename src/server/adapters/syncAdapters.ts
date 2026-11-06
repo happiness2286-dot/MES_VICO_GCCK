@@ -56,10 +56,15 @@ export async function flushPendingOutbox(
       if (channel === 'TELEGRAM') {
         const botToken = (cfg.TELEGRAM_BOT_TOKEN || '').trim();
         const parsed = JSON.parse(String(r.payload_json || '{}'));
-        const chatId = String(parsed.chatId || cfg.MANAGER_CHAT_ID || '').trim();
-        if (!botToken || !chatId) {
+        const eventType = String(r.event_type || '');
+        // Không dùng fallback MANAGER_CHAT_ID cho biên nhận cá nhân thợ để tránh spam máy Quản Đốc
+        const targetChatId = parsed.chatId
+          ? String(parsed.chatId).trim()
+          : (eventType !== 'WORKER_RECEIPT' ? (cfg.MANAGER_CHAT_ID || '').trim() : '');
+
+        if (!botToken || !targetChatId) {
           db.prepare(
-            `UPDATE sync_outbox SET status = 'SKIPPED', attempts = ?, last_error = 'Chưa cấu hình TELEGRAM_BOT_TOKEN hoặc Chat ID' WHERE id = ?`
+            `UPDATE sync_outbox SET status = 'SKIPPED', attempts = ?, last_error = 'Bỏ qua tin nhắn không có Chat ID hợp lệ' WHERE id = ?`
           ).run(attempts, id);
           skipped++;
           continue;
@@ -71,7 +76,7 @@ export async function flushPendingOutbox(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: chatId,
+              chat_id: targetChatId,
               text: escapeTelegramHtml(String(parsed.text || '')),
               parse_mode: 'HTML',
             }),

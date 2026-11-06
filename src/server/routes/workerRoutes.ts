@@ -773,10 +773,19 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
           income: payroll.turnTotalIncome,
         });
 
-        if (wRow.chat_id || scrapQty > 0) {
+        // Chỉ gửi tin nhắn Telegram 1-1 riêng cho công nhân nếu họ đã liên kết Telegram cá nhân
+        if (wRow.chat_id) {
           enqueueOutboxEvent(db, 'TELEGRAM', 'WORKER_RECEIPT', {
-            chatId: wRow.chat_id || '',
-            text: `✅ [${recordUid}] ${wRow.name} | ${machRow.name} | ${ncId}: ${okQty} OK / ${scrapQty} NG | Thu nhập ca: ${payroll.turnTotalIncome.toLocaleString('vi-VN')}đ`,
+            chatId: String(wRow.chat_id).trim(),
+            text: `✅ [${recordUid}] ${wRow.name} | ${machRow.name} | ${ncId}: ${okQty} OK / ${scrapQty} NG | Thu nhập: ${payroll.turnTotalIncome.toLocaleString('vi-VN')}đ`,
+          });
+        }
+
+        // Bắn cảnh báo sự cố phế phẩm cho Quản Đốc nếu có phế phẩm phát sinh
+        if (scrapQty > 0) {
+          enqueueOutboxEvent(db, 'TELEGRAM', 'SCRAP_ALERT', {
+            chatId: '', // Sẽ dùng MANAGER_CHAT_ID của Quản Đốc trong syncAdapters
+            text: `⚠️ CẢNH BÁO PHẾ PHẨM: Thợ ${wRow.name} báo hỏng ${scrapQty} SP (${body.defectType || 'Không rõ'}). Máy: ${machRow.name} | PO: ${poId}`,
           });
         }
 
