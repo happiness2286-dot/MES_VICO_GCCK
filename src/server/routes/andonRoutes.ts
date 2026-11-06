@@ -255,7 +255,7 @@ export function createAndonRoutes(db: DatabaseSync): Router {
     // 7. Build 13 personnel live status for the shift
     const CREW_13 = [
       { workerId: 'NV00053', name: 'Hoàng Ngọc Hà', role: 'QĐ', title: 'Quản đốc xưởng' },
-      { workerId: 'NV00214', name: 'Trần Văn Quỳnh', role: 'KT', title: 'Phó QĐ / Kỹ thuật' },
+      { workerId: 'NV00214', name: 'Trần Văn Quỳnh', role: 'Thợ', title: 'Công nhân phay CNC' },
       { workerId: 'NV00215', name: 'Phạm Văn Tráng', role: 'TC', title: 'Trưởng Ca (Tổ Tráng)' },
       { workerId: 'NV00218', name: 'Nguyễn Trung Đông', role: 'Thợ', title: 'Thợ tiện CNC (Tổ Tráng)' },
       { workerId: 'NV00219', name: 'Phùng Công Thắng', role: 'Thợ', title: 'Thợ tiện đứng (Tổ Tráng)' },

@@ -286,9 +286,15 @@ export function ensureOperationExists(
 
   let found = FALLBACK_OPERATIONS.find(
     (o) =>
+      (ncId && o.ncId.toLowerCase() === ncId.toLowerCase()) ||
       (o.spId && o.spId === prod.spId && o.opName.trim().toLowerCase() === cleanOpName.toLowerCase()) ||
-      (o.productName.trim().toLowerCase() === cleanProd && o.opName.trim().toLowerCase() === cleanOpName.toLowerCase())
+      (o.productName.trim().toLowerCase() === cleanProd && o.opName.trim().toLowerCase() === cleanOpName.toLowerCase()) ||
+      (cleanProd.includes('crmining') && o.productName.toLowerCase().includes('crmining'))
   );
+
+  if (found && machineName && (!found.defaultMachine || found.defaultMachine === 'Máy Tiện CNC 1')) {
+    found.defaultMachine = machineName;
+  }
 
   if (!found) {
     const finalNcId = ncId || `NC_${prod.spId || Date.now().toString(36)}`;
@@ -717,21 +723,35 @@ export function saveFallbackOrdersToStorage(): void {
 function initFallbackWorkers(): WorkerDto[] {
   const seedWorkers: WorkerDto[] = (seedData.workers || []).map((w: any) => {
     let appRole: AppRole = 'WORKER';
-    if (w.id === 'NV00053' || w.role === 'QĐ' || w.title?.includes('Quản đốc')) {
+    let role = String(w.role || 'CN');
+    let title = String(w.title || 'Công nhân');
+
+    if (w.id === 'NV00053') {
+      // Duy nhất Quản đốc Hoàng Ngọc Hà là Quản trị viên (ADMIN)
       appRole = 'ADMIN';
-    } else if (w.id === 'NV00266' || w.role === 'TC' || w.title?.includes('Trưởng ca') || w.title?.includes('QC')) {
+      role = 'QĐ';
+      title = 'Quản đốc xưởng';
+    } else if (w.id === 'NV00266' || w.id === 'NV00215' || w.id === 'NV00267') {
+      // Duy nhất 3 Trưởng ca: Dũng (NV00266), Tráng (NV00215), Phúc (NV00267)
       appRole = 'SHIFT_LEADER';
-    } else if (w.role === 'KT') {
-      appRole = 'SHIFT_LEADER';
+      role = 'TC';
+      title = 'Trưởng ca';
+    } else if (w.id === 'NV00214') {
+      // Trần Văn Quỳnh là công nhân bình thường
+      appRole = 'WORKER';
+      role = 'CN';
+      title = 'Công nhân phay CNC';
+    } else {
+      appRole = 'WORKER';
     }
 
     return {
       id: String(w.id),
       name: String(w.name),
       username: String(w.username || w.name),
-      role: String(w.role || 'CN'),
+      role,
       appRole,
-      title: String(w.title || 'Công nhân'),
+      title,
       salaryMode: String(w.salaryMode || 'KHOAN'),
       baseSalary: Number(w.baseSalary || 400000),
       isActive: w.isActive !== undefined ? Number(w.isActive) : 1,
@@ -751,11 +771,38 @@ function initFallbackWorkers(): WorkerDto[] {
           for (const st of stored) {
             if (st && st.id) {
               const existing = map.get(st.id.toLowerCase());
-              if (existing) map.set(st.id.toLowerCase(), { ...existing, ...st });
-              else map.set(st.id.toLowerCase(), st);
+              // Enforce strict roles: Hà is ADMIN, Dũng/Tráng/Phúc are SHIFT_LEADER, all others are WORKER
+              let appRole: AppRole = 'WORKER';
+              let role = st.role || 'CN';
+              let title = st.title || 'Công nhân';
+              if (st.id === 'NV00053') {
+                appRole = 'ADMIN';
+                role = 'QĐ';
+                title = 'Quản đốc xưởng';
+              } else if (['NV00266', 'NV00215', 'NV00267'].includes(st.id)) {
+                appRole = 'SHIFT_LEADER';
+                role = 'TC';
+                title = 'Trưởng ca';
+              } else if (st.id === 'NV00214') {
+                appRole = 'WORKER';
+                role = 'CN';
+                title = 'Công nhân phay CNC';
+              } else {
+                appRole = 'WORKER';
+              }
+              const sanitized: WorkerDto = {
+                ...existing,
+                ...st,
+                appRole,
+                role,
+                title,
+              };
+              map.set(st.id.toLowerCase(), sanitized);
             }
           }
-          return Array.from(map.values());
+          const finalWorkers = Array.from(map.values());
+          localStorage.setItem(LOCAL_WORKERS_KEY, JSON.stringify(finalWorkers));
+          return finalWorkers;
         }
       }
     } catch {
@@ -782,18 +829,30 @@ export function saveFallbackWorker(w: Partial<WorkerDto>): WorkerDto[] {
   if (!w.id) return FALLBACK_WORKERS;
   const idx = FALLBACK_WORKERS.findIndex((x) => x.id.toLowerCase() === w.id!.toLowerCase());
   let appRole: AppRole = 'WORKER';
-  if (w.id === 'NV00053' || w.role === 'QĐ' || w.title?.includes('Quản đốc')) {
+  let role = w.role || 'CN';
+  let title = w.title || 'Công nhân đứng máy CNC';
+  if (w.id === 'NV00053') {
     appRole = 'ADMIN';
-  } else if (w.id === 'NV00266' || w.role === 'TC' || w.role === 'KT' || w.title?.includes('Trưởng ca') || w.title?.includes('QC')) {
+    role = 'QĐ';
+    title = 'Quản đốc xưởng';
+  } else if (['NV00266', 'NV00215', 'NV00267'].includes(w.id)) {
     appRole = 'SHIFT_LEADER';
+    role = 'TC';
+    title = 'Trưởng ca';
+  } else if (w.id === 'NV00214') {
+    appRole = 'WORKER';
+    role = 'CN';
+    title = 'Công nhân phay CNC';
+  } else {
+    appRole = 'WORKER';
   }
   const workerObj: WorkerDto = {
     id: w.id.toUpperCase(),
     name: w.name || w.id,
     username: (w.username || w.id).toLowerCase(),
-    role: w.role || 'CN',
+    role,
     appRole,
-    title: w.title || 'Công nhân đứng máy CNC',
+    title,
     salaryMode: w.salaryMode || 'Khoán 1 + 0.33 máy',
     baseSalary: Number(w.baseSalary) || 400000,
     isActive: w.isActive !== undefined ? Number(w.isActive) : 1,
@@ -2580,7 +2639,7 @@ export function getFallbackAndonLive(requestedShift?: string): AndonLivePayload 
 
   const CREW_13 = [
     { workerId: 'NV00053', name: 'Hoàng Ngọc Hà', role: 'QĐ', title: 'Quản đốc xưởng' },
-    { workerId: 'NV00214', name: 'Trần Văn Quỳnh', role: 'KT', title: 'Phó QĐ / Kỹ thuật' },
+    { workerId: 'NV00214', name: 'Trần Văn Quỳnh', role: 'Thợ', title: 'Công nhân phay CNC' },
     { workerId: 'NV00215', name: 'Phạm Văn Tráng', role: 'TC', title: 'Trưởng Ca (Tổ Tráng)' },
     { workerId: 'NV00218', name: 'Nguyễn Trung Đông', role: 'Thợ', title: 'Thợ tiện CNC (Tổ Tráng)' },
     { workerId: 'NV00219', name: 'Phùng Công Thắng', role: 'Thợ', title: 'Thợ tiện đứng (Tổ Tráng)' },

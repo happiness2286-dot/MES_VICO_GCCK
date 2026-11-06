@@ -41,6 +41,7 @@ import {
 import type {
   BootstrapPayload,
   OperationMeta,
+  ProductMeta,
   PayrollCalcResult,
   PurchaseOrderInfo,
   ReportSubmitPayload,
@@ -85,6 +86,9 @@ import {
   deleteFallbackLog,
   ensureProductExists,
   ensureOperationExists,
+  FALLBACK_OPERATIONS,
+  FALLBACK_ORDERS,
+  FALLBACK_PRODUCTS,
 } from '../../lib/clientFallbackStore';
 import {
   flushOfflineOutbox,
@@ -262,9 +266,13 @@ export function WorkerPortal() {
   const [materialLot, setMaterialLot] = useState<string>('');
 
 // ==================== DAILY PLAN AUTO-SUGGESTION FOR ACTIVE WORKER ====================
-  const [dailyPlanRows, setDailyPlanRows] = useState<DailyPlanRow[]>([]);
+  const [dailyPlanRows, setDailyPlanRows] = useState<DailyPlanRow[]>(() =>
+    getFallbackDailyPlan(getShiftProductionWorkDate(new Date()))
+  );
   const [currentSelectedPlanIndex, setCurrentSelectedPlanIndex] = useState<number>(0);
   const lastAutoSelectedWorkerRef = useRef<string>('');
+  const appliedPlanRowKeyRef = useRef<string>('');
+  const lastActiveWorkerIdRef = useRef<string>('');
 
   useEffect(() => {
     let active = true;
@@ -357,7 +365,10 @@ export function WorkerPortal() {
 
       // 2. PO:
       let targetPoId = (planRow as any).poId || '';
-      const ordList = bootstrap?.ordersList || [];
+      const ordList =
+        bootstrap?.ordersList && bootstrap.ordersList.length > 0
+          ? bootstrap.ordersList
+          : FALLBACK_ORDERS;
       if (!targetPoId && planRow.productName) {
         const cleanPName = planRow.productName.trim().toLowerCase();
         // Priority 1: Open/active orders with remaining quantity to produce
@@ -403,22 +414,31 @@ export function WorkerPortal() {
       }
 
       // 2b. Product / Drawing (Set selectedSpId directly from matched product):
+      const prodList =
+        bootstrap?.products && bootstrap.products.length > 0
+          ? bootstrap.products
+          : FALLBACK_PRODUCTS;
       if (planRow.productName) {
-        const prodList = bootstrap?.products || [];
         const cleanPName = planRow.productName.trim().toLowerCase();
-        const matchedProd = prodList.find(
+        let matchedProd = prodList.find(
           (p) =>
             p.productName.trim().toLowerCase() === cleanPName ||
             p.productName.toLowerCase().includes(cleanPName) ||
             cleanPName.includes(p.productName.toLowerCase())
         );
+        if (!matchedProd && cleanPName.includes('crmining')) {
+          matchedProd = prodList.find((p) => p.productName.toLowerCase().includes('crmining'));
+        }
         if (matchedProd) {
           setSelectedSpId(matchedProd.spId);
         }
       }
 
       // 3. Operation (Match accurately by BOTH Product and Operation Name):
-      const opList = bootstrap?.operations || [];
+      const opList =
+        bootstrap?.operations && bootstrap.operations.length > 0
+          ? bootstrap.operations
+          : FALLBACK_OPERATIONS;
       let matchedOp: OperationMeta | undefined;
 
       // 3a. Exact ncId match if specified in plan
@@ -431,12 +451,15 @@ export function WorkerPortal() {
         const cleanPlanProd = planRow.productName.trim().toLowerCase();
         const cleanPlanOp = (planRow.opName || '').trim().toLowerCase();
 
-        // 1st: Exact product name + op
+        // 1st: Exact product name + op (with support for CRMINING keyword)
         matchedOp = opList.find((o) => {
           const oProd = (o.productName || '').trim().toLowerCase();
           const oOp = (o.opName || '').trim().toLowerCase();
-          const prodExact = oProd === cleanPlanProd;
-          const opMatch = !cleanPlanOp || oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
+          const prodExact =
+            oProd === cleanPlanProd ||
+            (cleanPlanProd.includes('crmining') && oProd.includes('crmining'));
+          const opMatch =
+            !cleanPlanOp || oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
           return prodExact && opMatch;
         });
 
@@ -445,8 +468,12 @@ export function WorkerPortal() {
           matchedOp = opList.find((o) => {
             const oProd = (o.productName || '').trim().toLowerCase();
             const oOp = (o.opName || '').trim().toLowerCase();
-            const prodFuzzy = oProd.includes(cleanPlanProd) || cleanPlanProd.includes(oProd);
-            const opMatch = !cleanPlanOp || oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
+            const prodFuzzy =
+              oProd.includes(cleanPlanProd) ||
+              cleanPlanProd.includes(oProd) ||
+              (cleanPlanProd.includes('crmining') && oProd.includes('crmining'));
+            const opMatch =
+              !cleanPlanOp || oOp === cleanPlanOp || oOp.includes(cleanPlanOp) || cleanPlanOp.includes(oOp);
             return prodFuzzy && opMatch;
           });
         }
@@ -455,7 +482,12 @@ export function WorkerPortal() {
         if (!matchedOp) {
           matchedOp = opList.find((o) => {
             const oProd = (o.productName || '').trim().toLowerCase();
-            return oProd === cleanPlanProd || oProd.includes(cleanPlanProd) || cleanPlanProd.includes(oProd);
+            return (
+              oProd === cleanPlanProd ||
+              oProd.includes(cleanPlanProd) ||
+              cleanPlanProd.includes(oProd) ||
+              (cleanPlanProd.includes('crmining') && oProd.includes('crmining'))
+            );
           });
         }
       }
@@ -482,21 +514,6 @@ export function WorkerPortal() {
           planRow.spId,
           planRow.ncId
         );
-
-        setBootstrap((prev) => {
-          if (!prev) return prev;
-          const ops = prev.operations.some((o) => o.ncId === matchedOp!.ncId)
-            ? prev.operations
-            : [matchedOp!, ...prev.operations];
-          const prods = prev.products.some((p) => p.spId === matchedOp!.spId)
-            ? prev.products
-            : [ensureProductExists(cust, pName, matchedOp!.spId), ...prev.products];
-          return {
-            ...prev,
-            operations: ops,
-            products: prods,
-          };
-        });
       }
 
       if (matchedOp) {
@@ -511,6 +528,21 @@ export function WorkerPortal() {
             true
           )
         );
+
+        setBootstrap((prev) => {
+          if (!prev) return prev;
+          const ops = prev.operations.some((o) => o.ncId === matchedOp!.ncId)
+            ? prev.operations
+            : [matchedOp!, ...prev.operations];
+          const prods = prev.products.some((p) => p.spId === matchedOp!.spId)
+            ? prev.products
+            : [ensureProductExists(matchedOp!.customer, matchedOp!.productName, matchedOp!.spId), ...prev.products];
+          return {
+            ...prev,
+            operations: ops,
+            products: prods,
+          };
+        });
       }
 
       // 4. Shift & Machine Mode:
@@ -528,7 +560,11 @@ export function WorkerPortal() {
       if (planRow.plannedQty > 0) {
         setOkQty(planRow.plannedQty);
       }
-      const pIdx = myPlanRows.indexOf(planRow);
+      const pIdx = myPlanRows.findIndex(
+        (r) =>
+          r === planRow ||
+          (r.machineName === planRow.machineName && r.productName === planRow.productName)
+      );
       if (pIdx >= 0) setCurrentSelectedPlanIndex(pIdx);
 
       if (!silent) {
@@ -542,12 +578,24 @@ export function WorkerPortal() {
 
   // Auto-fill from plan whenever worker logs in or date changes
   useEffect(() => {
+    if (user?.workerId && user.workerId !== lastActiveWorkerIdRef.current) {
+      lastActiveWorkerIdRef.current = user.workerId;
+      appliedPlanRowKeyRef.current = '';
+    }
+  }, [user?.workerId]);
+
+  useEffect(() => {
     if (myPlanRows.length > 0 && user?.workerId) {
       const activeIdx =
         currentSelectedPlanIndex >= 0 && currentSelectedPlanIndex < myPlanRows.length
           ? currentSelectedPlanIndex
           : 0;
-      applyPlanRowSelection(myPlanRows[activeIdx], true);
+      const targetPlan = myPlanRows[activeIdx];
+      const planKey = `${user.workerId}_${workDate}_${targetPlan.machineName}_${targetPlan.productName || targetPlan.opName}_${activeIdx}`;
+      if (appliedPlanRowKeyRef.current !== planKey) {
+        appliedPlanRowKeyRef.current = planKey;
+        applyPlanRowSelection(targetPlan, true);
+      }
     }
   }, [myPlanRows, user?.workerId, workDate, applyPlanRowSelection, currentSelectedPlanIndex]);
   const [handoverNote, setHandoverNote] = useState<string>('');
@@ -657,10 +705,26 @@ export function WorkerPortal() {
           };
         }
 
+        // Preserve any custom or newly added operations and products in FALLBACK_OPERATIONS
+        const allOpsMap = new Map<string, OperationMeta>();
+        for (const o of (data.operations || [])) allOpsMap.set(o.ncId.toLowerCase(), o);
+        for (const o of FALLBACK_OPERATIONS) {
+          if (!allOpsMap.has(o.ncId.toLowerCase())) allOpsMap.set(o.ncId.toLowerCase(), o);
+        }
+        data.operations = Array.from(allOpsMap.values());
+
+        const allProdsMap = new Map<string, ProductMeta>();
+        for (const p of (data.products || [])) allProdsMap.set(p.spId.toLowerCase(), p);
+        for (const p of FALLBACK_PRODUCTS) {
+          if (!allProdsMap.has(p.spId.toLowerCase())) allProdsMap.set(p.spId.toLowerCase(), p);
+        }
+        data.products = Array.from(allProdsMap.values());
+
         setBootstrap(data);
         setTodayOverrideIncome(null);
 
-        if (!initializedSelectionRef.current && data.operations.length > 0) {
+        // ONLY initialize form selections on the very first fresh load, NEVER during background polling (silent)
+        if (!silent && !initializedSelectionRef.current && data.operations.length > 0) {
           initializedSelectionRef.current = true;
           if (data.vietnamToday) setWorkDate(data.vietnamToday);
 
@@ -698,11 +762,20 @@ export function WorkerPortal() {
           }
 
           // Priority: If worker already has tasks assigned in daily plan today, auto-select their first plan task!
-          const workerPlan = myPlanRows.length > 0 ? myPlanRows[0] : null;
+          const targetDate = data.vietnamToday || workDate;
+          const todayPlan = getFallbackDailyPlan(targetDate);
+          const cleanName = (user?.name || '').trim().toLowerCase();
+          const workerPlan =
+            (myPlanRows.length > 0 ? myPlanRows[0] : null) ||
+            todayPlan.find((r) => {
+              const w = (r.workerName || '').trim().toLowerCase();
+              return w === cleanName || cleanName.includes(w) || w.includes(cleanName);
+            }) || null;
+
           if (workerPlan) {
             applyPlanRowSelection(workerPlan, true);
           } else {
-            // Default initial selection: PO485-01 + NC098 if available, else first open PO
+            // Default initial selection only if worker has no assigned plan tasks
             const defaultPo =
               data.ordersList.find((p) => p.poId === 'PO485-01') ||
               data.ordersList.find((p) => p.spId && p.remainQty > 0) ||
@@ -1957,6 +2030,7 @@ export function WorkerPortal() {
                         type="button"
                         onClick={() => {
                           setCurrentSelectedPlanIndex(pIdx);
+                          appliedPlanRowKeyRef.current = '';
                           applyPlanRowSelection(plan, false);
                         }}
                         className={`flex flex-col text-left p-2.5 rounded-xl border-2 transition-all relative ${
@@ -2244,7 +2318,11 @@ export function WorkerPortal() {
                       Đơn hàng / Lệnh SX (PO)
                     </div>
                     <div className="mt-0.5 truncate font-mono-num text-sm font-extrabold text-blue-700">
-                      {selectedPo ? `${selectedPo.poId} (${selectedPo.customer})` : 'PO-THEO-KH (Kế hoạch lẻ)'}
+                      {selectedPo
+                        ? `${selectedPo.poId} (${selectedPo.customer})`
+                        : selectedPoId === 'PO-THEO-KH'
+                        ? `PO-THEO-KH (${selectedOp?.customer || selectedProduct?.customer || 'Vico - Nội bộ / Khách lẻ'})`
+                        : selectedPoId || 'PO-THEO-KH'}
                     </div>
                   </div>
                   <ChevronRight className="h-5 w-5 shrink-0 text-slate-500" />
@@ -2413,7 +2491,10 @@ export function WorkerPortal() {
                       <span className="text-[11px] font-bold text-slate-600">Đổi nhanh máy:</span>
                       <button
                         type="button"
-                        onClick={() => applyPlanRowSelection(primaryPlanRow, false)}
+                        onClick={() => {
+                          appliedPlanRowKeyRef.current = '';
+                          applyPlanRowSelection(primaryPlanRow, false);
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                           machineName === primaryPlanRow.machineName
                             ? 'bg-emerald-600 text-white shadow-xs'
@@ -2424,7 +2505,10 @@ export function WorkerPortal() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => applyPlanRowSelection(secondaryPlanRow, false)}
+                        onClick={() => {
+                          appliedPlanRowKeyRef.current = '';
+                          applyPlanRowSelection(secondaryPlanRow, false);
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                           machineName === secondaryPlanRow.machineName
                             ? 'bg-violet-600 text-white shadow-xs'
