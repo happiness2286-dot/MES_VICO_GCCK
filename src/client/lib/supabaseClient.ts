@@ -199,6 +199,7 @@ export async function fetchLogsFromSupabase(): Promise<ProductionLogDto[] | null
     const { data, error } = await sb
       .from('production_logs')
       .select('*')
+      .neq('is_voided', 1)
       .order('id', { ascending: false })
       .limit(200);
 
@@ -306,11 +307,36 @@ export async function updateLogOnSupabase(
   }
 }
 
+export async function deleteLogFromSupabase(
+  id: number | string,
+  recordUid?: string
+): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  try {
+    let query = sb.from('production_logs').delete();
+    if (recordUid) {
+      query = query.eq('record_uid', recordUid);
+    } else {
+      query = query.eq('id', Number(id));
+    }
+    const { error } = await query;
+    if (error) {
+      console.warn('Failed to delete log from Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('deleteLogFromSupabase error:', err);
+    return false;
+  }
+}
+
 export async function voidLogOnSupabase(
   id: number | string,
   recordUid?: string
 ): Promise<boolean> {
-  return updateLogOnSupabase(id, recordUid, { is_voided: 1, income: 0 });
+  return deleteLogFromSupabase(id, recordUid);
 }
 
 /**

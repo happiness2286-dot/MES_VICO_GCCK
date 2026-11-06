@@ -75,8 +75,15 @@ import {
   fetchDailyPlanFromSupabase,
   pushDailyPlanToSupabase,
   subscribeSupabaseDailyPlanChanges,
+  deleteLogFromSupabase,
 } from '../../lib/supabaseClient';
-import { saveClientStoredLog, getAllFallbackLogs, getFallbackDailyPlan, saveFallbackDailyPlan } from '../../lib/clientFallbackStore';
+import {
+  saveClientStoredLog,
+  getAllFallbackLogs,
+  getFallbackDailyPlan,
+  saveFallbackDailyPlan,
+  deleteFallbackLog,
+} from '../../lib/clientFallbackStore';
 import {
   flushOfflineOutbox,
   generateIdempotentRecordUid,
@@ -577,13 +584,13 @@ export function WorkerPortal() {
 
         const mergedMap = new Map<string, any>();
         for (const l of (data.recentLogs || [])) {
-          mergedMap.set(l.recordUid || String(l.id), l);
+          if (l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         for (const l of getAllFallbackLogs()) {
-          mergedMap.set(l.recordUid || String(l.id), l);
+          if (l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         for (const l of cloudLogs) {
-          mergedMap.set(l.recordUid || String(l.id), l);
+          if (l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
           const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
@@ -1543,15 +1550,17 @@ export function WorkerPortal() {
         ? 'NC_STOP'
         : selectedNcId || 'NC_STOP';
 
-    // Chuẩn hóa ngày sản xuất: nếu làm ca 3 rạng sáng hôm sau thì tự động quy về ngày ca 3 bắt đầu
-    const effectiveWorkDate =
-      (shiftType.includes('Ca 3') || shiftType.includes('Đêm')) && new Date().getHours() < 7
-        ? getShiftProductionWorkDate(new Date(), shiftType)
-        : workDate;
+    const effectiveWorkDate = workDate;
+    const nowDt = new Date();
+    const [wY, wM, wD] = effectiveWorkDate.slice(0, 10).split('-');
+    const hh = String(nowDt.getHours()).padStart(2, '0');
+    const mm = String(nowDt.getMinutes()).padStart(2, '0');
+    const timeStr = (wD && wM) ? `${wD}/${wM} ${hh}:${mm}` : `${String(nowDt.getDate()).padStart(2, '0')}/${String(nowDt.getMonth() + 1).padStart(2, '0')} ${hh}:${mm}`;
 
     const payload: ReportSubmitPayload = {
       recordUid: pendingRecordUid,
       workDate: effectiveWorkDate,
+      timeStr,
       shiftType,
       startTime,
       endTime,
@@ -1632,7 +1641,7 @@ export function WorkerPortal() {
   };
 
   const handleDeleteLog = async (log: ProductionLogDto) => {
-    const confirmText = `Bạn có chắc chắn muốn XÓA phiếu [${log.ncId} — ${log.opName}] (${log.okQty} OK)?\n\nKhoản tiền lương +${formatVnd(log.income)} sẽ được trừ khỏi tổng thu nhập hôm nay của bạn.`;
+    const confirmText = `Bạn có chắc chắn muốn XÓA VĨNH VIỄN phiếu [${log.ncId} — ${log.opName}] (${log.okQty} OK)?\n\nPhiếu sẽ bị xóa hoàn toàn khỏi hệ thống (không lưu lại lịch sử) để bạn có thể báo cáo lại phiếu mới.`;
     if (!window.confirm(confirmText)) return;
 
     setDeletingLogId(log.id);
@@ -1646,27 +1655,37 @@ export function WorkerPortal() {
         console.warn('Backend API delete failed (static/offline), falling back to client/cloud void:', err);
       }
 
-      void voidLogOnSupabase(log.id, log.recordUid);
-      void voidFallbackLog(log.id);
+      // 1. Delete permanently from Supabase Cloud
+      await deleteLogFromSupabase(log.id, log.recordUid);
 
+      // 2. Delete permanently from local storage
+      deleteFallbackLog(log.id);
+      if (log.recordUid) deleteFallbackLog(log.recordUid);
+
+      // 3. Completely remove from local state list
+      const newIncome = Math.max(0, (todayOverrideIncome ?? myTodayIncome) - Number(log.income || 0));
       setBootstrap((prev) => {
         if (!prev) return prev;
+        const filtered = prev.recentLogs.filter(
+          (l) =>
+            String(l.id) !== String(log.id) &&
+            (!log.recordUid || l.recordUid !== log.recordUid) &&
+            l.isVoided !== 1
+        );
         return {
           ...prev,
-          recentLogs: prev.recentLogs.map((l) =>
-            l.id === log.id ? { ...l, isVoided: 1, income: 0 } : l
-          ),
+          recentLogs: filtered,
+          todayAccumulated: {
+            ...(prev.todayAccumulated || {}),
+            [user?.workerId || '']: newIncome,
+          },
         };
       });
 
-      if (res && res.todayTotalIncome !== undefined) {
-        setTodayOverrideIncome(res.todayTotalIncome);
-      } else {
-        setTodayOverrideIncome((prev) => Math.max(0, (prev ?? myTodayIncome) - Number(log.income || 0)));
-      }
+      setTodayOverrideIncome(newIncome);
 
-      toast.success(`Đã xóa phiếu ${log.ncId} thành công! Thu nhập hôm nay đã được cập nhật lại.`);
-      void loadBootstrapData(false);
+      toast.success(`Đã xóa vĩnh viễn phiếu [${log.ncId}] thành công! Bạn có thể báo cáo lại cái mới.`);
+      void loadBootstrapData(true);
     } catch (err: any) {
       toast.error(String(err?.message || 'Không thể xóa phiếu báo cáo. Vui lòng thử lại!'));
     } finally {
@@ -1711,7 +1730,7 @@ export function WorkerPortal() {
   const [logViewMode, setLogViewMode] = useState<'MY' | 'ALL'>('MY');
 
   const myRecentLogs = useMemo(() => {
-    const all = bootstrap?.recentLogs ?? [];
+    const all = (bootstrap?.recentLogs ?? []).filter((l) => l.isVoided !== 1);
     if (!user) return [];
     if (logViewMode === 'ALL') {
       return all;
@@ -3779,8 +3798,10 @@ export function WorkerPortal() {
                     >
                       <div className="flex flex-wrap items-center justify-between gap-1.5">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono-num text-xs font-bold text-blue-700">
-                            {log.timeStr || log.workDate}
+                          <span className="font-mono-num text-xs font-bold text-blue-700 bg-blue-50/80 px-2 py-0.5 rounded border border-blue-200">
+                            📅 {log.workDate ? `${log.workDate.slice(8, 10)}/${log.workDate.slice(5, 7)}` : ''}
+                            {log.shiftType ? ` · ${log.shiftType.split(' ')[0]}` : ''}
+                            {log.timeStr && log.timeStr.includes(':') ? ` (${log.timeStr.slice(-5)})` : ''}
                           </span>
                           <Badge variant="neutral">{log.machineName}</Badge>
                           {(log.workerName || log.workerId) && (

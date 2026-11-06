@@ -35,6 +35,7 @@ import {
   saveFallbackTool,
   updateFallbackLog,
   voidFallbackLog,
+  deleteFallbackLog,
   clearAllClientStoredLogs,
   getClientStoredLogs,
   clearAllFallbackHandovers,
@@ -576,11 +577,11 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       const parts = path.split('?')[0].split('/').filter(Boolean);
       const logId = parts[parts.length - 1] || '';
       if (logId) {
-        voidFallbackLog(logId);
+        deleteFallbackLog(logId);
       }
       return {
         success: true,
-        message: 'Đã xóa báo cáo thành công.',
+        message: 'Đã xóa vĩnh viễn báo cáo thành công.',
         todayTotalIncome: 0,
       } as unknown as T;
     }

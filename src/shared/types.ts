@@ -663,6 +663,7 @@ export interface ShiftHandoverAlert {
 export interface ReportSubmitPayload {
   recordUid?: string;
   workDate?: string;
+  timeStr?: string;
   shiftType: string;
   startTime: string;
   endTime: string;

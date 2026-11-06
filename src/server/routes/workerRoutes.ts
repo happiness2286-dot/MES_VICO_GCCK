@@ -853,6 +853,8 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
 
         const isVoided =
           body.isVoided !== undefined ? (body.isVoided ? 1 : 0) : Number(log.is_voided);
+        const newWorkDate = body.workDate ? String(body.workDate).slice(0, 10) : String(log.work_date);
+        const newShiftType = body.shiftType ? String(body.shiftType) : String(log.shift_type);
         const newNcId = body.ncId ? normalizeVn(String(body.ncId)) : String(log.nc_id);
         const newPoId = body.poId ? normalizeVn(String(body.poId)) : String(log.po_id);
         const newMachineName = body.machineName
@@ -896,12 +898,16 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
               | undefined)
           : undefined;
 
+        const [wY, wM, wD] = newWorkDate.split('-');
+        const existingTime = log.time_str && String(log.time_str).includes(':') ? String(log.time_str).slice(-5) : '07:30';
+        const newTimeStr = (wD && wM) ? `${wD}/${wM} ${existingTime}` : String(log.time_str || '');
+
         const payrollCfg = getPayrollConfigFromDb(db);
         const isSunday = Boolean(log.is_sunday);
         const priorCtx = buildShiftPriorContext(
           String(log.worker_id),
-          String(log.work_date),
-          String(log.shift_type)
+          newWorkDate,
+          newShiftType
         );
 
         const payroll = calculateTurnPayroll(
@@ -909,8 +915,8 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
             workerId: String(log.worker_id),
             salaryMode: String(wRow?.salary_mode || 'Khoán 1 + 0.33 máy'),
             costPerSec: Number(wRow?.cost_per_sec || 13.37),
-            workDate: String(log.work_date),
-            shiftType: String(log.shift_type),
+            workDate: newWorkDate,
+            shiftType: newShiftType,
             startTime: String(log.start_time),
             endTime: String(log.end_time),
             overtimeMinutes: Number(log.overtime_minutes || 0),
@@ -941,7 +947,8 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
 
         db.prepare(`
           UPDATE production_logs
-          SET po_id = ?, sp_id = ?, nc_id = ?, op_name = ?, product_name = ?, customer = ?,
+          SET work_date = ?, shift_type = ?, time_str = ?,
+              po_id = ?, sp_id = ?, nc_id = ?, op_name = ?, product_name = ?, customer = ?,
               machine_name = ?, machine_id = ?, ok_qty = ?, rework_qty = ?, scrap_qty = ?, stop_minutes = ?, stop_reason = ?,
               std_seconds = ?, step_order = ?, is_final_op = ?,
               piece_wage = ?, ot_bonus_wage = ?, wait_wage = ?, meal_allowance = ?, scrap_penalty = ?,
@@ -949,6 +956,9 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
               is_voided = ?
           WHERE id = ?
         `).run(
+          newWorkDate,
+          newShiftType,
+          newTimeStr,
           newPoId,
           spId,
           newNcId,
@@ -1066,7 +1076,7 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
           throw new Error('Bạn chỉ có quyền xóa phiếu báo cáo của chính mình.');
         }
 
-        db.prepare('UPDATE production_logs SET is_voided = 1, income = 0 WHERE id = ?').run(id);
+        db.prepare('DELETE FROM production_logs WHERE id = ?').run(id);
 
         const poId = String(log.po_id);
         if (poId && poId !== 'PO-THEO-KH') {

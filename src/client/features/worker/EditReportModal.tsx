@@ -9,6 +9,7 @@ import {
   Layers,
   Coins,
   RefreshCw,
+  Calendar,
 } from 'lucide-react';
 import type { ProductionLogDto, OperationMeta, PurchaseOrderInfo } from '@shared/types';
 import { apiClient } from '../../lib/apiClient';
@@ -41,6 +42,10 @@ export function EditReportModal({
 }: EditReportModalProps) {
   if (!isOpen || !log) return null;
 
+  const [workDate, setWorkDate] = useState(
+    log.workDate || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' })
+  );
+  const [shiftType, setShiftType] = useState(log.shiftType || 'Ca 1 (Sáng 06h-14h)');
   const [selectedPoId, setSelectedPoId] = useState(log.poId || 'PO-THEO-KH');
   const [selectedNcId, setSelectedNcId] = useState(log.ncId);
   const [machineName, setMachineName] = useState(log.machineName || 'Máy phay OKK3');
@@ -89,6 +94,8 @@ export function EditReportModal({
 
     try {
       const payload = {
+        workDate,
+        shiftType,
         poId: selectedPoId,
         ncId: selectedNcId,
         machineName,
@@ -97,6 +104,9 @@ export function EditReportModal({
         scrapQty,
         stopMinutes,
         stopReason: stopMinutes > 0 ? (stopReason || 'Dừng máy sự cố/điều chỉnh') : 'Không có dừng máy',
+        stdSeconds: Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0),
+        income: estNewWage,
+        pieceWage: estNewWage,
       };
 
       // 1. Try sending update to Backend API (if active)
@@ -112,8 +122,15 @@ export function EditReportModal({
         console.warn('Backend API patch failed (likely static/serverless deployment), applying client/cloud sync directly:', patchErr);
       }
 
+      const [wY, wM, wD] = workDate.slice(0, 10).split('-');
+      const existingTime = log.timeStr && log.timeStr.includes(':') ? log.timeStr.slice(-5) : '07:30';
+      const newTimeStr = (wD && wM) ? `${wD}/${wM} ${existingTime}` : (log.timeStr || '');
+
       const updatedLog: ProductionLogDto = res?.log || {
         ...log,
+        workDate,
+        shiftType,
+        timeStr: newTimeStr,
         poId: selectedPoId,
         ncId: selectedNcId,
         opName: currentOp?.opName || log.opName,
@@ -139,6 +156,9 @@ export function EditReportModal({
 
       // 2. Sync to Supabase Cloud directly if active
       await updateLogOnSupabase(log.id, log.recordUid, {
+        work_date: updatedLog.workDate,
+        shift_type: updatedLog.shiftType,
+        time_str: newTimeStr,
         po_id: updatedLog.poId,
         nc_id: updatedLog.ncId,
         op_name: updatedLog.opName,
@@ -220,6 +240,37 @@ export function EditReportModal({
               <span>{errorMsg}</span>
             </div>
           )}
+
+          {/* Ngày Báo Cáo SX & Ca Làm Việc */}
+          <div className="grid grid-cols-2 gap-2.5 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
+            <div>
+              <label className="block font-bold text-blue-900 mb-1 flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5 text-blue-600" />
+                Ngày Làm Việc / Báo Cáo *
+              </label>
+              <input
+                type="date"
+                value={workDate}
+                onChange={(e) => setWorkDate(e.target.value)}
+                className="w-full rounded-xl border border-blue-200 bg-white px-2.5 py-1.5 font-bold text-slate-800 focus:border-blue-600 focus:outline-hidden"
+              />
+            </div>
+            <div>
+              <label className="block font-bold text-blue-900 mb-1">
+                Ca Làm Việc
+              </label>
+              <select
+                value={shiftType}
+                onChange={(e) => setShiftType(e.target.value)}
+                className="w-full rounded-xl border border-blue-200 bg-white px-2.5 py-1.5 font-semibold text-slate-800 focus:border-blue-600 focus:outline-hidden"
+              >
+                <option value="Ca 1 (Sáng 06h-14h)">Ca 1 (Sáng 06h-14h)</option>
+                <option value="Ca 2 (Chiều 14h-22h)">Ca 2 (Chiều 14h-22h)</option>
+                <option value="Ca 3 (Đêm 22h-06h)">Ca 3 (Đêm 22h-06h)</option>
+                <option value="Ca Hành Chính (08h-17h)">Ca Hành Chính (08h-17h)</option>
+              </select>
+            </div>
+          </div>
 
           {/* PO & Máy */}
           <div className="grid grid-cols-2 gap-2.5">

@@ -945,8 +945,19 @@ export function updateFallbackLog(id: string | number, patch: any): void {
   }
 }
 
+export function deleteFallbackLog(id: string | number): void {
+  try {
+    const existing = getClientStoredLogs();
+    const key = String(id);
+    const filtered = existing.filter((e) => String(e.id) !== key && String(e.recordUid) !== key && e.isVoided !== 1);
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(filtered.slice(0, 200)));
+  } catch {
+    // ignore
+  }
+}
+
 export function voidFallbackLog(id: string | number): void {
-  updateFallbackLog(id, { isVoided: 1, income: 0 });
+  deleteFallbackLog(id);
 }
 
 export function getAllFallbackLogs(): any[] {
@@ -954,6 +965,7 @@ export function getAllFallbackLogs(): any[] {
   const seen = new Set<string>();
   const list: any[] = [];
   for (const l of stored) {
+    if (l.isVoided === 1) continue;
     const key = String(l.recordUid || l.id);
     if (!seen.has(key)) {
       seen.add(key);
@@ -1426,7 +1438,11 @@ export async function submitDirectToGoogleAppsScript(
 
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
-  const timeStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} ${hours}:${minutes}`;
+  const wDate = payload.workDate || todayStr;
+  const [wY, wM, wD] = wDate.slice(0, 10).split('-');
+  const timeStr = (wD && wM)
+    ? `${wD}/${wM} ${hours}:${minutes}`
+    : `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} ${hours}:${minutes}`;
 
   const mockLogDto: any = {
     id: Date.now(),
