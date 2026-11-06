@@ -83,6 +83,8 @@ import {
   getFallbackDailyPlan,
   saveFallbackDailyPlan,
   deleteFallbackLog,
+  ensureProductExists,
+  ensureOperationExists,
 } from '../../lib/clientFallbackStore';
 import {
   flushOfflineOutbox,
@@ -361,7 +363,9 @@ export function WorkerPortal() {
         // Priority 1: Open/active orders with remaining quantity to produce
         const openPos = ordList.filter(
           (p) =>
-            p.productName.trim().toLowerCase() === cleanPName &&
+            (p.productName.trim().toLowerCase() === cleanPName ||
+              p.productName.toLowerCase().includes(cleanPName) ||
+              cleanPName.includes(p.productName.toLowerCase())) &&
             p.status !== '✅ Đã giao đủ' &&
             (p.remainQty ?? (p.qtyPo - (p.deliveredQty || 0))) > 0
         );
@@ -371,7 +375,9 @@ export function WorkerPortal() {
           // Priority 2: Any open order for this product
           const anyActive = ordList.filter(
             (p) =>
-              p.productName.trim().toLowerCase() === cleanPName &&
+              (p.productName.trim().toLowerCase() === cleanPName ||
+                p.productName.toLowerCase().includes(cleanPName) ||
+                cleanPName.includes(p.productName.toLowerCase())) &&
               p.status !== '✅ Đã giao đủ'
           );
           if (anyActive.length > 0) {
@@ -379,7 +385,10 @@ export function WorkerPortal() {
           } else {
             // Priority 3: Any matching order
             const anyMatch = ordList.find(
-              (p) => p.productName.trim().toLowerCase() === cleanPName
+              (p) =>
+                p.productName.trim().toLowerCase() === cleanPName ||
+                p.productName.toLowerCase().includes(cleanPName) ||
+                cleanPName.includes(p.productName.toLowerCase())
             );
             if (anyMatch) targetPoId = anyMatch.poId;
           }
@@ -460,6 +469,36 @@ export function WorkerPortal() {
         });
       }
 
+      // 3d. Ad-hoc/custom tasks (e.g. Sửa khuôn CRMINING, hàng nội bộ lẻ): Ensure on-the-fly Op & Product exist
+      if (!matchedOp && (planRow.productName || planRow.opName)) {
+        const cust = planRow.customer || 'Vico - Nội bộ / Khách lẻ';
+        const pName = planRow.productName || 'Sản phẩm cơ khí';
+        const oName = planRow.opName || 'Gia công theo yêu cầu';
+        matchedOp = ensureOperationExists(
+          cust,
+          pName,
+          oName,
+          planRow.machineName,
+          planRow.spId,
+          planRow.ncId
+        );
+
+        setBootstrap((prev) => {
+          if (!prev) return prev;
+          const ops = prev.operations.some((o) => o.ncId === matchedOp!.ncId)
+            ? prev.operations
+            : [matchedOp!, ...prev.operations];
+          const prods = prev.products.some((p) => p.spId === matchedOp!.spId)
+            ? prev.products
+            : [ensureProductExists(cust, pName, matchedOp!.spId), ...prev.products];
+          return {
+            ...prev,
+            operations: ops,
+            products: prods,
+          };
+        });
+      }
+
       if (matchedOp) {
         setSelectedNcId(matchedOp.ncId);
         if (matchedOp.spId) setSelectedSpId(matchedOp.spId);
@@ -504,13 +543,13 @@ export function WorkerPortal() {
   // Auto-fill from plan whenever worker logs in or date changes
   useEffect(() => {
     if (myPlanRows.length > 0 && user?.workerId) {
-      const key = `${user.workerId}_${workDate}_${myPlanRows.length}`;
-      if (lastAutoSelectedWorkerRef.current !== key) {
-        lastAutoSelectedWorkerRef.current = key;
-        applyPlanRowSelection(myPlanRows[0], true);
-      }
+      const activeIdx =
+        currentSelectedPlanIndex >= 0 && currentSelectedPlanIndex < myPlanRows.length
+          ? currentSelectedPlanIndex
+          : 0;
+      applyPlanRowSelection(myPlanRows[activeIdx], true);
     }
-  }, [myPlanRows, user?.workerId, workDate, applyPlanRowSelection]);
+  }, [myPlanRows, user?.workerId, workDate, applyPlanRowSelection, currentSelectedPlanIndex]);
   const [handoverNote, setHandoverNote] = useState<string>('');
 
   // Server Live Preview, Submit Idempotency & Tab 2 Filter
@@ -658,32 +697,38 @@ export function WorkerPortal() {
             }
           }
 
-          // Default initial selection: PO485-01 + NC098 if available, else first open PO
-          const defaultPo =
-            data.ordersList.find((p) => p.poId === 'PO485-01') ||
-            data.ordersList.find((p) => p.spId && p.remainQty > 0) ||
-            data.ordersList[0];
+          // Priority: If worker already has tasks assigned in daily plan today, auto-select their first plan task!
+          const workerPlan = myPlanRows.length > 0 ? myPlanRows[0] : null;
+          if (workerPlan) {
+            applyPlanRowSelection(workerPlan, true);
+          } else {
+            // Default initial selection: PO485-01 + NC098 if available, else first open PO
+            const defaultPo =
+              data.ordersList.find((p) => p.poId === 'PO485-01') ||
+              data.ordersList.find((p) => p.spId && p.remainQty > 0) ||
+              data.ordersList[0];
 
-          if (defaultPo) {
-            setSelectedPoId(defaultPo.poId);
-            setMaterialLot(defaultPo.materialLot || '');
-            const defaultOp =
-              (defaultPo.spId
-                ? data.operations.find((o) => o.spId === defaultPo.spId)
-                : undefined) || data.operations[0];
-            if (defaultOp) {
-              setSelectedSpId(defaultOp.spId);
-              setSelectedNcId(defaultOp.ncId);
-              setMachineName(defaultOp.defaultMachine || data.machines[0]?.name || 'Máy Tiện CNC 1');
-              setToolCode(defaultOp.toolCode || '');
-              setToolEdgesState(
-                syncAutoToolEdges(
-                  { edgesUsed: 0, isEdgesDirty: false },
-                  0,
-                  defaultOp.stdEdgesPerPcs,
-                  true
-                )
-              );
+            if (defaultPo) {
+              setSelectedPoId(defaultPo.poId);
+              setMaterialLot(defaultPo.materialLot || '');
+              const defaultOp =
+                (defaultPo.spId
+                  ? data.operations.find((o) => o.spId === defaultPo.spId)
+                  : undefined) || data.operations[0];
+              if (defaultOp) {
+                setSelectedSpId(defaultOp.spId);
+                setSelectedNcId(defaultOp.ncId);
+                setMachineName(defaultOp.defaultMachine || data.machines[0]?.name || 'Máy Tiện CNC 1');
+                setToolCode(defaultOp.toolCode || '');
+                setToolEdgesState(
+                  syncAutoToolEdges(
+                    { edgesUsed: 0, isEdgesDirty: false },
+                    0,
+                    defaultOp.stdEdgesPerPcs,
+                    true
+                  )
+                );
+              }
             }
           }
         }

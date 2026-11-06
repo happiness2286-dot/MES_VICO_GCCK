@@ -271,6 +271,56 @@ export function ensureProductExists(customer: string, productName: string, spId?
   );
 }
 
+export function ensureOperationExists(
+  customer: string,
+  productName: string,
+  opName: string,
+  machineName?: string,
+  spId?: string | null,
+  ncId?: string | null,
+  stdSeconds = 1800
+): OperationMeta {
+  const prod = ensureProductExists(customer, productName, spId);
+  const cleanOpName = (opName || 'G/c hoàn thiện').trim();
+  const cleanProd = prod.productName.trim().toLowerCase();
+
+  let found = FALLBACK_OPERATIONS.find(
+    (o) =>
+      (o.spId && o.spId === prod.spId && o.opName.trim().toLowerCase() === cleanOpName.toLowerCase()) ||
+      (o.productName.trim().toLowerCase() === cleanProd && o.opName.trim().toLowerCase() === cleanOpName.toLowerCase())
+  );
+
+  if (!found) {
+    const finalNcId = ncId || `NC_${prod.spId || Date.now().toString(36)}`;
+    found = {
+      ncId: finalNcId,
+      spId: prod.spId,
+      customer: prod.customer,
+      productName: prod.productName,
+      opName: cleanOpName,
+      stdSeconds,
+      stage: 'End',
+      stepOrder: 1,
+      isFinalOp: 1,
+      defaultMachine: machineName || 'Máy Phay CNC2',
+      matName: prod.matName || 'Thép C45 / S45C',
+      cuttingRec: 'Gia công theo yêu cầu',
+      toolCode: 'T01',
+      toolName: 'Dao phay / tiện tiêu chuẩn',
+      costPerEdge: 0,
+      stdEdgesPerPcs: 0,
+      stdLaborCost: 40000,
+      stdMachCost: 65000,
+      stdToolCost: 0,
+      isCriticalCheck: 0,
+    };
+    FALLBACK_OPERATIONS.unshift(found);
+    saveFallbackOperationsToStorage();
+  }
+
+  return found;
+}
+
 export function updateFallbackOperation(ncId: string, patch: Partial<OperationMeta>): OperationMeta {
   const normId = ncId.toLowerCase();
   const idx = FALLBACK_OPERATIONS.findIndex((o) => o.ncId.toLowerCase() === normId);
