@@ -10,6 +10,7 @@ import {
   CloudOff,
   Coins,
   Cpu,
+  Edit3,
   FileText,
   FolderOpen,
   History,
@@ -45,6 +46,7 @@ import type {
   ReportSubmitPayload,
   SystemPayrollConfig,
   DailyPlanRow,
+  ProductionLogDto,
 } from '@shared/types';
 import {
   calculateTurnPayroll,
@@ -90,6 +92,9 @@ import { WorkerGuideModal } from './WorkerGuideModal';
 import { TelegramLinkModal } from './TelegramLinkModal';
 import { FaiInspectionModal } from './FaiInspectionModal';
 import { DrawingViewerModal } from './DrawingViewerModal';
+import { EditReportModal } from './EditReportModal';
+import { voidLogOnSupabase } from '../../lib/supabaseClient';
+import { voidFallbackLog } from '../../lib/clientFallbackStore';
 import {
   applyManualToolEdges,
   computeStopTimerElapsed,
@@ -179,6 +184,8 @@ export function WorkerPortal() {
   const [guideModalOpen, setGuideModalOpen] = useState(false);
   const [selectedCustomerFilter, setSelectedCustomerFilter] = useState<string>('ALL');
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [editingLog, setEditingLog] = useState<ProductionLogDto | null>(null);
+  const [deletingLogId, setDeletingLogId] = useState<number | null>(null);
 
   // Bootstrap & Network State
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
@@ -1593,6 +1600,44 @@ export function WorkerPortal() {
       toast.error(err?.message || 'Gửi báo cáo thất bại.');
     } finally {
       setSubmittingReport(false);
+    }
+  };
+
+  const handleDeleteLog = async (log: ProductionLogDto) => {
+    const confirmText = `Bạn có chắc chắn muốn XÓA phiếu [${log.ncId} — ${log.opName}] (${log.okQty} OK)?\n\nKhoản tiền lương +${formatVnd(log.income)} sẽ được trừ khỏi tổng thu nhập hôm nay của bạn.`;
+    if (!window.confirm(confirmText)) return;
+
+    setDeletingLogId(log.id);
+    try {
+      const res = await apiClient.delete<{ success: boolean; message: string; todayTotalIncome: number }>(
+        `/reports/${log.id}`
+      );
+
+      void voidLogOnSupabase(log.id, log.recordUid);
+      void voidFallbackLog(log.id);
+
+      setBootstrap((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recentLogs: prev.recentLogs.map((l) =>
+            l.id === log.id ? { ...l, isVoided: 1, income: 0 } : l
+          ),
+        };
+      });
+
+      if (res && res.todayTotalIncome !== undefined) {
+        setTodayOverrideIncome(res.todayTotalIncome);
+      } else {
+        setTodayOverrideIncome((prev) => Math.max(0, (prev ?? myTodayIncome) - Number(log.income || 0)));
+      }
+
+      toast.success(`Đã xóa phiếu ${log.ncId} thành công! Thu nhập hôm nay đã được cập nhật lại.`);
+      void loadBootstrapData(false);
+    } catch (err: any) {
+      toast.error(String(err?.message || 'Không thể xóa phiếu báo cáo. Vui lòng thử lại!'));
+    } finally {
+      setDeletingLogId(null);
     }
   };
 
@@ -3748,6 +3793,49 @@ export function WorkerPortal() {
                           📸 Xem ảnh đính kèm
                         </a>
                       )}
+
+                      {/* Thao tác Sửa & Xóa phiếu */}
+                      <div className="flex items-center justify-between border-t border-slate-200/80 pt-2 mt-1">
+                        <div className="text-[11px] font-semibold text-slate-500">
+                          {log.isVoided === 1 ? (
+                            <span className="inline-flex items-center gap-1 font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                              🚫 Phiếu đã hủy (Không tính lương)
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">
+                              Đơn giá: {formatVnd(Math.round((log.stdSeconds || 0) * (user?.costPerSec || 13.37)))}/SP
+                            </span>
+                          )}
+                        </div>
+
+                        {(!log.isVoided || isManagerOrLeader) && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingLog(log)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/90 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 hover:border-blue-300 transition-colors shadow-2xs"
+                              title="Sửa lại nguyên công, máy hoặc số lượng"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                              Sửa
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deletingLogId === log.id}
+                              onClick={() => void handleDeleteLog(log)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50/90 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors shadow-2xs disabled:opacity-50"
+                              title="Xóa phiếu báo cáo này và trừ lại lương"
+                            >
+                              {deletingLogId === log.id ? (
+                                <RefreshCw className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3 w-3" />
+                              )}
+                              Xóa
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -3906,6 +3994,30 @@ export function WorkerPortal() {
           openPinModal('NV00266');
         }}
         onSuccess={() => loadBootstrapData(true)}
+      />
+
+      <EditReportModal
+        isOpen={editingLog !== null}
+        onClose={() => setEditingLog(null)}
+        log={editingLog}
+        operations={operationsList}
+        purchaseOrders={ordersList}
+        costPerSec={user?.costPerSec}
+        salaryMode={user?.salaryMode}
+        onSaveSuccess={(updatedLog, newTodayIncome) => {
+          toast.success(
+            `Đã sửa thành công phiếu [${updatedLog.ncId}]! Lương khoán mới: +${formatVnd(updatedLog.income)}`
+          );
+          setTodayOverrideIncome(newTodayIncome);
+          setBootstrap((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              recentLogs: prev.recentLogs.map((l) => (l.id === updatedLog.id ? updatedLog : l)),
+            };
+          });
+          void loadBootstrapData(false);
+        }}
       />
 
       {/* Cloud Supabase Configuration Modal */}

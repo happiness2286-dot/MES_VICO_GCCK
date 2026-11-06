@@ -945,6 +945,10 @@ export function updateFallbackLog(id: string | number, patch: any): void {
   }
 }
 
+export function voidFallbackLog(id: string | number): void {
+  updateFallbackLog(id, { isVoided: 1, income: 0 });
+}
+
 export function getAllFallbackLogs(): any[] {
   const stored = getClientStoredLogs();
   const seen = new Set<string>();

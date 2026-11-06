@@ -828,6 +828,298 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
     }
   });
 
+  // Chỉnh sửa báo cáo sản lượng đã nộp (Đổi nguyên công, sửa số lượng, máy, PO...)
+  router.patch('/reports/:id', requireAuth, (req, res) => {
+    const id = Number(req.params.id);
+    const viewer = req.authUser!;
+    const body = req.body || {};
+
+    try {
+      const updated = withTransaction(db, () => {
+        const log = db
+          .prepare('SELECT * FROM production_logs WHERE id = ?')
+          .get(id) as Record<string, any> | undefined;
+        if (!log) throw new Error('Không tìm thấy phiếu báo cáo cần sửa.');
+
+        const isOwn = String(log.worker_id) === String(viewer.workerId);
+        const isManager =
+          viewer.appRole === 'SHIFT_LEADER' ||
+          viewer.appRole === 'ADMIN' ||
+          viewer.appRole === 'DIRECTOR' ||
+          viewer.workerId === 'NV00053';
+        if (!isOwn && !isManager) {
+          throw new Error('Bạn chỉ có quyền sửa phiếu báo cáo của chính mình.');
+        }
+
+        const isVoided =
+          body.isVoided !== undefined ? (body.isVoided ? 1 : 0) : Number(log.is_voided);
+        const newNcId = body.ncId ? normalizeVn(String(body.ncId)) : String(log.nc_id);
+        const newPoId = body.poId ? normalizeVn(String(body.poId)) : String(log.po_id);
+        const newMachineName = body.machineName
+          ? normalizeVn(String(body.machineName))
+          : String(log.machine_name);
+        const okQty =
+          body.okQty !== undefined
+            ? Math.max(0, Math.round(Number(body.okQty)))
+            : Number(log.ok_qty);
+        const reworkQty =
+          body.reworkQty !== undefined
+            ? Math.max(0, Math.round(Number(body.reworkQty)))
+            : Number(log.rework_qty);
+        const scrapQty =
+          body.scrapQty !== undefined
+            ? Math.max(0, Math.round(Number(body.scrapQty)))
+            : Number(log.scrap_qty);
+        const stopMinutes =
+          body.stopMinutes !== undefined
+            ? Math.max(0, Math.round(Number(body.stopMinutes)))
+            : Number(log.stop_minutes);
+        const stopReason =
+          body.stopReason !== undefined
+            ? normalizeVn(String(body.stopReason))
+            : String(log.stop_reason || '');
+
+        const opRow = db
+          .prepare('SELECT * FROM operations WHERE nc_id = ?')
+          .get(newNcId) as Record<string, any> | undefined;
+        const wRow = db
+          .prepare('SELECT salary_mode, cost_per_sec, name FROM workers WHERE id = ?')
+          .get(String(log.worker_id)) as Record<string, any> | undefined;
+        const machRow = db
+          .prepare('SELECT id, name, cost_per_hour FROM machines WHERE LOWER(name) = LOWER(?) OR id = ?')
+          .get(newMachineName, String(log.machine_id)) as Record<string, any> | undefined;
+
+        const toolCode = String(body.toolCode || log.tool_code || opRow?.tool_code || '');
+        const toolRow = toolCode
+          ? (db.prepare('SELECT cost_per_edge FROM cutting_tools WHERE code = ?').get(toolCode) as
+              | Record<string, any>
+              | undefined)
+          : undefined;
+
+        const payrollCfg = getPayrollConfigFromDb(db);
+        const isSunday = Boolean(log.is_sunday);
+        const priorCtx = buildShiftPriorContext(
+          String(log.worker_id),
+          String(log.work_date),
+          String(log.shift_type)
+        );
+
+        const payroll = calculateTurnPayroll(
+          {
+            workerId: String(log.worker_id),
+            salaryMode: String(wRow?.salary_mode || 'Khoán 1 + 0.33 máy'),
+            costPerSec: Number(wRow?.cost_per_sec || 13.37),
+            workDate: String(log.work_date),
+            shiftType: String(log.shift_type),
+            startTime: String(log.start_time),
+            endTime: String(log.end_time),
+            overtimeMinutes: Number(log.overtime_minutes || 0),
+            isSunday,
+            isLightsOut: Boolean(log.is_lights_out),
+            machineName: String(machRow?.name || log.machine_name),
+            machineMode: log.machine_mode === 'SECOND' ? 'SECOND' : 'FIRST',
+            machineCostPerHour: Number(machRow?.cost_per_hour || 250000),
+            stdSeconds: Number(opRow?.std_seconds ?? log.std_seconds ?? 0),
+            stdEdgesPerPcs: Number(opRow?.std_edges_per_pcs || 0),
+            costPerEdge: Number(toolRow?.cost_per_edge ?? opRow?.cost_per_edge ?? 0),
+            edgesUsed: log.edges_used !== undefined ? Number(log.edges_used) : undefined,
+            okQty,
+            reworkQty,
+            scrapQty,
+            defectType: scrapQty > 0 ? (body.defectType || log.defect_type || '') : '',
+            damageValue: scrapQty > 0 ? Number(body.damageValue || log.damage_value || 0) : 0,
+            stopMinutes,
+            stopReason: stopMinutes > 0 ? stopReason : 'Không có dừng máy',
+          },
+          priorCtx,
+          payrollCfg
+        );
+
+        const spId = opRow?.sp_id ? String(opRow.sp_id) : (log.sp_id ? String(log.sp_id) : null);
+        const stepOrder = Number(opRow?.step_order || log.step_order || 1);
+        const isFinalOp = opRow ? Number(opRow.is_final_op) : Number(log.is_final_op || 0);
+
+        db.prepare(`
+          UPDATE production_logs
+          SET po_id = ?, sp_id = ?, nc_id = ?, op_name = ?, product_name = ?, customer = ?,
+              machine_name = ?, machine_id = ?, ok_qty = ?, rework_qty = ?, scrap_qty = ?, stop_minutes = ?, stop_reason = ?,
+              std_seconds = ?, step_order = ?, is_final_op = ?,
+              piece_wage = ?, ot_bonus_wage = ?, wait_wage = ?, meal_allowance = ?, scrap_penalty = ?,
+              direct_piece_income = ?, income = ?, batch_cost = ?, kpi_pct = ?, kpi_status = ?,
+              is_voided = ?
+          WHERE id = ?
+        `).run(
+          newPoId,
+          spId,
+          newNcId,
+          String(opRow?.op_name || log.op_name),
+          String(opRow?.product_name || log.product_name),
+          String(opRow?.customer || log.customer),
+          String(machRow?.name || log.machine_name),
+          String(machRow?.id || log.machine_id),
+          okQty,
+          reworkQty,
+          scrapQty,
+          stopMinutes,
+          stopReason,
+          Number(opRow?.std_seconds ?? log.std_seconds ?? 0),
+          stepOrder,
+          isFinalOp,
+          payroll.basePieceWage,
+          payroll.otBonusWage,
+          payroll.waitWage,
+          payroll.mealAllowance,
+          payroll.scrapPenalty,
+          payroll.directPieceIncome,
+          isVoided === 1 ? 0 : payroll.turnTotalIncome,
+          payroll.batchCost,
+          payroll.kpiPct,
+          payroll.kpiStatus,
+          isVoided,
+          id
+        );
+
+        // Cập nhật lại sản lượng và WIP của PO
+        const recomputePo = (pId: string) => {
+          if (!pId || pId === 'PO-THEO-KH') return;
+          const finRow = db
+            .prepare(
+              'SELECT COALESCE(SUM(ok_qty), 0) AS fin_ok FROM production_logs WHERE po_id = ? AND is_final_op = 1 AND is_voided = 0'
+            )
+            .get(pId) as { fin_ok: number };
+          const wipRow = db
+            .prepare(
+              `SELECT COALESCE(MAX(step_ok), 0) AS max_wip FROM (
+                 SELECT SUM(ok_qty) AS step_ok FROM production_logs WHERE po_id = ? AND is_final_op = 0 AND is_voided = 0 GROUP BY nc_id
+               )`
+            )
+            .get(pId) as { max_wip: number };
+          const poRow = db
+            .prepare('SELECT qty_po, delivered_qty FROM purchase_orders WHERE po_id = ?')
+            .get(pId) as Record<string, any> | undefined;
+          if (poRow) {
+            const qtyPo = Number(poRow.qty_po || 0);
+            const deliv = Number(poRow.delivered_qty || 0);
+            const newFin = Number(finRow.fin_ok || 0);
+            const newWip = Number(wipRow.max_wip || 0);
+            const newStock = Math.max(0, newFin - deliv);
+            const newRemain = Math.max(0, qtyPo - deliv);
+            const newStat = derivePoStatus(qtyPo, newWip, newFin, deliv);
+            db.prepare(
+              'UPDATE purchase_orders SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ? WHERE po_id = ?'
+            ).run(newWip, newFin, newStock, newRemain, newStat, pId);
+          }
+        };
+
+        recomputePo(newPoId);
+        if (newPoId !== String(log.po_id)) {
+          recomputePo(String(log.po_id));
+        }
+
+        const updatedRow = db
+          .prepare('SELECT * FROM production_logs WHERE id = ?')
+          .get(id) as Record<string, any>;
+        const todaySum = db
+          .prepare(
+            'SELECT COALESCE(SUM(income), 0) AS tot FROM production_logs WHERE worker_id = ? AND work_date = ? AND is_voided = 0'
+          )
+          .get(String(log.worker_id), String(log.work_date)) as { tot: number };
+
+        return {
+          logDto: mapLogRowToDto(updatedRow, viewer.workerId, viewer.appRole),
+          todayTotalIncome: Number(todaySum.tot || 0),
+          payroll,
+        };
+      });
+
+      res.json({
+        success: true,
+        message: body.isVoided ? 'Đã hủy phiếu báo cáo thành công.' : 'Đã cập nhật phiếu báo cáo thành công.',
+        log: updated.logDto,
+        todayTotalIncome: updated.todayTotalIncome,
+        payroll: updated.payroll,
+      });
+    } catch (err: any) {
+      res.status(400).json({ error: String(err?.message || err) });
+    }
+  });
+
+  // Hủy/xóa phiếu báo cáo sản lượng (Trừ lại tiền lương và WIP tương ứng)
+  router.delete('/reports/:id', requireAuth, (req, res) => {
+    const id = Number(req.params.id);
+    const viewer = req.authUser!;
+
+    try {
+      const updated = withTransaction(db, () => {
+        const log = db
+          .prepare('SELECT * FROM production_logs WHERE id = ?')
+          .get(id) as Record<string, any> | undefined;
+        if (!log) throw new Error('Không tìm thấy phiếu báo cáo cần xóa.');
+
+        const isOwn = String(log.worker_id) === String(viewer.workerId);
+        const isManager =
+          viewer.appRole === 'SHIFT_LEADER' ||
+          viewer.appRole === 'ADMIN' ||
+          viewer.appRole === 'DIRECTOR' ||
+          viewer.workerId === 'NV00053';
+        if (!isOwn && !isManager) {
+          throw new Error('Bạn chỉ có quyền xóa phiếu báo cáo của chính mình.');
+        }
+
+        db.prepare('UPDATE production_logs SET is_voided = 1, income = 0 WHERE id = ?').run(id);
+
+        const poId = String(log.po_id);
+        if (poId && poId !== 'PO-THEO-KH') {
+          const finRow = db
+            .prepare(
+              'SELECT COALESCE(SUM(ok_qty), 0) AS fin_ok FROM production_logs WHERE po_id = ? AND is_final_op = 1 AND is_voided = 0'
+            )
+            .get(poId) as { fin_ok: number };
+          const wipRow = db
+            .prepare(
+              `SELECT COALESCE(MAX(step_ok), 0) AS max_wip FROM (
+                 SELECT SUM(ok_qty) AS step_ok FROM production_logs WHERE po_id = ? AND is_final_op = 0 AND is_voided = 0 GROUP BY nc_id
+               )`
+            )
+            .get(poId) as { max_wip: number };
+          const poRow = db
+            .prepare('SELECT qty_po, delivered_qty FROM purchase_orders WHERE po_id = ?')
+            .get(poId) as Record<string, any> | undefined;
+          if (poRow) {
+            const qtyPo = Number(poRow.qty_po || 0);
+            const deliv = Number(poRow.delivered_qty || 0);
+            const newFin = Number(finRow.fin_ok || 0);
+            const newWip = Number(wipRow.max_wip || 0);
+            const newStock = Math.max(0, newFin - deliv);
+            const newRemain = Math.max(0, qtyPo - deliv);
+            const newStat = derivePoStatus(qtyPo, newWip, newFin, deliv);
+            db.prepare(
+              'UPDATE purchase_orders SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ? WHERE po_id = ?'
+            ).run(newWip, newFin, newStock, newRemain, newStat, poId);
+          }
+        }
+
+        const todaySum = db
+          .prepare(
+            'SELECT COALESCE(SUM(income), 0) AS tot FROM production_logs WHERE worker_id = ? AND work_date = ? AND is_voided = 0'
+          )
+          .get(String(log.worker_id), String(log.work_date)) as { tot: number };
+
+        return {
+          todayTotalIncome: Number(todaySum.tot || 0),
+        };
+      });
+
+      res.json({
+        success: true,
+        message: 'Đã xóa phiếu báo cáo thành công. Thu nhập hôm nay đã được cập nhật lại.',
+        todayTotalIncome: updated.todayTotalIncome,
+      });
+    } catch (err: any) {
+      res.status(400).json({ error: String(err?.message || err) });
+    }
+  });
+
   // 1-for-1 Cutting Tool Swap (accessible to Worker / ShiftLeader / Admin)
   router.post('/master/tools/swap', requireAuth, (req, res) => {
     const viewer = req.authUser!;

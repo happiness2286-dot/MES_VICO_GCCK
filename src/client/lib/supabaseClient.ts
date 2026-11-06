@@ -280,6 +280,39 @@ export async function deleteAllLogsFromSupabase(): Promise<boolean> {
   }
 }
 
+export async function updateLogOnSupabase(
+  id: number | string,
+  recordUid: string | undefined,
+  updates: Record<string, any>
+): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return false;
+  try {
+    let query = sb.from('production_logs').update(updates);
+    if (recordUid) {
+      query = query.eq('record_uid', recordUid);
+    } else {
+      query = query.eq('id', Number(id));
+    }
+    const { error } = await query;
+    if (error) {
+      console.warn('Failed to update log on Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('updateLogOnSupabase error:', err);
+    return false;
+  }
+}
+
+export async function voidLogOnSupabase(
+  id: number | string,
+  recordUid?: string
+): Promise<boolean> {
+  return updateLogOnSupabase(id, recordUid, { is_voided: 1, income: 0 });
+}
+
 /**
  * Subscribes to real-time additions on `production_logs`.
  */
