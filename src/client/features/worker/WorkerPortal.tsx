@@ -1362,8 +1362,27 @@ export function WorkerPortal() {
         );
       }
     }
+    // Cảnh báo định mức ca 8h nếu sản lượng quá thấp và không có giải trình dừng máy
+    if (okQty > 0 && effectivePayroll.kpiPct < 85 && stopMinutes === 0) {
+      if (effectivePayroll.kpiPct < 50) {
+        list.push(
+          `🚨 CẢNH BÁO ĐỊNH MỨC CA: Sản lượng dự kiến (${okQty} SP) chỉ đạt ${effectivePayroll.kpiPct}% định mức ca 8h (rất thấp!). Nếu ca làm việc gặp sự cố máy, đứt dây, chờ phôi, mất điện hoặc gá đặt thử mẫu, bạn BẮT BUỘC phải bấm giờ hoặc nhập số phút dừng máy tại mục 'Báo Cáo Sự Cố Dừng Máy' để được bảo lưu lương ca!`
+        );
+      } else {
+        list.push(
+          `⚠️ Chưa đạt định mức ca 8h (${effectivePayroll.kpiPct}% < 85%). Nếu có thời gian dừng máy do chờ việc/sự cố, hãy nhập số phút dừng máy để hệ thống bù trừ giờ làm thực tế.`
+        );
+      }
+    }
     return Array.from(new Set(list));
-  }, [serverPreview?.warnings, selectedPo, okQty, selectedOp?.isFinalOp]);
+  }, [
+    serverPreview?.warnings,
+    selectedPo,
+    okQty,
+    selectedOp?.isFinalOp,
+    effectivePayroll.kpiPct,
+    stopMinutes,
+  ]);
 
   // Timer Snapshots
   const stopSnap = useMemo(
@@ -3698,6 +3717,19 @@ export function WorkerPortal() {
               </div>
             </div>
 
+            {/* Critical Low Quota Alert Banner */}
+            {okQty > 0 && effectivePayroll.kpiPct < 50 && stopMinutes === 0 && (
+              <div className="rounded-2xl border-2 border-rose-500 bg-rose-50 p-3.5 text-xs text-rose-900 shadow-sm animate-pulse">
+                <div className="flex items-center gap-2 font-black text-rose-700 text-sm">
+                  <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600" />
+                  <span>CẢNH BÁO ĐỊNH MỨC CA: SẢN LƯỢNG RẤT THẤP ({effectivePayroll.kpiPct}% ĐM)</span>
+                </div>
+                <p className="mt-1 leading-relaxed">
+                  Sản lượng <strong>{okQty} SP</strong> trong ca làm việc không đạt định mức tối thiểu (chỉ đạt {effectivePayroll.kpiPct}%). Nếu máy bị dừng do gá mẫu, đứt dây, chờ phôi hoặc sự cố kỹ thuật, bạn <strong>bắt buộc phải nhập số phút và lý do dừng máy</strong> ở mục 4 để hệ thống trừ thời gian rỗng và bảo lưu mức lương ca chuẩn!
+                </p>
+              </div>
+            )}
+
             {/* 7. PRIMARY 56PX SUBMIT REPORT BUTTON */}
             <button
               type="button"
@@ -4080,18 +4112,48 @@ export function WorkerPortal() {
                           <strong className="text-rose-700">{log.scrapQty}</strong>
                           {log.stopMinutes > 0 ? ` · Dừng: ${log.stopMinutes}p` : ''}
                         </span>
-                        <div className="flex items-center gap-1">
-                          <Badge
-                            variant={
-                              log.kpiPct >= 85 ? 'success' : log.kpiPct > 0 ? 'warning' : 'info'
-                            }
-                          >
-                            {log.kpiStatus}
-                          </Badge>
-                          {log.qcStatus !== 'PASSED' && (
-                            <Badge variant="warning">{log.qcStatus}</Badge>
-                          )}
-                        </div>
+                        {(() => {
+                          const ok = Number(log.okQty || 0);
+                          const stopMin = Number(log.stopMinutes || 0);
+                          const stdSec = Number(log.stdSeconds || 1800);
+                          const machRate = log.machineMode === 'SECOND' ? 0.33 : 1;
+                          const earnedSec = ok * stdSec * machRate;
+                          const netSec = Math.max(1, 28800 - stopMin * 60);
+                          const calcKpi = Math.round((earnedSec / netSec) * 100);
+                          const isOldFalse100 =
+                            log.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0 && ok > 0;
+                          const actualKpi = isOldFalse100 ? calcKpi : (log.kpiPct ?? calcKpi);
+                          const isCriticalLow = actualKpi < 50 && stopMin === 0 && ok > 0;
+                          const isWarnLow = actualKpi < 85 && stopMin === 0 && ok > 0;
+                          const displayStatus = isCriticalLow
+                            ? `🚨 RẤT THẤP (${actualKpi}% ĐM)`
+                            : isWarnLow
+                              ? `⚠️ Chưa đạt ĐM (${actualKpi}%)`
+                              : isOldFalse100
+                                ? `Đạt ${actualKpi}% ĐM`
+                                : log.kpiStatus;
+
+                          return (
+                            <div className="flex items-center gap-1">
+                              {isCriticalLow ? (
+                                <span className="inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-extrabold text-rose-700 animate-pulse">
+                                  {displayStatus}
+                                </span>
+                              ) : (
+                                <Badge
+                                  variant={
+                                    actualKpi >= 85 ? 'success' : actualKpi > 0 ? 'warning' : 'info'
+                                  }
+                                >
+                                  {displayStatus}
+                                </Badge>
+                              )}
+                              {log.qcStatus !== 'PASSED' && (
+                                <Badge variant="warning">{log.qcStatus}</Badge>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {log.photoUrl && (
                         <a

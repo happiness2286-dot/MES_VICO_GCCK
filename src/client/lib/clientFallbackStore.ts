@@ -38,6 +38,7 @@ import {
   getDefShiftCode,
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
+import { calculateTurnPayroll, DEFAULT_PAYROLL_CONFIG } from '@shared/payrollEngine';
 import { getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
 import { normalizeVn, removeVietnameseTones, normalizePoKey } from '@shared/vnSearch';
 import { buildConsolidatedQcList } from './qcLogHelper';
@@ -1005,7 +1006,29 @@ export function getFallbackUser(workerIdOrUsername?: string): AuthSessionUser {
 export function getClientStoredLogs(): any[] {
   try {
     const raw = localStorage.getItem(LOCAL_LOGS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    // Sanitize any historically hardcoded 100% KPI logs where actual output was severely deficient
+    return parsed.map((l) => {
+      const ok = Number(l.okQty || 0);
+      const stopMin = Number(l.stopMinutes || 0);
+      const stdSec = Number(l.stdSeconds || 1800);
+      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
+      const earnedSec = ok * stdSec * machRate;
+      const netSec = Math.max(1, 28800 - stopMin * 60);
+      const computedPct = Math.round((earnedSec / netSec) * 100);
+
+      // If log claimed 100% ĐM but actually computedPct < 85 with 0 stop minutes:
+      if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 85 && ok > 0 && stopMin === 0) {
+        return {
+          ...l,
+          kpiPct: computedPct,
+          kpiStatus: computedPct < 50 ? `🚨 Chưa đạt ĐM (${computedPct}%)` : `⚠️ Chưa đạt ĐM (${computedPct}%)`,
+        };
+      }
+      return l;
+    });
   } catch {
     return [];
   }
@@ -1627,6 +1650,43 @@ export async function submitDirectToGoogleAppsScript(
     ? `${wD}/${wM} ${hours}:${minutes}`
     : `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')} ${hours}:${minutes}`;
 
+  const stdSeconds = Number(op?.stdSeconds || 1800);
+  const costPerSec = Number((worker as any).costPerSec || 13.37);
+  const okQty = Number(payload.okQty || 0);
+  const reworkQty = Number(payload.reworkQty || 0);
+  const stopMinutes = Number(payload.stopMinutes || 0);
+
+  const calcPayroll = calculateTurnPayroll(
+    {
+      workerId: payload.workerId || 'NV_GCCK',
+      salaryMode: (worker as any).salaryMode || 'Khoán 1 + 0.33 máy',
+      costPerSec,
+      workDate: payload.workDate || todayStr,
+      shiftType: payload.shiftType || 'Ca 1 (Sáng 06h-14h)',
+      startTime: payload.startTime || '07:30',
+      endTime: payload.endTime || '16:30',
+      overtimeMinutes: Number(payload.overtimeMinutes || 0),
+      isSunday: Boolean(payload.isSunday),
+      isLightsOut: Boolean(payload.isLightsOut),
+      machineName: machName,
+      machineMode: payload.machineMode || 'FIRST',
+      machineCostPerHour: 250000,
+      stdSeconds,
+      stdEdgesPerPcs: Number(op?.stdEdgesPerPcs || 0),
+      costPerEdge: Number(op?.costPerEdge || 0),
+      edgesUsed,
+      okQty,
+      reworkQty,
+      scrapQty,
+      defectType: scrapQty > 0 ? (payload.defectType || '') : '',
+      damageValue: Number(payload.damageValue || 0),
+      stopMinutes,
+      stopReason: payload.stopReason || 'Không có dừng máy',
+    },
+    {},
+    DEFAULT_PAYROLL_CONFIG
+  );
+
   const mockLogDto: any = {
     id: Date.now(),
     recordUid,
@@ -1653,28 +1713,28 @@ export async function submitDirectToGoogleAppsScript(
     stage: op?.stage || 'End',
     stepOrder: op?.stepOrder || 1,
     isFinalOp: op?.isFinalOp || 1,
-    stdSeconds: op?.stdSeconds || 1800,
-    okQty: Number(payload.okQty || 0),
-    reworkQty: Number(payload.reworkQty || 0),
+    stdSeconds,
+    okQty,
+    reworkQty,
     scrapQty,
     defectType: scrapQty > 0 ? (payload.defectType || 'Không rõ lỗi') : 'Không có lỗi',
     damageValue: Number(payload.damageValue || 0),
-    stopMinutes: Number(payload.stopMinutes || 0),
+    stopMinutes,
     stopReason: payload.stopReason || 'Không có dừng máy',
     toolCode: payload.toolCode || '',
     edgesUsed,
     selfCheckOk: 1,
     qcStatus: 'PASSED',
-    pieceWage: turnIncome,
-    otBonusWage: 0,
-    waitWage: 0,
-    mealAllowance: 0,
-    scrapPenalty: 0,
-    income: turnIncome,
-    directPieceIncome: turnIncome,
-    batchCost: turnIncome,
-    kpiPct: 100,
-    kpiStatus: 'Đạt 100% ĐM',
+    pieceWage: calcPayroll.pieceWage,
+    otBonusWage: calcPayroll.otBonusWage,
+    waitWage: calcPayroll.waitWage,
+    mealAllowance: calcPayroll.mealAllowance,
+    scrapPenalty: calcPayroll.scrapPenalty,
+    income: calcPayroll.turnTotalIncome,
+    directPieceIncome: calcPayroll.directPieceIncome,
+    batchCost: calcPayroll.batchCost,
+    kpiPct: calcPayroll.kpiPct,
+    kpiStatus: calcPayroll.kpiStatus,
     photoUrl: payload.photoBase64 || '',
     handoverNote: (payload as any).handoverNote || '',
     materialLot: payload.materialLot || '',

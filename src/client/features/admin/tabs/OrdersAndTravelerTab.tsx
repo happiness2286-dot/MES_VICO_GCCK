@@ -202,6 +202,43 @@ export function OrdersAndTravelerTab({
     return map;
   }, [orders, activePoByProduct]);
 
+  // Thống kê chất lượng & tỷ lệ phế phẩm (NG) theo từng PO
+  const poQualityStatsMap = useMemo(() => {
+    const map = new Map<string, { scrapQty: number; reworkQty: number; okQty: number }>();
+    for (const l of productionLogs) {
+      if (l.isVoided) continue;
+      let k = normalizePoKey(l.poId);
+      const cleanProd = (l.productName || '').trim().toLowerCase();
+      const activePoKey = cleanProd ? activePoByProduct.get(cleanProd) : undefined;
+      if ((!k || k === 'potheokh' || k.startsWith('sp')) && activePoKey) {
+        k = activePoKey;
+      }
+      if (!k) continue;
+      const cur = map.get(k) || { scrapQty: 0, reworkQty: 0, okQty: 0 };
+      cur.scrapQty += Number(l.scrapQty || 0);
+      cur.reworkQty += Number(l.reworkQty || 0);
+      cur.okQty += Number(l.okQty || 0);
+      map.set(k, cur);
+    }
+    return map;
+  }, [productionLogs, activePoByProduct]);
+
+  // Thống kê phế phẩm & tỷ lệ đạt toàn xưởng (năm / chu kỳ)
+  const yearQualityStats = useMemo(() => {
+    let totalOk = 0;
+    let totalRework = 0;
+    let totalScrap = 0;
+    for (const l of productionLogs) {
+      if (l.isVoided) continue;
+      totalOk += Number(l.okQty || 0);
+      totalRework += Number(l.reworkQty || 0);
+      totalScrap += Number(l.scrapQty || 0);
+    }
+    const total = totalOk + totalRework + totalScrap;
+    const scrapRate = total > 0 ? ((totalScrap / total) * 100).toFixed(2) : '0.00';
+    return { totalOk, totalRework, totalScrap, total, scrapRate };
+  }, [productionLogs]);
+
   // Create New PO Modal State
   const [createOpen, setCreateOpen] = useState(false);
   const [newPoId, setNewPoId] = useState('');
@@ -744,6 +781,19 @@ export function OrdersAndTravelerTab({
               Hiển thị 100% toàn bộ <strong className="text-blue-700">{orders.length} PO</strong>{' '}
               (không cắt cụt 60 dòng). Đối soát SL Hoàn thành công đoạn Cuối vs SL Đã Xuất Giao Kho
               &amp; In Lệnh SX QR 1-Click.
+              {yearQualityStats.total > 0 && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                  📊 Tỷ lệ hỏng toàn xưởng:{' '}
+                  <strong
+                    className={
+                      Number(yearQualityStats.scrapRate) > 3 ? 'text-rose-600' : 'text-emerald-700'
+                    }
+                  >
+                    {yearQualityStats.scrapRate}%
+                  </strong>{' '}
+                  ({yearQualityStats.totalScrap} phế phẩm / {yearQualityStats.total} lượt gia công)
+                </span>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -910,6 +960,18 @@ export function OrdersAndTravelerTab({
                   )
                 );
 
+                const qStats = poQualityStatsMap.get(k) || { scrapQty: 0, reworkQty: 0, okQty: 0 };
+                const poScrapQty = qStats.scrapQty;
+                const poReworkQty = qStats.reworkQty;
+                const poOkQty = qStats.okQty;
+                const poTotalAttempted = poOkQty + poReworkQty + poScrapQty;
+                const poScrapRatePct =
+                  poTotalAttempted > 0 ? ((poScrapQty / poTotalAttempted) * 100).toFixed(1) : '0.0';
+                const neededBufferRaw =
+                  poScrapQty > 0 && displayFin < po.qtyPo
+                    ? Math.min(poScrapQty, po.qtyPo - displayFin)
+                    : 0;
+
                 return (
                   <tr
                     key={po.poId}
@@ -984,6 +1046,29 @@ export function OrdersAndTravelerTab({
                           {finishRatioPct}%
                         </span>
                       </div>
+                      {/* Quality & Scrap Rate Indicator */}
+                      {poScrapQty > 0 ? (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <span
+                            className="inline-flex items-center gap-0.5 rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"
+                            title={`Tỷ lệ hỏng/phế phẩm của đơn: ${poScrapQty} / ${poTotalAttempted} lần gia công`}
+                          >
+                            🔴 Hỏng: {poScrapQty} SP ({poScrapRatePct}%)
+                          </span>
+                          {neededBufferRaw > 0 && (
+                            <span
+                              className="inline-flex items-center gap-0.5 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
+                              title={`Đơn còn thiếu ${po.qtyPo - displayFin} SP và đã hỏng ${poScrapQty} phôi. Cần cấp bù ${neededBufferRaw} phôi để hoàn thành đơn!`}
+                            >
+                              ⚠️ Cần cấp bù: {neededBufferRaw} phôi
+                            </span>
+                          )}
+                        </div>
+                      ) : poTotalAttempted > 0 ? (
+                        <div className="mt-1 text-[10px] font-semibold text-emerald-600">
+                          🟢 Tỷ lệ đạt: 100% (0 phế phẩm)
+                        </div>
+                      ) : null}
                     </td>
 
                     <td className="font-mono-num px-2.5 py-2.5 text-center font-bold text-slate-900">

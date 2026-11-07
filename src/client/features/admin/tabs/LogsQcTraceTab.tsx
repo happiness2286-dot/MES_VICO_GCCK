@@ -1284,28 +1284,77 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       )}
                     </td>
 
-                    <td className="px-3 py-2.5 text-center">
-                      <Badge
-                        variant={
-                          l.qcStatus === 'PASSED'
-                            ? 'success'
-                            : l.qcStatus === 'NG_HOLD'
-                              ? 'danger'
-                              : 'warning'
-                        }
-                      >
-                        {l.qcStatus}
-                      </Badge>
-                      <div className="mt-1 text-[11px] text-slate-500">{l.kpiStatus}</div>
-                    </td>
+                    {(() => {
+                      const ok = Number(l.okQty || 0);
+                      const stopMin = Number(l.stopMinutes || 0);
+                      const stdSec = Number(l.stdSeconds || 1800);
+                      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
+                      const earnedSec = ok * stdSec * machRate;
+                      const netSec = Math.max(1, 28800 - stopMin * 60);
+                      const calcKpi = Math.round((earnedSec / netSec) * 100);
+                      const isOldFalse100 =
+                        l.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0 && ok > 0;
+                      const realKpi = isOldFalse100 ? calcKpi : (l.kpiPct ?? calcKpi);
+                      const isCriticalLow = realKpi < 50 && stopMin === 0 && ok > 0;
+                      const isWarnLow = realKpi < 85 && stopMin === 0 && ok > 0;
 
-                    <td className="font-mono-num px-3 py-2.5 text-right font-bold">
-                      {l.income > 0 ? (
-                        <span className="text-blue-700">{formatVnd(l.income)}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
+                      return (
+                        <>
+                          <td className="px-3 py-2.5 text-center">
+                            <Badge
+                              variant={
+                                l.qcStatus === 'PASSED'
+                                  ? 'success'
+                                  : l.qcStatus === 'NG_HOLD'
+                                    ? 'danger'
+                                    : 'warning'
+                              }
+                            >
+                              {l.qcStatus}
+                            </Badge>
+                            <div className="mt-1">
+                              {isCriticalLow ? (
+                                <span
+                                  className="inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700 animate-pulse"
+                                  title={`Sản lượng ca 8h (${ok} SP) chỉ đạt ${realKpi}% định mức, không có giải trình dừng máy!`}
+                                >
+                                  🚨 RẤT THẤP ({realKpi}% ĐM)
+                                </span>
+                              ) : isWarnLow ? (
+                                <span
+                                  className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
+                                  title={`Chưa đạt định mức ca 8h (${realKpi}% < 85%)`}
+                                >
+                                  ⚠️ Chưa đạt ĐM ({realKpi}%)
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-medium text-slate-500">
+                                  {isOldFalse100 ? `Đạt ${realKpi}% ĐM` : l.kpiStatus}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="font-mono-num px-3 py-2.5 text-right font-bold">
+                            {l.income > 0 ? (
+                              <div>
+                                <span className="text-blue-700">{formatVnd(l.income)}</span>
+                                {isCriticalLow && (
+                                  <div
+                                    className="text-[10px] font-extrabold text-rose-600"
+                                    title="Sản lượng quá thấp không đủ bù đắp chi phí máy đứng 8h"
+                                  >
+                                    ⚠️ Thâm hụt ca
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                        </>
+                      );
+                    })()}
 
                     <td className="px-3 py-2.5">
                       <div className="flex flex-wrap items-center gap-1.5">
