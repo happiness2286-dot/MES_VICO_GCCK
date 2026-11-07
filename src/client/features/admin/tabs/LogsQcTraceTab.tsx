@@ -798,12 +798,17 @@ const HANDOVER_RECEIVER_OPTIONS = [
       const mKey = `${sKey}_${mName}`;
 
       const ok = Number(l.okQty || 0);
+      const rework = Number(l.reworkQty || 0);
+      const scrap = Number(l.scrapQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
       const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
         ? 2400
-        : Number(l.stdSeconds || 1800);
-      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
-      const earnedSec = ok * stdSec;
+        : (l.ncId === 'NC061' || l.opName?.includes('NC061') || l.productName?.includes('406Dw850') || l.productName?.includes('S406.4-850'))
+          ? 5760
+          : Number(l.stdSeconds || 1800);
+      // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG), không nhân 0.33
+      const totalMachined = ok + rework + scrap;
+      const earnedSec = totalMachined * stdSec;
 
       if (!mM.has(mKey)) {
         mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0 });
@@ -1334,13 +1339,17 @@ const HANDOVER_RECEIVER_OPTIONS = [
                     {(() => {
                       const ok = Number(l.okQty || 0);
                       const rework = Number(l.reworkQty || 0);
+                      const scrap = Number(l.scrapQty || 0);
                       const stopMin = Number(l.stopMinutes || 0);
-                      // Định mức kỹ thuật chuẩn: NC603 là 2400s (12 cái/ca)
+                      // Định mức kỹ thuật chuẩn:
                       const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
                         ? 2400
-                        : Number(l.stdSeconds || 1800);
-                      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
-                      const earnedSec = ok * stdSec;
+                        : (l.ncId === 'NC061' || l.opName?.includes('NC061') || l.productName?.includes('406Dw850') || l.productName?.includes('S406.4-850'))
+                          ? 5760
+                          : Number(l.stdSeconds || 1800);
+                      // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công (OK + Sửa + NG)
+                      const totalMachined = ok + rework + scrap;
+                      const earnedSec = totalMachined * stdSec;
                       const netSec = Math.max(1, 28800 - stopMin * 60);
                       const realKpi = Math.round((earnedSec / netSec) * 10000) / 100;
 
@@ -1349,6 +1358,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                         if (Math.abs(r - Math.round(r)) < 0.01) return `${Math.round(r)}%`;
                         return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
                       };
+
+                      const defectDetail = rework > 0 || scrap > 0
+                        ? ` (${ok} OK${rework > 0 ? `, ${rework} Sửa` : ''}${scrap > 0 ? `, ${scrap} NG` : ''})`
+                        : '';
 
                       // Phân bổ định mức theo máy & ca gộp
                       const mName = (l.machineName || '').trim();
@@ -1376,15 +1389,12 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       let isCrit = false;
                       let isWarn = false;
 
-                      if (ok === 0 && rework > 0) {
-                        badgeText = `🛠️ Sửa hàng (${rework} SP)`;
-                        isWarn = true;
-                      } else if (ok === 0 && rework === 0 && stopMin === 0) {
+                      if (totalMachined === 0 && stopMin === 0) {
                         badgeText = '🚨 0% ĐM';
                         isCrit = true;
                       } else if (hasMultiJobsOnMachine) {
                         if (mTotalKpi >= 100) {
-                          badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} (${fmtPct(realKpi)})`;
+                          badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} (${fmtPct(realKpi)}${defectDetail})`;
                         } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
                           badgeText = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM)`;
                           isCrit = true;
@@ -1394,22 +1404,22 @@ const HANDOVER_RECEIVER_OPTIONS = [
                         }
                       } else if (isSecondMach) {
                         if (realKpi >= 100) {
-                          badgeText = `✅ Máy phụ đạt ${fmtPct(realKpi)} ĐM`;
+                          badgeText = `✅ Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
                         } else if (realKpi < 50 && stopMin === 0) {
                           badgeText = `🚨 Máy phụ rất thấp (${fmtPct(realKpi)} ĐM)`;
                           isCrit = true;
                         } else {
-                          badgeText = `⚠️ Máy phụ đạt ${fmtPct(realKpi)} ĐM`;
+                          badgeText = `⚠️ Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
                           isWarn = true;
                         }
                       } else if (hasMultiMachinesInShift && mTotalKpi < 100 && sTotalKpi >= 100) {
-                        badgeText = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} (${fmtPct(mTotalKpi)})`;
+                        badgeText = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} (${fmtPct(mTotalKpi)}${defectDetail})`;
                       } else if (hasMultiMachinesInShift && sTotalKpi < 100) {
                         badgeText = `⚠️ Ca chưa đạt (${fmtPct(sTotalKpi)})`;
                         isWarn = true;
                       } else {
                         if (realKpi >= 100) {
-                          badgeText = `✅ Máy đạt ${fmtPct(realKpi)} ĐM`;
+                          badgeText = `✅ Máy đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
                         } else if (realKpi < 50 && stopMin === 0) {
                           badgeText = `🚨 Máy rất thấp (${fmtPct(realKpi)} ĐM)`;
                           isCrit = true;

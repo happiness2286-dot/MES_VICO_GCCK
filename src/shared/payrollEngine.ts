@@ -242,31 +242,37 @@ export function calculateTurnPayroll(
   const windowMinutes = interval ? interval[1] - interval[0] : shiftMaxMinutes + effectiveOtMinutes;
   const netWorkSeconds = Math.max(0, windowMinutes * 60 - stopMinutes * 60);
 
+  const reworkQty = Math.max(0, Number(input.reworkQty) || 0);
+  // Định mức ca máy / Công suất vận hành: tính trên tổng sản lượng đã gia công trên máy (OK + Sửa + NG)
+  const totalMachinedQty = okQty + reworkQty + scrapQty;
+  const machinedStdSeconds = totalMachinedQty * stdSeconds;
+
   const kpiPct =
     netWorkSeconds > 0
-      ? Math.round((earnedStdSeconds / netWorkSeconds) * 100)
-      : earnedStdSeconds > 0
+      ? Math.round((machinedStdSeconds / netWorkSeconds) * 100)
+      : machinedStdSeconds > 0
         ? 100
         : 0;
 
   const rawThr = Number(config.kpiWarningThreshold) || 1.0;
   const warnThresholdPct = Math.round(rawThr > 2 ? rawThr : rawThr * 100);
-  const reworkQty = Math.max(0, Number(input.reworkQty) || 0);
+
+  const defectSummary = reworkQty > 0 || scrapQty > 0
+    ? ` (${okQty} OK${reworkQty > 0 ? `, ${reworkQty} Sửa` : ''}${scrapQty > 0 ? `, ${scrapQty} NG` : ''})`
+    : '';
 
   const kpiStatus =
     earnedStdSeconds === 0 && effectivePaidStopMinutes > 0
       ? `Dừng máy KQ (${effectivePaidStopMinutes}p)`
-      : okQty === 0 && reworkQty > 0
-        ? `🛠️ Sửa hàng (${reworkQty} SP) · 0% ĐM`
-        : okQty === 0 && stopMinutes === 0
-          ? '🚨 0% ĐM'
-          : kpiPct < 50 && stopMinutes === 0
-            ? `🚨 RẤT THẤP (${kpiPct}% ĐM)`
-            : kpiPct >= 100
-              ? `Đạt ${kpiPct}% ĐM`
-              : kpiPct >= warnThresholdPct
-                ? `Đạt ${kpiPct}% ĐM`
-                : `⚠️ Chưa đạt ĐM (${kpiPct}%)`;
+      : totalMachinedQty === 0 && stopMinutes === 0
+        ? '🚨 0% ĐM'
+        : kpiPct < 50 && stopMinutes === 0
+          ? `🚨 RẤT THẤP (${kpiPct}% ĐM)${defectSummary}`
+          : kpiPct >= 100
+            ? `Đạt ${kpiPct}% ĐM${defectSummary}`
+            : kpiPct >= warnThresholdPct
+              ? `Đạt ${kpiPct}% ĐM${defectSummary}`
+              : `⚠️ Chưa đạt ĐM (${kpiPct}%)${defectSummary}`;
 
   // Job Costing (always includes full standard/actual labor + machine + tool + net scrap loss)
   const edgesConsumed =

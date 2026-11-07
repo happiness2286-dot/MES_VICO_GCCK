@@ -2058,13 +2058,18 @@ export function WorkerPortal() {
       const mKey = `${sKey}_${mName}`;
 
       const ok = Number(l.okQty || 0);
+      const rework = Number(l.reworkQty || 0);
+      const scrap = Number(l.scrapQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca)
+      // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca), NC061/406Dw850 là 5760s (5 cái/ca)
       const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
         ? 2400
-        : Number(l.stdSeconds || 1800);
-      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
-      const earnedSec = ok * stdSec;
+        : (l.ncId === 'NC061' || l.opName?.includes('NC061') || l.productName?.includes('406Dw850') || l.productName?.includes('S406.4-850'))
+          ? 5760
+          : Number(l.stdSeconds || 1800);
+      // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG), không nhân 0.33
+      const totalMachined = ok + rework + scrap;
+      const earnedSec = totalMachined * stdSec;
 
       // 1. Cập nhật nhóm theo máy
       if (!mM.has(mKey)) {
@@ -4209,13 +4214,19 @@ export function WorkerPortal() {
                         {(() => {
                           const ok = Number(log.okQty || 0);
                           const rework = Number(log.reworkQty || 0);
+                          const scrap = Number(log.scrapQty || 0);
                           const stopMin = Number(log.stopMinutes || 0);
-                          // Định mức kỹ thuật chuẩn: NC603 là 2400s (12 cái/ca)
+                          // Định mức kỹ thuật chuẩn:
                           const stdSec = (log.ncId === 'NC603' || log.opName?.includes('NC603') || log.productName?.toLowerCase().includes('sealing strip'))
                             ? 2400
-                            : Number(log.stdSeconds || 1800);
-                          // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
-                          const earnedSec = ok * stdSec;
+                            : (log.ncId === 'NC061' || log.opName?.includes('NC061') || log.productName?.includes('406Dw850') || log.productName?.includes('S406.4-850'))
+                              ? 5760
+                              : Number(log.stdSeconds || 1800);
+
+                          // ĐỊNH MỨC SẢN LƯỢNG MÁY / CÔNG SỨC VẬN HÀNH:
+                          // Kể cả có xử lý lại (Rework) hay NG thì máy vẫn đã vận hành gia công, tính trên tổng số sản phẩm đã gia công
+                          const totalMachined = ok + rework + scrap;
+                          const earnedSec = totalMachined * stdSec;
                           const netSec = Math.max(1, 28800 - stopMin * 60);
                           const actualKpi = Math.round((earnedSec / netSec) * 10000) / 100;
 
@@ -4225,6 +4236,10 @@ export function WorkerPortal() {
                             if (Math.abs(r - Math.round(r)) < 0.01) return `${Math.round(r)}%`;
                             return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
                           };
+
+                          const defectDetail = rework > 0 || scrap > 0
+                            ? ` (${ok} OK${rework > 0 ? `, ${rework} Sửa` : ''}${scrap > 0 ? `, ${scrap} NG` : ''})`
+                            : '';
 
                           // Nhóm theo từng máy & toàn ca:
                           const mName = (log.machineName || '').trim();
@@ -4252,50 +4267,47 @@ export function WorkerPortal() {
                           let isCritical = false;
                           let isWarning = false;
 
-                          if (ok === 0 && rework > 0) {
-                            displayStatus = `🛠️ Sửa hàng (${rework} SP) · 0% ĐM`;
-                            isWarning = true;
-                          } else if (ok === 0 && rework === 0 && stopMin === 0) {
+                          if (totalMachined === 0 && stopMin === 0) {
                             displayStatus = '🚨 0% ĐM';
                             isCritical = true;
                           } else if (hasMultiJobsOnMachine) {
                             // Trường hợp 1: Nhiều mã trên cùng 1 máy (như Thắng làm 3 mã tấm lót trên OKK1):
                             if (mTotalKpi >= 100) {
-                              displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM (Mã này: ${fmtPct(actualKpi)})`;
+                              displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM (Mã này: ${fmtPct(actualKpi)}${defectDetail})`;
                             } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
-                              displayStatus = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM) · Mã này: ${fmtPct(actualKpi)}`;
+                              displayStatus = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM) · Mã này: ${fmtPct(actualKpi)}${defectDetail}`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(mTotalKpi)} < 100%) · Mã này: ${fmtPct(actualKpi)}`;
+                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(mTotalKpi)} < 100%) · Mã này: ${fmtPct(actualKpi)}${defectDetail}`;
                               isWarning = true;
                             }
                           } else if (isSecondMach) {
                             // Trường hợp 2: Máy phụ độc lập (như OKK3 làm NC603 10 cái -> 83.33%):
                             if (actualKpi >= 100) {
-                              displayStatus = `✅ Máy phụ đạt ${fmtPct(actualKpi)} ĐM`;
+                              displayStatus = `✅ Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
                             } else if (actualKpi < 50 && stopMin === 0) {
-                              displayStatus = `🚨 Máy phụ rất thấp (${fmtPct(actualKpi)} ĐM)`;
+                              displayStatus = `🚨 Máy phụ rất thấp (${fmtPct(actualKpi)} ĐM)${defectDetail}`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Máy phụ đạt ${fmtPct(actualKpi)} ĐM`;
+                              displayStatus = `⚠️ Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
                               isWarning = true;
                             }
                           } else if (hasMultiMachinesInShift && mTotalKpi < 100 && sTotalKpi >= 100) {
                             // Trường hợp 3: Ghép 2 máy chính (1 máy 40% + 1 máy 60% = 100% ca gộp):
-                            displayStatus = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} ĐM (Máy này: ${fmtPct(mTotalKpi)})`;
+                            displayStatus = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} ĐM (Máy này: ${fmtPct(mTotalKpi)}${defectDetail})`;
                           } else if (hasMultiMachinesInShift && sTotalKpi < 100) {
                             // Trường hợp 4: Ghép máy nhưng tổng ca chưa đạt 100%:
-                            displayStatus = `⚠️ Ca chưa đạt ĐM (${fmtPct(sTotalKpi)} < 100%) · Máy này: ${fmtPct(mTotalKpi)}`;
+                            displayStatus = `⚠️ Ca chưa đạt ĐM (${fmtPct(sTotalKpi)} < 100%) · Máy này: ${fmtPct(mTotalKpi)}${defectDetail}`;
                             isWarning = true;
                           } else {
                             // Trường hợp 5: Máy đơn bình thường 1 mã:
                             if (actualKpi >= 100) {
-                              displayStatus = `✅ Máy đạt ${fmtPct(actualKpi)} ĐM`;
+                              displayStatus = `✅ Máy đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
                             } else if (actualKpi < 50 && stopMin === 0) {
-                              displayStatus = `🚨 Máy rất thấp (${fmtPct(actualKpi)} ĐM)`;
+                              displayStatus = `🚨 Máy rất thấp (${fmtPct(actualKpi)} ĐM)${defectDetail}`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(actualKpi)} < 100%)`;
+                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(actualKpi)} < 100%)${defectDetail}`;
                               isWarning = true;
                             }
                           }
