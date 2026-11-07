@@ -76,6 +76,7 @@ import {
   fetchDailyPlanFromSupabase,
   pushDailyPlanToSupabase,
   subscribeSupabaseDailyPlanChanges,
+  subscribeSupabaseLogChanges,
   deleteLogFromSupabase,
 } from '../../lib/supabaseClient';
 import {
@@ -270,6 +271,14 @@ export function WorkerPortal() {
     getFallbackDailyPlan(getShiftProductionWorkDate(new Date()))
   );
   const [currentSelectedPlanIndex, setCurrentSelectedPlanIndex] = useState<number>(0);
+  const [mobilizedTaskInfo, setMobilizedTaskInfo] = useState<{
+    poId: string;
+    ncId: string;
+    productName: string;
+    opName: string;
+    machineName: string;
+    source: 'QR' | 'MANUAL';
+  } | null>(null);
   const lastAutoSelectedWorkerRef = useRef<string>('');
   const appliedPlanRowKeyRef = useRef<string>('');
   const lastActiveWorkerIdRef = useRef<string>('');
@@ -585,6 +594,10 @@ export function WorkerPortal() {
   }, [user?.workerId]);
 
   useEffect(() => {
+    // If worker is working on a mobilized task (quét mã vạch / ngoài kế hoạch), do not auto-overwrite!
+    if (currentSelectedPlanIndex === -1) {
+      return;
+    }
     if (myPlanRows.length > 0 && user?.workerId) {
       const activeIdx =
         currentSelectedPlanIndex >= 0 && currentSelectedPlanIndex < myPlanRows.length
@@ -826,7 +839,23 @@ export function WorkerPortal() {
     const pollTimer = setInterval(() => {
       void loadBootstrapData(true);
     }, 25000);
-    return () => clearInterval(pollTimer);
+
+    const unsubSb = subscribeSupabaseLogChanges(() => {
+      void loadBootstrapData(true);
+    });
+
+    const onReportSubmitted = () => {
+      void loadBootstrapData(true);
+    };
+    window.addEventListener('gcck:report-submitted', onReportSubmitted);
+    window.addEventListener('storage', onReportSubmitted);
+
+    return () => {
+      clearInterval(pollTimer);
+      if (unsubSb) unsubSb();
+      window.removeEventListener('gcck:report-submitted', onReportSubmitted);
+      window.removeEventListener('storage', onReportSubmitted);
+    };
   }, [loadBootstrapData, user?.workerId]);
 
   const ordersList = bootstrap?.ordersList ?? [];
@@ -1058,11 +1087,27 @@ export function WorkerPortal() {
       }
 
       const op = operationsList.find((o) => o.ncId === resolved.ncId);
+
+      // Mark as mobilized off-plan task so plan auto-fill does not overwrite it
+      setCurrentSelectedPlanIndex(-1);
+      setMobilizedTaskInfo({
+        poId: resolved.poId,
+        ncId: resolved.ncId,
+        productName: resolved.productName,
+        opName: op?.opName || resolved.ncId,
+        machineName: resolved.defaultMachine || machineName,
+        source: 'QR',
+      });
+      appliedPlanRowKeyRef.current = `mobilized_${resolved.poId}_${resolved.ncId}`;
+
       if (op) {
         applyOperationSelection(op, resolved.poId);
       } else {
         setSelectedPoId(resolved.poId);
         setSelectedNcId(resolved.ncId);
+      }
+      if (resolved.defaultMachine) {
+        setMachineName(resolved.defaultMachine);
       }
       setActiveTab('REPORT');
 
@@ -1070,7 +1115,7 @@ export function WorkerPortal() {
         toast.info(resolved.reconciledWarning);
       } else {
         toast.success(
-          `⚡ Đã nạp QR: ${resolved.poId} · ${resolved.ncId} (${resolved.productName})`
+          `⚡ Đã nạp điều động: [${resolved.poId}] ${resolved.ncId} (${resolved.productName})`
         );
       }
     },
@@ -1724,6 +1769,22 @@ export function WorkerPortal() {
         );
         if (result.response.log) {
           saveClientStoredLog(result.response.log);
+          const newSubmittedLog = result.response.log;
+          // Optimistically update local state immediately so it shows with 0ms latency in "Lịch Sử Báo Cáo Của Tôi"
+          setBootstrap((prev) => {
+            if (!prev) return prev;
+            const filtered = prev.recentLogs.filter(
+              (l) => l.recordUid !== newSubmittedLog.recordUid && String(l.id) !== String(newSubmittedLog.id)
+            );
+            return {
+              ...prev,
+              recentLogs: [newSubmittedLog, ...filtered],
+              todayAccumulated: {
+                ...(prev.todayAccumulated || {}),
+                [user.workerId]: (Number(prev.todayAccumulated?.[user.workerId] || 0) + Number(newSubmittedLog.income || 0)),
+              },
+            };
+          });
         }
         if (result.response.warnings?.length) {
           toast.warning(result.response.warnings[0]);
@@ -1853,7 +1914,13 @@ export function WorkerPortal() {
     if (logViewMode === 'ALL') {
       return all;
     }
-    const myLogs = all.filter((l) => l.workerId === user.workerId);
+    const cleanId = (user.workerId || '').trim().toLowerCase();
+    const cleanName = (user.name || '').trim().toLowerCase();
+    const myLogs = all.filter((l) => {
+      const lId = (l.workerId || '').trim().toLowerCase();
+      const lName = (l.workerName || '').trim().toLowerCase();
+      return (cleanId && lId === cleanId) || (cleanName && lName === cleanName);
+    });
     if (myLogs.length === 0 && isManagerOrLeader) {
       return all;
     }
@@ -2101,6 +2168,46 @@ export function WorkerPortal() {
                     );
                   })}
                 </div>
+
+                {/* Thẻ hiển thị công việc điều động đột xuất (khi quét mã hoặc chọn ngoài kế hoạch) */}
+                {currentSelectedPlanIndex === -1 && (
+                  <div className="mt-2.5 flex flex-col text-left p-2.5 rounded-xl border-2 border-amber-500 bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md ring-2 ring-amber-300">
+                    <div className="flex items-center justify-between gap-1 text-xs font-black">
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span>🔄 HÀNG ĐIỀU ĐỘNG ĐỘT XUẤT</span>
+                        <span className="px-1.5 py-0.2 rounded text-[10px] font-black bg-white/20 text-white">
+                          {mobilizedTaskInfo?.source === 'QR' ? '📷 Quét mã vạch' : '⚡ Ngoài kế hoạch'}
+                        </span>
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="px-1.5 py-0.2 rounded bg-white text-amber-900 text-[10px] font-black">
+                          ✓ ĐANG CHỌN
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs font-bold text-white truncate">
+                      [{selectedPoId}] {selectedOp?.ncId || selectedNcId} — {selectedProduct?.productName || selectedOp?.productName || 'Hàng gia công điều động'}
+                    </div>
+                    <div className="text-[11px] text-amber-100 flex items-center justify-between mt-1">
+                      <span className="truncate mr-2">
+                        {selectedOp?.opName || 'Gia công theo lệnh điều động'} · Máy: {machineName}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (myPlanRows.length > 0) {
+                            setCurrentSelectedPlanIndex(0);
+                            appliedPlanRowKeyRef.current = '';
+                            applyPlanRowSelection(myPlanRows[0], false);
+                          }
+                        }}
+                        className="shrink-0 px-2 py-0.5 rounded bg-white text-amber-900 font-extrabold text-[10px] hover:bg-amber-100 transition-colors shadow-2xs"
+                      >
+                        ↩ Về kế hoạch ngày
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {/* 1. Hero QR Scan Button + Fast Search + 8-Step Guide + Quick Customer Filter */}

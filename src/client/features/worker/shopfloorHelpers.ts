@@ -5,6 +5,9 @@ export interface ParsedTravelerQr {
   valid: boolean;
   poId: string | null;
   ncId: string | null;
+  spId?: string | null;
+  customer?: string | null;
+  productName?: string | null;
   raw: string;
 }
 
@@ -40,9 +43,10 @@ export const STOP_TIMER_STORAGE_KEY = 'GCCK_PERSISTENT_STOP_TIMER_V1';
 export const RUN_TIMER_STORAGE_KEY = 'GCCK_PERSISTENT_RUN_TIMER_V1';
 
 /**
- * Parses GCCK Shop Traveler QR strings:
- * - GCCK|<poId>|<ncId>
- * - GCCK|<poId>
+ * Parses GCCK Shop Traveler QR and Barcode strings:
+ * - Standard GCCK QR: GCCK|<poId>|<ncId>
+ * - Schedule QR: GCCK|<customer>|<productName>|<workerName>
+ * - Single 1D barcodes: DH-343, PO485-01, PO2611-193-01, NC098, NC835, SP370...
  * - URLs containing ?qr=GCCK|... or /print/traveler/<poId>
  */
 export function parseTravelerQrPayload(rawInput: string | null | undefined): ParsedTravelerQr {
@@ -72,20 +76,78 @@ export function parseTravelerQrPayload(rawInput: string | null | undefined): Par
     // Fallback to direct string parsing
   }
 
-  const parts = candidate.split('|').map((s) => normalizeVn(s));
-  if (parts.length >= 2 && parts[0].toUpperCase() === 'GCCK') {
-    const poId = parts[1] ? parts[1].toUpperCase() : null;
-    const ncId = parts[2] ? parts[2].toUpperCase() : null;
-    if (poId) {
-      return { valid: true, poId, ncId: ncId || null, raw };
+  // Check pipe delimited tokens
+  if (candidate.includes('|')) {
+    const parts = candidate.split('|').map((s) => normalizeVn(s).trim());
+    if (parts.length >= 2 && parts[0].toUpperCase() === 'GCCK') {
+      const p1 = parts[1] ? parts[1].toUpperCase() : '';
+      const p2 = parts[2] ? parts[2].toUpperCase() : '';
+
+      // Check if p1 looks like a PO code (starts with PO, DH-, or is PO-THEO-KH)
+      if (p1.startsWith('PO') || p1.startsWith('DH') || p1 === 'PO-THEO-KH' || /^DH\b/i.test(p1)) {
+        return { valid: true, poId: p1, ncId: p2 || null, raw };
+      }
+
+      // Check if p1 is an NC code
+      if (p1.startsWith('NC')) {
+        return { valid: true, poId: p2 || null, ncId: p1, raw };
+      }
+
+      // If parts has customer | product | worker (Daily Schedule QR format)
+      if (parts.length >= 3) {
+        return {
+          valid: true,
+          poId: null,
+          ncId: null,
+          customer: parts[1],
+          productName: parts[2],
+          raw,
+        };
+      }
+
+      if (p1) {
+        return { valid: true, poId: p1, ncId: p2 || null, raw };
+      }
+    } else if (parts.length >= 2) {
+      // Pipe separated without GCCK prefix (e.g. DH-343|NC835)
+      const p0 = parts[0].toUpperCase();
+      const p1 = parts[1].toUpperCase();
+      if (p0.startsWith('NC')) {
+        return { valid: true, poId: p1 || null, ncId: p0, raw };
+      }
+      return { valid: true, poId: p0, ncId: p1 || null, raw };
     }
+  }
+
+  // Single code / 1D Barcode scanning (e.g. DH-343, PO485-01, NC098, SP370)
+  const clean = candidate.trim();
+  const upper = clean.toUpperCase();
+
+  if (upper.startsWith('NC') && upper.length >= 3) {
+    // Direct Operation barcode
+    return { valid: true, poId: null, ncId: upper, raw };
+  }
+
+  if (upper.startsWith('SP') && upper.length >= 3) {
+    // Direct Product / Drawing barcode
+    return { valid: true, poId: null, ncId: null, spId: upper, raw };
+  }
+
+  if (upper.startsWith('PO') || upper.startsWith('DH') || upper === 'PO-THEO-KH' || /^DH-/i.test(upper)) {
+    // Direct PO / Traveler barcode
+    return { valid: true, poId: upper, ncId: null, raw };
+  }
+
+  // Any non-empty barcode / text scanned on shopfloor
+  if (clean.length >= 2) {
+    return { valid: true, poId: clean, ncId: null, raw };
   }
 
   return { valid: false, poId: null, ncId: null, raw };
 }
 
 /**
- * Resolves a parsed QR code against live PurchaseOrders & Operations,
+ * Resolves a parsed QR / barcode against live PurchaseOrders & Operations,
  * reconciling mismatched PO/NC pairs safely so report submission never fails DB validation.
  */
 export function resolveQrToShopfloorSelection(
@@ -93,22 +155,34 @@ export function resolveQrToShopfloorSelection(
   orders: PurchaseOrderInfo[],
   operations: OperationMeta[]
 ): ResolvedQrSelection | null {
-  if (!parsed.valid || !parsed.poId) return null;
+  if (!parsed.valid) return null;
 
-  const matchedPo =
-    parsed.poId === 'PO-THEO-KH'
-      ? null
-      : orders.find((o) => o.poId.toUpperCase() === parsed.poId!.toUpperCase()) ?? null;
+  // Case 1: An explicit Operation (NC) was scanned / parsed
+  if (parsed.ncId) {
+    const cleanNc = parsed.ncId.trim().toUpperCase();
+    const matchedOp = operations.find((op) => op.ncId.toUpperCase() === cleanNc) ?? null;
 
-  const matchedOp = parsed.ncId
-    ? operations.find((op) => op.ncId.toUpperCase() === parsed.ncId!.toUpperCase()) ?? null
-    : null;
+    if (matchedOp) {
+      let resolvedPoId = parsed.poId ? parsed.poId.toUpperCase() : '';
+      let matchedPo = resolvedPoId && resolvedPoId !== 'PO-THEO-KH'
+        ? orders.find((o) => o.poId.toUpperCase() === resolvedPoId) ?? null
+        : null;
 
-  if (matchedOp) {
-    // Exact or compatible PO + NC
-    if (parsed.poId === 'PO-THEO-KH') {
+      // Reconcile if PO doesn't match this operation's product
+      if (!matchedPo || (matchedOp.spId && matchedPo.spId && matchedPo.spId !== matchedOp.spId)) {
+        const compatiblePo = orders.find(
+          (o) =>
+            ((matchedOp.spId && o.spId === matchedOp.spId) ||
+              (matchedOp.productName &&
+                o.productName.trim().toLowerCase() === matchedOp.productName.trim().toLowerCase())) &&
+            o.status !== '✅ Đã giao đủ' &&
+            o.remainQty > 0
+        );
+        resolvedPoId = compatiblePo ? compatiblePo.poId : (matchedPo ? matchedPo.poId : 'PO-THEO-KH');
+      }
+
       return {
-        poId: 'PO-THEO-KH',
+        poId: resolvedPoId || 'PO-THEO-KH',
         ncId: matchedOp.ncId,
         spId: matchedOp.spId,
         customer: matchedOp.customer,
@@ -118,57 +192,135 @@ export function resolveQrToShopfloorSelection(
         reconciledWarning: null,
       };
     }
-
-    if (matchedPo && (!matchedPo.spId || matchedPo.spId === matchedOp.spId)) {
-      return {
-        poId: matchedPo.poId,
-        ncId: matchedOp.ncId,
-        spId: matchedOp.spId,
-        customer: matchedOp.customer,
-        productName: matchedOp.productName,
-        defaultMachine: matchedOp.defaultMachine,
-        toolCode: matchedOp.toolCode,
-        reconciledWarning: null,
-      };
-    }
-
-    // Mismatched PO vs Operation -> find an open PO for this Operation's spId, else fallback to PO-THEO-KH
-    const compatiblePo = orders.find((o) => o.spId && o.spId === matchedOp.spId && o.remainQty > 0);
-    const resolvedPoId = compatiblePo ? compatiblePo.poId : 'PO-THEO-KH';
-    return {
-      poId: resolvedPoId,
-      ncId: matchedOp.ncId,
-      spId: matchedOp.spId,
-      customer: matchedOp.customer,
-      productName: matchedOp.productName,
-      defaultMachine: matchedOp.defaultMachine,
-      toolCode: matchedOp.toolCode,
-      reconciledWarning: `Mã nguyên công ${matchedOp.ncId} thuộc SP "${matchedOp.productName}" — đã đồng bộ Lệnh SX sang ${resolvedPoId}.`,
-    };
   }
 
-  // PO-only header QR -> pick step 1 operation of that PO
-  if (matchedPo) {
-    const prodOps = matchedPo.spId
-      ? operations
-          .filter((o) => o.spId === matchedPo.spId)
-          .sort((a, b) => a.stepOrder - b.stepOrder)
-      : operations.filter(
-          (o) =>
-            normalizeVn(o.productName).replace(/\s+/g, '').toUpperCase() ===
-            normalizeVn(matchedPo.productName).replace(/\s+/g, '').toUpperCase()
-        );
+  // Case 2: A PO ID was scanned (e.g. DH-343, PO485-01, PO2611-193-01)
+  if (parsed.poId) {
+    const cleanPo = parsed.poId.trim().toUpperCase();
+    const matchedPo =
+      cleanPo === 'PO-THEO-KH'
+        ? null
+        : orders.find((o) => o.poId.toUpperCase() === cleanPo) ||
+          orders.find((o) => o.poId.toUpperCase().includes(cleanPo) || cleanPo.includes(o.poId.toUpperCase())) ||
+          null;
 
-    const firstOp = prodOps[0];
-    if (firstOp) {
+    if (matchedPo) {
+      const prodOps = matchedPo.spId
+        ? operations
+            .filter((o) => o.spId === matchedPo.spId)
+            .sort((a, b) => a.stepOrder - b.stepOrder)
+        : operations.filter(
+            (o) =>
+              normalizeVn(o.productName).replace(/\s+/g, '').toUpperCase() ===
+              normalizeVn(matchedPo.productName).replace(/\s+/g, '').toUpperCase()
+          );
+
+      const firstOp = prodOps[0] || operations.find((o) => o.productName.toLowerCase().includes(matchedPo.productName.toLowerCase()));
+      if (firstOp) {
+        return {
+          poId: matchedPo.poId,
+          ncId: firstOp.ncId,
+          spId: matchedPo.spId || firstOp.spId,
+          customer: matchedPo.customer || firstOp.customer,
+          productName: matchedPo.productName || firstOp.productName,
+          defaultMachine: firstOp.defaultMachine,
+          toolCode: firstOp.toolCode,
+          reconciledWarning: null,
+        };
+      }
+
       return {
         poId: matchedPo.poId,
-        ncId: firstOp.ncId,
-        spId: firstOp.spId,
-        customer: firstOp.customer,
-        productName: firstOp.productName,
-        defaultMachine: firstOp.defaultMachine,
-        toolCode: firstOp.toolCode,
+        ncId: 'NC001',
+        spId: matchedPo.spId || null,
+        customer: matchedPo.customer,
+        productName: matchedPo.productName,
+        defaultMachine: 'Máy Tiện CNC 1',
+        toolCode: '',
+        reconciledWarning: null,
+      };
+    }
+
+    // What if the scanned code in poId was actually an NC code or Product code?
+    const asOp = operations.find((o) => o.ncId.toUpperCase() === cleanPo);
+    if (asOp) {
+      return {
+        poId: 'PO-THEO-KH',
+        ncId: asOp.ncId,
+        spId: asOp.spId,
+        customer: asOp.customer,
+        productName: asOp.productName,
+        defaultMachine: asOp.defaultMachine,
+        toolCode: asOp.toolCode,
+        reconciledWarning: null,
+      };
+    }
+  }
+
+  // Case 3: Schedule QR format (customer & productName)
+  if (parsed.productName) {
+    const cleanProd = parsed.productName.trim().toLowerCase();
+    const matchedOp = operations.find(
+      (o) =>
+        o.productName.trim().toLowerCase() === cleanProd ||
+        o.productName.toLowerCase().includes(cleanProd) ||
+        cleanProd.includes(o.productName.toLowerCase())
+    );
+
+    const matchedPo = orders.find(
+      (o) =>
+        (o.productName.trim().toLowerCase() === cleanProd ||
+          o.productName.toLowerCase().includes(cleanProd) ||
+          cleanProd.includes(o.productName.toLowerCase())) &&
+        o.status !== '✅ Đã giao đủ'
+    );
+
+    if (matchedOp) {
+      return {
+        poId: matchedPo ? matchedPo.poId : 'PO-THEO-KH',
+        ncId: matchedOp.ncId,
+        spId: matchedOp.spId,
+        customer: matchedOp.customer || parsed.customer || 'Khách hàng',
+        productName: matchedOp.productName,
+        defaultMachine: matchedOp.defaultMachine,
+        toolCode: matchedOp.toolCode,
+        reconciledWarning: null,
+      };
+    }
+  }
+
+  // Case 4: Product / Drawing ID (e.g. SP370)
+  if (parsed.spId) {
+    const cleanSp = parsed.spId.trim().toUpperCase();
+    const matchedOp = operations.find((o) => (o.spId || '').toUpperCase() === cleanSp);
+    const matchedPo = orders.find((o) => (o.spId || '').toUpperCase() === cleanSp);
+    if (matchedOp) {
+      return {
+        poId: matchedPo ? matchedPo.poId : 'PO-THEO-KH',
+        ncId: matchedOp.ncId,
+        spId: matchedOp.spId,
+        customer: matchedOp.customer,
+        productName: matchedOp.productName,
+        defaultMachine: matchedOp.defaultMachine,
+        toolCode: matchedOp.toolCode,
+        reconciledWarning: null,
+      };
+    }
+  }
+
+  // Fallback fuzzy search on raw text across POs and Operations
+  if (parsed.raw) {
+    const rawClean = parsed.raw.trim().toLowerCase();
+    const opByProd = operations.find((o) => o.productName.toLowerCase().includes(rawClean) || rawClean.includes(o.productName.toLowerCase()));
+    if (opByProd) {
+      return {
+        poId: 'PO-THEO-KH',
+        ncId: opByProd.ncId,
+        spId: opByProd.spId,
+        customer: opByProd.customer,
+        productName: opByProd.productName,
+        defaultMachine: opByProd.defaultMachine,
+        toolCode: opByProd.toolCode,
         reconciledWarning: null,
       };
     }

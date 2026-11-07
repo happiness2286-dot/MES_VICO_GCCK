@@ -28,7 +28,7 @@ import type { BootstrapPayload } from '@shared/types';
 import { matchesSearch } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
 import { getFallbackBootstrap, saveClientStoredLog, getAllFallbackLogs } from '@client/lib/clientFallbackStore';
-import { isSupabaseConnected, fetchLogsFromSupabase } from '@client/lib/supabaseClient';
+import { isSupabaseConnected, fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import { formatDateVn, formatNumber } from '@client/lib/formatters';
 import { navigateTo } from '@client/lib/navigation';
 import {
@@ -181,9 +181,26 @@ export function AdminPortal() {
         void fetchBootstrap(true);
       }, 15000);
 
-      return () => clearInterval(pollTimer);
+      // Realtime subscription from Supabase Cloud
+      const unsubSb = subscribeSupabaseLogChanges(() => {
+        void fetchBootstrap(true);
+      });
+
+      // Realtime event when a worker submits a report locally / cross-tab
+      const onReportSubmitted = () => {
+        void fetchBootstrap(true);
+      };
+      window.addEventListener('gcck:report-submitted', onReportSubmitted);
+      window.addEventListener('storage', onReportSubmitted);
+
+      return () => {
+        clearInterval(pollTimer);
+        if (unsubSb) unsubSb();
+        window.removeEventListener('gcck:report-submitted', onReportSubmitted);
+        window.removeEventListener('storage', onReportSubmitted);
+      };
     }
-  }, [authLoading, user?.workerId, user?.appRole]);
+  }, [authLoading, user?.workerId, user?.appRole, fetchBootstrap, bootstrap]);
 
   // Synchronize activeTab with URL / Navigation events
   useEffect(() => {
