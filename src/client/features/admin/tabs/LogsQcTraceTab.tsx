@@ -1286,6 +1286,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
 
                     {(() => {
                       const ok = Number(l.okQty || 0);
+                      const rework = Number(l.reworkQty || 0);
                       const stopMin = Number(l.stopMinutes || 0);
                       const stdSec = Number(l.stdSeconds || 1800);
                       const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
@@ -1293,10 +1294,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const netSec = Math.max(1, 28800 - stopMin * 60);
                       const calcKpi = Math.round((earnedSec / netSec) * 100);
                       const isOldFalse100 =
-                        l.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0 && ok > 0;
+                        l.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0;
                       const realKpi = isOldFalse100 ? calcKpi : (l.kpiPct ?? calcKpi);
-                      const isCriticalLow = realKpi < 50 && stopMin === 0 && ok > 0;
-                      const isWarnLow = realKpi < 85 && stopMin === 0 && ok > 0;
+                      const isCriticalLow = realKpi < 50 && stopMin === 0;
+                      const isWarnLow = realKpi < 85 && stopMin === 0;
 
                       return (
                         <>
@@ -1313,7 +1314,14 @@ const HANDOVER_RECEIVER_OPTIONS = [
                               {l.qcStatus}
                             </Badge>
                             <div className="mt-1">
-                              {isCriticalLow ? (
+                              {ok === 0 && rework > 0 ? (
+                                <span
+                                  className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
+                                  title={`Chỉ sửa hàng (${rework} SP), chưa tạo sản lượng OK mới`}
+                                >
+                                  🛠️ Sửa hàng ({rework} SP)
+                                </span>
+                              ) : isCriticalLow ? (
                                 <span
                                   className="inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700 animate-pulse"
                                   title={`Sản lượng ca 8h (${ok} SP) chỉ đạt ${realKpi}% định mức, không có giải trình dừng máy!`}

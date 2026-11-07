@@ -2041,6 +2041,35 @@ export function WorkerPortal() {
     return myLogs;
   }, [bootstrap?.recentLogs, user, logViewMode, isManagerOrLeader]);
 
+  // Group logs by worker + workDate + shift to calculate total mixed KPI for the shift
+  const shiftAggregatedKpiMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { totalEarnedSec: number; totalStopMin: number; logsCount: number; itemsSummary: string[] }
+    >();
+    for (const l of myRecentLogs) {
+      if (l.isVoided === 1) continue;
+      const key = `${l.workerId || user?.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
+      const ok = Number(l.okQty || 0);
+      const stopMin = Number(l.stopMinutes || 0);
+      const stdSec = Number(l.stdSeconds || 1800);
+      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
+      const earnedSec = ok * stdSec * machRate;
+
+      if (!map.has(key)) {
+        map.set(key, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, itemsSummary: [] });
+      }
+      const cur = map.get(key)!;
+      cur.totalEarnedSec += earnedSec;
+      cur.totalStopMin += stopMin;
+      cur.logsCount += 1;
+      if (ok > 0) {
+        cur.itemsSummary.push(`${ok} ${l.productName?.slice(0, 15) || l.ncId}`);
+      }
+    }
+    return map;
+  }, [myRecentLogs, user?.workerId]);
+
   return (
     <div className="w-full max-w-full overflow-x-clip pb-24">
       {/* ==================== STICKY LIVE SALARY & WORKER STATUS HEADER ==================== */}
@@ -4189,35 +4218,68 @@ export function WorkerPortal() {
                         </span>
                         {(() => {
                           const ok = Number(log.okQty || 0);
+                          const rework = Number(log.reworkQty || 0);
                           const stopMin = Number(log.stopMinutes || 0);
                           const stdSec = Number(log.stdSeconds || 1800);
                           const machRate = log.machineMode === 'SECOND' ? 0.33 : 1;
                           const earnedSec = ok * stdSec * machRate;
                           const netSec = Math.max(1, 28800 - stopMin * 60);
                           const calcKpi = Math.round((earnedSec / netSec) * 100);
+
+                          // Check Shift Aggregation (Cùng ngày + ca + thợ làm nhiều mã Win-Win trên cùng máy):
+                          const shiftKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}`;
+                          const shiftStats = shiftAggregatedKpiMap.get(shiftKey);
+                          const shiftNetSec = Math.max(
+                            1,
+                            28800 - (shiftStats?.totalStopMin || 0) * 60
+                          );
+                          const shiftTotalKpi = shiftStats
+                            ? Math.round((shiftStats.totalEarnedSec / shiftNetSec) * 100)
+                            : calcKpi;
+                          const hasMultiJobs = shiftStats && shiftStats.logsCount > 1;
+
                           const isOldFalse100 =
-                            log.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0 && ok > 0;
+                            log.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0;
                           const actualKpi = isOldFalse100 ? calcKpi : (log.kpiPct ?? calcKpi);
-                          const isCriticalLow = actualKpi < 50 && stopMin === 0 && ok > 0;
-                          const isWarnLow = actualKpi < 85 && stopMin === 0 && ok > 0;
-                          const displayStatus = isCriticalLow
-                            ? `🚨 RẤT THẤP (${actualKpi}% ĐM)`
-                            : isWarnLow
-                              ? `⚠️ Chưa đạt ĐM (${actualKpi}%)`
-                              : isOldFalse100
-                                ? `Đạt ${actualKpi}% ĐM`
-                                : log.kpiStatus;
+
+                          let displayStatus = log.kpiStatus;
+                          let isCritical = false;
+                          let isWarning = false;
+
+                          if (ok === 0 && rework > 0) {
+                            displayStatus = `🛠️ Sửa hàng (${rework} SP) · 0% ĐM`;
+                            isWarning = true;
+                          } else if (ok === 0 && rework === 0 && stopMin === 0) {
+                            displayStatus = '🚨 0% ĐM';
+                            isCritical = true;
+                          } else if (hasMultiJobs && shiftTotalKpi >= 85) {
+                            displayStatus = `✅ Ca gộp đạt ${shiftTotalKpi}% ĐM (Mã này: ${actualKpi}%)`;
+                          } else if (actualKpi < 50 && stopMin === 0) {
+                            displayStatus = `🚨 RẤT THẤP (${actualKpi}% ĐM)`;
+                            isCritical = true;
+                          } else if (actualKpi < 85 && stopMin === 0) {
+                            displayStatus = `⚠️ Chưa đạt ĐM (${actualKpi}%)`;
+                            isWarning = true;
+                          } else if (isOldFalse100) {
+                            displayStatus = `Đạt ${actualKpi}% ĐM`;
+                          }
 
                           return (
                             <div className="flex items-center gap-1">
-                              {isCriticalLow ? (
+                              {isCritical ? (
                                 <span className="inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-2 py-0.5 text-[10px] font-extrabold text-rose-700 animate-pulse">
+                                  {displayStatus}
+                                </span>
+                              ) : isWarning ? (
+                                <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                                   {displayStatus}
                                 </span>
                               ) : (
                                 <Badge
                                   variant={
-                                    actualKpi >= 85 ? 'success' : actualKpi > 0 ? 'warning' : 'info'
+                                    actualKpi >= 85 || (hasMultiJobs && shiftTotalKpi >= 85)
+                                      ? 'success'
+                                      : 'info'
                                   }
                                 >
                                   {displayStatus}

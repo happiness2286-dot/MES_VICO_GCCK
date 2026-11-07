@@ -127,30 +127,52 @@ const LOCAL_MACHINES_KEY = 'GCCK_LOCAL_MACHINES_V1';
 const LOCAL_WORKERS_KEY = 'GCCK_LOCAL_WORKERS_V1';
 
 function initFallbackOperations(): OperationMeta[] {
-  const seedOps: OperationMeta[] = (seedData.operations || []).map((o: any, idx: number) => ({
-    ncId: String(o.ncId),
-    spId: String(o.spId || `SP${String(idx + 1).padStart(3, '0')}`),
-    customer: String(o.customer || 'Vico - Nội bộ / Khách lẻ'),
-    productName: String(o.productName),
-    opName: String(o.opName),
-    stdSeconds: Number(o.stdSeconds || 1800),
-    stage: String(o.stage || '1'),
-    stepOrder: Number(o.stepOrder || idx + 1),
-    isFinalOp: Number(o.isFinalOp || (idx % 2 === 1 ? 1 : 0)),
-    defaultMachine: String(o.defaultMachine || 'Máy Tiện CNC 1'),
-    matName: String(o.matName || ''),
-    cuttingRec: String(o.cuttingRec || ''),
-    toolCode: String(o.toolCode || ''),
-    toolName: String(o.toolName || ''),
-    costPerEdge: Number(o.costPerEdge || 0),
-    stdEdgesPerPcs: Number(o.stdEdgesPerPcs || 0),
-    stdLaborCost: Number(o.stdLaborCost || 0),
-    stdMachCost: Number(o.stdMachCost || 0),
-    stdToolCost: Number(o.stdToolCost || 0),
-    isCriticalCheck: Number(o.isCriticalCheck || 0),
-    drawingUrl: o.drawingUrl ? String(o.drawingUrl) : undefined,
-    setupDocUrl: o.setupDocUrl ? String(o.setupDocUrl) : undefined,
-  }));
+  const seedOps: OperationMeta[] = (seedData.operations || []).map((o: any, idx: number) => {
+    const pLower = String(o.productName || '').toLowerCase();
+    const custLower = String(o.customer || '').toLowerCase();
+    let effectiveStdSec = Number(o.stdSeconds || 1800);
+    // Chuẩn hóa định mức công nghệ Win-Win theo thực tế xưởng:
+    // ISHIZUE OMEGA T406.4-1130, ISHIZUEOMEGA S457.2-1150, ISHIZUEOMEGA T457.2-1150: định mức 5 cái/ca 8h = 5760s
+    if (
+      pLower.includes('457.2') ||
+      (pLower.includes('406.4') && pLower.includes('1130')) ||
+      (pLower.includes('457') && pLower.includes('1150'))
+    ) {
+      effectiveStdSec = 5760;
+    } else if (
+      (custLower.includes('win-win') || pLower.includes('ishizue') || pLower.includes('alktop')) &&
+      !pLower.includes('cưa') &&
+      effectiveStdSec > 2880
+    ) {
+      // Dòng Win-Win thông thường anh em tăng năng suất lên 10 cái/ca = 2880s
+      effectiveStdSec = 2880;
+    }
+
+    return {
+      ncId: String(o.ncId),
+      spId: String(o.spId || `SP${String(idx + 1).padStart(3, '0')}`),
+      customer: String(o.customer || 'Vico - Nội bộ / Khách lẻ'),
+      productName: String(o.productName),
+      opName: String(o.opName),
+      stdSeconds: effectiveStdSec,
+      stage: String(o.stage || '1'),
+      stepOrder: Number(o.stepOrder || idx + 1),
+      isFinalOp: Number(o.isFinalOp || (idx % 2 === 1 ? 1 : 0)),
+      defaultMachine: String(o.defaultMachine || 'Máy Tiện CNC 1'),
+      matName: String(o.matName || ''),
+      cuttingRec: String(o.cuttingRec || ''),
+      toolCode: String(o.toolCode || ''),
+      toolName: String(o.toolName || ''),
+      costPerEdge: Number(o.costPerEdge || 0),
+      stdEdgesPerPcs: Number(o.stdEdgesPerPcs || 0),
+      stdLaborCost: Number(o.stdLaborCost || 0),
+      stdMachCost: Number(o.stdMachCost || 0),
+      stdToolCost: Number(o.stdToolCost || 0),
+      isCriticalCheck: Number(o.isCriticalCheck || 0),
+      drawingUrl: o.drawingUrl ? String(o.drawingUrl) : undefined,
+      setupDocUrl: o.setupDocUrl ? String(o.setupDocUrl) : undefined,
+    };
+  });
 
   if (typeof window !== 'undefined') {
     try {
@@ -1042,12 +1064,33 @@ export function getClientStoredLogs(): any[] {
         };
       }
 
+      const rework = Number(l.reworkQty || 0);
+
+      // Sửa lỗi hiển thị Đạt 100% ĐM khi OK = 0 (chỉ sửa hàng hoặc không có sản lượng)
+      if (ok === 0 && rework > 0 && l.kpiStatus === 'Đạt 100% ĐM') {
+        return {
+          ...l,
+          kpiPct: 0,
+          kpiStatus: `🛠️ Sửa hàng (${rework} SP) · 0% ĐM`,
+        };
+      }
+      if (ok === 0 && rework === 0 && stopMin === 0 && l.kpiStatus === 'Đạt 100% ĐM') {
+        return {
+          ...l,
+          kpiPct: 0,
+          kpiStatus: '🚨 0% ĐM',
+        };
+      }
+
       // If log claimed 100% ĐM but actually computedPct < 85 with 0 stop minutes:
-      if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 85 && ok > 0 && stopMin === 0) {
+      if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 85 && stopMin === 0) {
         return {
           ...l,
           kpiPct: computedPct,
-          kpiStatus: computedPct < 50 ? `🚨 Chưa đạt ĐM (${computedPct}%)` : `⚠️ Chưa đạt ĐM (${computedPct}%)`,
+          kpiStatus:
+            computedPct < 50
+              ? `🚨 RẤT THẤP (${computedPct}% ĐM)`
+              : `⚠️ Chưa đạt ĐM (${computedPct}%)`,
         };
       }
       return l;
