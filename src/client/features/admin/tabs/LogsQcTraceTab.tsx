@@ -780,20 +780,23 @@ const HANDOVER_RECEIVER_OPTIONS = [
     return filteredLogs.slice(start, start + logPageSize);
   }, [filteredLogs, logPage, logPageSize]);
 
-  // Map ca gộp cho thợ làm nhiều máy hoặc nhiều mã trong ca
-  const shiftAggregatedKpiMap = useMemo(() => {
+  // Map định mức theo từng máy trong ca cho thợ chạy nhiều máy / nhiều mã
+  const machineAggregatedKpiMap = useMemo(() => {
     const map = new Map<
       string,
       { totalEarnedSec: number; totalStopMin: number; logsCount: number }
     >();
     for (const l of logs) {
       if (l.isVoided) continue;
-      const key = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
+      const mName = (l.machineName || '').trim();
+      const key = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}_${mName}`;
       const ok = Number(l.okQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      const stdSec = Number(l.stdSeconds || 1800);
-      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
-      const earnedSec = ok * stdSec * machRate;
+      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
+        ? 2400
+        : Number(l.stdSeconds || 1800);
+      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
+      const earnedSec = ok * stdSec;
 
       if (!map.has(key)) {
         map.set(key, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0 });
@@ -1314,24 +1317,30 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const ok = Number(l.okQty || 0);
                       const rework = Number(l.reworkQty || 0);
                       const stopMin = Number(l.stopMinutes || 0);
-                      const stdSec = Number(l.stdSeconds || 1800);
-                      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
-                      const earnedSec = ok * stdSec * machRate;
+                      // Định mức kỹ thuật chuẩn: NC603 là 2400s (12 cái/ca)
+                      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
+                        ? 2400
+                        : Number(l.stdSeconds || 1800);
+                      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
+                      const earnedSec = ok * stdSec;
                       const netSec = Math.max(1, 28800 - stopMin * 60);
-                      const calcKpi = Math.round((earnedSec / netSec) * 100);
+                      const realKpi = Math.round((earnedSec / netSec) * 10000) / 100;
 
-                      // Phân bổ định mức ca gộp
-                      const shiftKey = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
-                      const shiftStats = shiftAggregatedKpiMap.get(shiftKey);
-                      const shiftNetSec = Math.max(1, 28800 - (shiftStats?.totalStopMin || 0) * 60);
-                      const shiftTotalKpi = shiftStats
-                        ? Math.round((shiftStats.totalEarnedSec / shiftNetSec) * 100)
-                        : calcKpi;
-                      const hasMultiJobs = shiftStats && shiftStats.logsCount > 1;
+                      const fmtPct = (val: number) => {
+                        const r = Math.round(val * 100) / 100;
+                        if (Math.abs(r - Math.round(r)) < 0.01) return `${Math.round(r)}%`;
+                        return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
+                      };
 
-                      const isOldFalse100 =
-                        l.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 100 && stopMin === 0;
-                      const realKpi = isOldFalse100 ? calcKpi : (l.kpiPct ?? calcKpi);
+                      // Phân bổ định mức theo máy trong ca
+                      const mName = (l.machineName || '').trim();
+                      const mKey = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}_${mName}`;
+                      const mStats = machineAggregatedKpiMap.get(mKey);
+                      const mNetSec = Math.max(1, 28800 - (mStats?.totalStopMin || 0) * 60);
+                      const mTotalKpi = mStats
+                        ? Math.round((mStats.totalEarnedSec / mNetSec) * 10000) / 100
+                        : realKpi;
+                      const hasMultiJobsOnMachine = mStats && mStats.logsCount > 1;
 
                       let badgeText = l.kpiStatus;
                       let isCrit = false;
@@ -1343,26 +1352,29 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       } else if (ok === 0 && rework === 0 && stopMin === 0) {
                         badgeText = '🚨 0% ĐM';
                         isCrit = true;
-                      } else if (hasMultiJobs) {
-                        if (shiftTotalKpi >= 100) {
-                          badgeText = `✅ Ca gộp ${shiftTotalKpi}% ĐM (${realKpi}%)`;
-                        } else if (shiftTotalKpi < 50 && (shiftStats?.totalStopMin || 0) === 0) {
-                          badgeText = `🚨 Ca rất thấp (${shiftTotalKpi}% ĐM)`;
+                      } else if (hasMultiJobsOnMachine) {
+                        if (mTotalKpi >= 100) {
+                          badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} (${fmtPct(realKpi)})`;
+                        } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
+                          badgeText = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM)`;
                           isCrit = true;
                         } else {
-                          badgeText = `⚠️ Ca chưa đạt (${shiftTotalKpi}%)`;
+                          badgeText = `⚠️ Máy chưa đạt (${fmtPct(mTotalKpi)})`;
                           isWarn = true;
                         }
-                      } else if (realKpi < 50 && stopMin === 0) {
-                        badgeText = `🚨 RẤT THẤP (${realKpi}% ĐM)`;
-                        isCrit = true;
-                      } else if (realKpi < 100 && stopMin === 0) {
-                        badgeText = `⚠️ Chưa đạt ĐM (${realKpi}%)`;
-                        isWarn = true;
-                      } else if (realKpi >= 100) {
-                        badgeText = `Đạt ${realKpi}% ĐM`;
-                      } else if (isOldFalse100) {
-                        badgeText = `Đạt ${realKpi}% ĐM`;
+                      } else {
+                        const isSecondMach = l.machineMode === 'SECOND';
+                        const prefix = isSecondMach ? 'Máy phụ' : 'Máy';
+
+                        if (realKpi >= 100) {
+                          badgeText = `✅ ${prefix} đạt ${fmtPct(realKpi)} ĐM`;
+                        } else if (realKpi < 50 && stopMin === 0) {
+                          badgeText = `🚨 ${prefix} rất thấp (${fmtPct(realKpi)} ĐM)`;
+                          isCrit = true;
+                        } else {
+                          badgeText = `⚠️ ${prefix} đạt ${fmtPct(realKpi)} ĐM`;
+                          isWarn = true;
+                        }
                       }
 
                       return (

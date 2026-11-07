@@ -2041,20 +2041,24 @@ export function WorkerPortal() {
     return myLogs;
   }, [bootstrap?.recentLogs, user, logViewMode, isManagerOrLeader]);
 
-  // Group logs by worker + workDate + shift to calculate total mixed KPI for the shift
-  const shiftAggregatedKpiMap = useMemo(() => {
+  // Group logs by worker + workDate + shift + machine to calculate total mixed KPI for each machine
+  const machineAggregatedKpiMap = useMemo(() => {
     const map = new Map<
       string,
       { totalEarnedSec: number; totalStopMin: number; logsCount: number; itemsSummary: string[] }
     >();
     for (const l of myRecentLogs) {
       if (l.isVoided === 1) continue;
-      const key = `${l.workerId || user?.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
+      const mName = (l.machineName || '').trim();
+      const key = `${l.workerId || user?.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}_${mName}`;
       const ok = Number(l.okQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      const stdSec = Number(l.stdSeconds || 1800);
-      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
-      const earnedSec = ok * stdSec * machRate;
+      // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca)
+      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
+        ? 2400
+        : Number(l.stdSeconds || 1800);
+      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
+      const earnedSec = ok * stdSec;
 
       if (!map.has(key)) {
         map.set(key, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, itemsSummary: [] });
@@ -4220,27 +4224,31 @@ export function WorkerPortal() {
                           const ok = Number(log.okQty || 0);
                           const rework = Number(log.reworkQty || 0);
                           const stopMin = Number(log.stopMinutes || 0);
-                          const stdSec = Number(log.stdSeconds || 1800);
-                          const machRate = log.machineMode === 'SECOND' ? 0.33 : 1;
-                          const earnedSec = ok * stdSec * machRate;
+                          // Định mức kỹ thuật chuẩn: NC603 là 2400s (12 cái/ca)
+                          const stdSec = (log.ncId === 'NC603' || log.opName?.includes('NC603') || log.productName?.toLowerCase().includes('sealing strip'))
+                            ? 2400
+                            : Number(log.stdSeconds || 1800);
+                          // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
+                          const earnedSec = ok * stdSec;
                           const netSec = Math.max(1, 28800 - stopMin * 60);
-                          const calcKpi = Math.round((earnedSec / netSec) * 100);
+                          const actualKpi = Math.round((earnedSec / netSec) * 10000) / 100;
 
-                          // Check Shift Aggregation (Cùng ngày + ca + thợ làm nhiều mã Win-Win trên cùng máy):
-                          const shiftKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}`;
-                          const shiftStats = shiftAggregatedKpiMap.get(shiftKey);
-                          const shiftNetSec = Math.max(
-                            1,
-                            28800 - (shiftStats?.totalStopMin || 0) * 60
-                          );
-                          const shiftTotalKpi = shiftStats
-                            ? Math.round((shiftStats.totalEarnedSec / shiftNetSec) * 100)
-                            : calcKpi;
-                          const hasMultiJobs = shiftStats && shiftStats.logsCount > 1;
+                          // Định dạng %: nếu tròn số thì ghi 100%, lẻ thì ghi 83.33%, 58.33%, 33.33%, 8.33%
+                          const fmtPct = (val: number) => {
+                            const r = Math.round(val * 100) / 100;
+                            if (Math.abs(r - Math.round(r)) < 0.01) return `${Math.round(r)}%`;
+                            return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
+                          };
 
-                          const isOldFalse100 =
-                            log.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 100 && stopMin === 0;
-                          const actualKpi = isOldFalse100 ? calcKpi : (log.kpiPct ?? calcKpi);
+                          // Nhóm theo từng máy trong ca làm việc:
+                          const mName = (log.machineName || '').trim();
+                          const mKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}_${mName}`;
+                          const mStats = machineAggregatedKpiMap.get(mKey);
+                          const mNetSec = Math.max(1, 28800 - (mStats?.totalStopMin || 0) * 60);
+                          const mTotalKpi = mStats
+                            ? Math.round((mStats.totalEarnedSec / mNetSec) * 10000) / 100
+                            : actualKpi;
+                          const hasMultiJobsOnMachine = mStats && mStats.logsCount > 1;
 
                           let displayStatus = log.kpiStatus;
                           let isCritical = false;
@@ -4252,28 +4260,31 @@ export function WorkerPortal() {
                           } else if (ok === 0 && rework === 0 && stopMin === 0) {
                             displayStatus = '🚨 0% ĐM';
                             isCritical = true;
-                          } else if (hasMultiJobs) {
-                            // Phân bổ định mức theo ca gộp (ghép máy / nhiều mã):
-                            // 1 máy làm X% + máy kia làm Y% = Tổng % ca. Đạt nếu tổng >= 100%, ít hơn 100% thì cảnh báo.
-                            if (shiftTotalKpi >= 100) {
-                              displayStatus = `✅ Ca gộp đạt ${shiftTotalKpi}% ĐM (Mã này: ${actualKpi}%)`;
-                            } else if (shiftTotalKpi < 50 && (shiftStats?.totalStopMin || 0) === 0) {
-                              displayStatus = `🚨 Ca rất thấp (${shiftTotalKpi}% ĐM) · Mã này: ${actualKpi}%`;
+                          } else if (hasMultiJobsOnMachine) {
+                            // Nhiều mã cùng chạy trên 1 máy: tính tổng % định mức máy đó
+                            if (mTotalKpi >= 100) {
+                              displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM (Mã này: ${fmtPct(actualKpi)})`;
+                            } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
+                              displayStatus = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM) · Mã này: ${fmtPct(actualKpi)}`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Ca chưa đạt ĐM (${shiftTotalKpi}% < 100%) · Mã này: ${actualKpi}%`;
+                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(mTotalKpi)} < 100%) · Mã này: ${fmtPct(actualKpi)}`;
                               isWarning = true;
                             }
-                          } else if (actualKpi < 50 && stopMin === 0) {
-                            displayStatus = `🚨 RẤT THẤP (${actualKpi}% ĐM)`;
-                            isCritical = true;
-                          } else if (actualKpi < 100 && stopMin === 0) {
-                            displayStatus = `⚠️ Chưa đạt ĐM (${actualKpi}% < 100%)`;
-                            isWarning = true;
-                          } else if (actualKpi >= 100) {
-                            displayStatus = `✅ Đạt ${actualKpi}% ĐM`;
-                          } else if (isOldFalse100) {
-                            displayStatus = `Đạt ${actualKpi}% ĐM`;
+                          } else {
+                            // 1 mã trên máy (hoặc máy phụ / máy đơn):
+                            const isSecondMach = log.machineMode === 'SECOND';
+                            const prefix = isSecondMach ? 'Máy phụ' : 'Máy';
+
+                            if (actualKpi >= 100) {
+                              displayStatus = `✅ ${prefix} đạt ${fmtPct(actualKpi)} ĐM`;
+                            } else if (actualKpi < 50 && stopMin === 0) {
+                              displayStatus = `🚨 ${prefix} rất thấp (${fmtPct(actualKpi)} ĐM)`;
+                              isCritical = true;
+                            } else {
+                              displayStatus = `⚠️ ${prefix} đạt ${fmtPct(actualKpi)} ĐM`;
+                              isWarning = true;
+                            }
                           }
 
                           return (
@@ -4289,7 +4300,7 @@ export function WorkerPortal() {
                               ) : (
                                 <Badge
                                   variant={
-                                    (hasMultiJobs ? shiftTotalKpi >= 100 : actualKpi >= 100)
+                                    (hasMultiJobsOnMachine ? mTotalKpi >= 100 : actualKpi >= 100)
                                       ? 'success'
                                       : 'info'
                                   }

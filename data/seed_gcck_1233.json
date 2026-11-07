@@ -11737,7 +11737,7 @@
       "customer": "Thyssenkrupp",
       "productName": "Sealing strip, below",
       "opName": "G/c Nc6 phay rãnh 1",
-      "stdSeconds": 4800,
+      "stdSeconds": 2400,
       "stage": "1",
       "defaultMachine": "Máy Phay CNC1",
       "matName": "Inox SUS304 / SCH18 / SCH21",
