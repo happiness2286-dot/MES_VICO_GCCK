@@ -2061,12 +2061,12 @@ export function WorkerPortal() {
       const rework = Number(l.reworkQty || 0);
       const scrap = Number(l.scrapQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca), NC061/406Dw850 là 5760s (5 cái/ca)
+      // ĐỊNH MỨC KỸ THUẬT CHUẨN:
+      // NC603: 2400s (12 cái/ca)
+      // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
       const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
         ? 2400
-        : (l.ncId === 'NC061' || l.opName?.includes('NC061') || l.productName?.includes('406Dw850') || l.productName?.includes('S406.4-850'))
-          ? 5760
-          : Number(l.stdSeconds || 1800);
+        : Number(l.stdSeconds || 1800);
       // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG), không nhân 0.33
       const totalMachined = ok + rework + scrap;
       const earnedSec = totalMachined * stdSec;
@@ -4217,11 +4217,11 @@ export function WorkerPortal() {
                           const scrap = Number(log.scrapQty || 0);
                           const stopMin = Number(log.stopMinutes || 0);
                           // Định mức kỹ thuật chuẩn:
+                          // NC603: 2400s (12 cái/ca)
+                          // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
                           const stdSec = (log.ncId === 'NC603' || log.opName?.includes('NC603') || log.productName?.toLowerCase().includes('sealing strip'))
                             ? 2400
-                            : (log.ncId === 'NC061' || log.opName?.includes('NC061') || log.productName?.includes('406Dw850') || log.productName?.includes('S406.4-850'))
-                              ? 5760
-                              : Number(log.stdSeconds || 1800);
+                            : Number(log.stdSeconds || 1800);
 
                           // ĐỊNH MỨC SẢN LƯỢNG MÁY / CÔNG SỨC VẬN HÀNH:
                           // Kể cả có xử lý lại (Rework) hay NG thì máy vẫn đã vận hành gia công, tính trên tổng số sản phẩm đã gia công
@@ -4268,8 +4268,12 @@ export function WorkerPortal() {
                           let isWarning = false;
 
                           if (totalMachined === 0 && stopMin === 0) {
-                            displayStatus = '🚨 0% ĐM';
-                            isCritical = true;
+                            if (isSecondMach) {
+                              displayStatus = 'Máy phụ (chưa chạy)';
+                            } else {
+                              displayStatus = '🚨 0% ĐM';
+                              isCritical = true;
+                            }
                           } else if (hasMultiJobsOnMachine) {
                             // Trường hợp 1: Nhiều mã trên cùng 1 máy (như Thắng làm 3 mã tấm lót trên OKK1):
                             if (mTotalKpi >= 100) {
@@ -4282,25 +4286,24 @@ export function WorkerPortal() {
                               isWarning = true;
                             }
                           } else if (isSecondMach) {
-                            // Trường hợp 2: Máy phụ độc lập (như OKK3 làm NC603 10 cái -> 83.33%):
+                            // Trường hợp 2: Máy phụ độc lập (như Cắt dây DK7745-1 hoặc OKK3 làm NC603 10 cái -> 83.33%):
                             if (actualKpi >= 100) {
                               displayStatus = `✅ Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
-                            } else if (actualKpi < 50 && stopMin === 0) {
-                              displayStatus = `🚨 Máy phụ rất thấp (${fmtPct(actualKpi)} ĐM)${defectDetail}`;
-                              isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
+                              displayStatus = `Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
+                            }
+                          } else if (hasMultiMachinesInShift) {
+                            // Trường hợp 3: Ghép nhiều máy trong ca (như Tráng chạy FUJI 100% + T1516 75%):
+                            if (mTotalKpi >= 100) {
+                              displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
+                            } else if (sTotalKpi >= 100) {
+                              displayStatus = `✅ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
+                            } else {
+                              displayStatus = `⚠️ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM (Tổng ca: ${fmtPct(sTotalKpi)})${defectDetail}`;
                               isWarning = true;
                             }
-                          } else if (hasMultiMachinesInShift && mTotalKpi < 100 && sTotalKpi >= 100) {
-                            // Trường hợp 3: Ghép 2 máy chính (1 máy 40% + 1 máy 60% = 100% ca gộp):
-                            displayStatus = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} ĐM (Máy này: ${fmtPct(mTotalKpi)}${defectDetail})`;
-                          } else if (hasMultiMachinesInShift && sTotalKpi < 100) {
-                            // Trường hợp 4: Ghép máy nhưng tổng ca chưa đạt 100%:
-                            displayStatus = `⚠️ Ca chưa đạt ĐM (${fmtPct(sTotalKpi)} < 100%) · Máy này: ${fmtPct(mTotalKpi)}${defectDetail}`;
-                            isWarning = true;
                           } else {
-                            // Trường hợp 5: Máy đơn bình thường 1 mã:
+                            // Trường hợp 4: Máy đơn bình thường 1 mã:
                             if (actualKpi >= 100) {
                               displayStatus = `✅ Máy đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
                             } else if (actualKpi < 50 && stopMin === 0) {
@@ -4325,13 +4328,15 @@ export function WorkerPortal() {
                               ) : (
                                 <Badge
                                   variant={
-                                    (hasMultiJobsOnMachine
-                                      ? mTotalKpi >= 100
-                                      : hasMultiMachinesInShift
-                                        ? sTotalKpi >= 100
-                                        : actualKpi >= 100)
-                                      ? 'success'
-                                      : 'info'
+                                    isSecondMach
+                                      ? (actualKpi >= 100 ? 'success' : 'info')
+                                      : (hasMultiJobsOnMachine
+                                        ? mTotalKpi >= 100
+                                        : hasMultiMachinesInShift
+                                          ? (mTotalKpi >= 100 || sTotalKpi >= 100)
+                                          : actualKpi >= 100)
+                                        ? 'success'
+                                        : 'info'
                                   }
                                 >
                                   {displayStatus}

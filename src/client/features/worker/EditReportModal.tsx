@@ -148,14 +148,26 @@ export function EditReportModal({
         income: estNewWage,
         pieceWage: estNewWage,
         stdSeconds: Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0),
-        kpiPct: Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100),
-        kpiStatus: okQty === 0 && reworkQty > 0
-          ? `🛠️ Sửa hàng (${reworkQty} SP) · 0% ĐM`
-          : okQty === 0 && stopMinutes === 0
-            ? '🚨 0% ĐM'
-            : Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100) >= 100
-              ? `Đạt ${Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100)}% ĐM`
-              : `⚠️ Chưa đạt ĐM (${Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100)}%)`,
+        kpiPct: (() => {
+          const totalMachined = okQty + reworkQty + scrapQty;
+          const stdSec = Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800);
+          const netSec = Math.max(1, 28800 - stopMinutes * 60);
+          return Math.round(((totalMachined * stdSec) / netSec) * 100);
+        })(),
+        kpiStatus: (() => {
+          const totalMachined = okQty + reworkQty + scrapQty;
+          const stdSec = Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800);
+          const netSec = Math.max(1, 28800 - stopMinutes * 60);
+          const computedKpi = Math.round(((totalMachined * stdSec) / netSec) * 100);
+          const defectInfo = reworkQty > 0 || scrapQty > 0
+            ? ` (${okQty} OK${reworkQty > 0 ? `, ${reworkQty} Sửa` : ''}${scrapQty > 0 ? `, ${scrapQty} NG` : ''})`
+            : '';
+
+          if (totalMachined === 0 && stopMinutes === 0) return '🚨 0% ĐM';
+          if (computedKpi >= 100) return `Đạt ${computedKpi}% ĐM${defectInfo}`;
+          if (computedKpi < 50 && stopMinutes === 0) return `🚨 Rất thấp (${computedKpi}% ĐM)${defectInfo}`;
+          return `⚠️ Chưa đạt ĐM (${computedKpi}%)${defectInfo}`;
+        })(),
       };
 
       const newTodayIncome =

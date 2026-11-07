@@ -129,7 +129,6 @@ const LOCAL_WORKERS_KEY = 'GCCK_LOCAL_WORKERS_V1';
 function initFallbackOperations(): OperationMeta[] {
   const seedOps: OperationMeta[] = (seedData.operations || []).map((o: any, idx: number) => {
     const pLower = String(o.productName || '').toLowerCase();
-    const custLower = String(o.customer || '').toLowerCase();
     let effectiveStdSec = Number(o.stdSeconds || 1800);
     // Chuẩn hóa định mức công nghệ Win-Win theo thực tế xưởng:
     // ISHIZUE OMEGA T406.4-1130, ISHIZUEOMEGA S457.2-1150, ISHIZUEOMEGA T457.2-1150: định mức 5 cái/ca 8h = 5760s
@@ -139,13 +138,6 @@ function initFallbackOperations(): OperationMeta[] {
       (pLower.includes('457') && pLower.includes('1150'))
     ) {
       effectiveStdSec = 5760;
-    } else if (
-      (custLower.includes('win-win') || pLower.includes('ishizue') || pLower.includes('alktop')) &&
-      !pLower.includes('cưa') &&
-      effectiveStdSec > 2880
-    ) {
-      // Dòng Win-Win thông thường anh em tăng năng suất lên 10 cái/ca = 2880s
-      effectiveStdSec = 2880;
     }
 
     return {

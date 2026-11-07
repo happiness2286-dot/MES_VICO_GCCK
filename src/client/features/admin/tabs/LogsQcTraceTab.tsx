@@ -801,11 +801,12 @@ const HANDOVER_RECEIVER_OPTIONS = [
       const rework = Number(l.reworkQty || 0);
       const scrap = Number(l.scrapQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
+      // ĐỊNH MỨC KỸ THUẬT CHUẨN:
+      // NC603: 2400s (12 cái/ca)
+      // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
       const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
         ? 2400
-        : (l.ncId === 'NC061' || l.opName?.includes('NC061') || l.productName?.includes('406Dw850') || l.productName?.includes('S406.4-850'))
-          ? 5760
-          : Number(l.stdSeconds || 1800);
+        : Number(l.stdSeconds || 1800);
       // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG), không nhân 0.33
       const totalMachined = ok + rework + scrap;
       const earnedSec = totalMachined * stdSec;
@@ -1342,11 +1343,11 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const scrap = Number(l.scrapQty || 0);
                       const stopMin = Number(l.stopMinutes || 0);
                       // Định mức kỹ thuật chuẩn:
+                      // NC603: 2400s (12 cái/ca)
+                      // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
                       const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
                         ? 2400
-                        : (l.ncId === 'NC061' || l.opName?.includes('NC061') || l.productName?.includes('406Dw850') || l.productName?.includes('S406.4-850'))
-                          ? 5760
-                          : Number(l.stdSeconds || 1800);
+                        : Number(l.stdSeconds || 1800);
                       // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công (OK + Sửa + NG)
                       const totalMachined = ok + rework + scrap;
                       const earnedSec = totalMachined * stdSec;
@@ -1390,8 +1391,12 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       let isWarn = false;
 
                       if (totalMachined === 0 && stopMin === 0) {
-                        badgeText = '🚨 0% ĐM';
-                        isCrit = true;
+                        if (isSecondMach) {
+                          badgeText = 'Máy phụ (chưa chạy)';
+                        } else {
+                          badgeText = '🚨 0% ĐM';
+                          isCrit = true;
+                        }
                       } else if (hasMultiJobsOnMachine) {
                         if (mTotalKpi >= 100) {
                           badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} (${fmtPct(realKpi)}${defectDetail})`;
@@ -1405,18 +1410,18 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       } else if (isSecondMach) {
                         if (realKpi >= 100) {
                           badgeText = `✅ Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
-                        } else if (realKpi < 50 && stopMin === 0) {
-                          badgeText = `🚨 Máy phụ rất thấp (${fmtPct(realKpi)} ĐM)`;
-                          isCrit = true;
                         } else {
-                          badgeText = `⚠️ Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
+                          badgeText = `Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
+                        }
+                      } else if (hasMultiMachinesInShift) {
+                        if (mTotalKpi >= 100) {
+                          badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
+                        } else if (sTotalKpi >= 100) {
+                          badgeText = `✅ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
+                        } else {
+                          badgeText = `⚠️ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM (Tổng ca: ${fmtPct(sTotalKpi)})${defectDetail}`;
                           isWarn = true;
                         }
-                      } else if (hasMultiMachinesInShift && mTotalKpi < 100 && sTotalKpi >= 100) {
-                        badgeText = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} (${fmtPct(mTotalKpi)}${defectDetail})`;
-                      } else if (hasMultiMachinesInShift && sTotalKpi < 100) {
-                        badgeText = `⚠️ Ca chưa đạt (${fmtPct(sTotalKpi)})`;
-                        isWarn = true;
                       } else {
                         if (realKpi >= 100) {
                           badgeText = `✅ Máy đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
@@ -1458,6 +1463,14 @@ const HANDOVER_RECEIVER_OPTIONS = [
                                 >
                                   {badgeText}
                                 </span>
+                              ) : badgeText?.startsWith('✅') ? (
+                                <span className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                                  {badgeText}
+                                </span>
+                              ) : isSecondMach ? (
+                                <span className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                                  {badgeText}
+                                </span>
                               ) : (
                                 <span className="text-[11px] font-medium text-slate-500">
                                   {badgeText}
@@ -1470,7 +1483,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
                             {l.income > 0 ? (
                               <div>
                                 <span className="text-blue-700">{formatVnd(l.income)}</span>
-                                {isCrit && (
+                                {isCrit && !isSecondMach && sTotalKpi < 50 && (
                                   <div
                                     className="text-[10px] font-extrabold text-rose-600"
                                     title="Sản lượng quá thấp không đủ bù đắp chi phí máy đứng 8h"
