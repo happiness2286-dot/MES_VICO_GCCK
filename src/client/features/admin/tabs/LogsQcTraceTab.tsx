@@ -780,6 +780,32 @@ const HANDOVER_RECEIVER_OPTIONS = [
     return filteredLogs.slice(start, start + logPageSize);
   }, [filteredLogs, logPage, logPageSize]);
 
+  // Map ca gộp cho thợ làm nhiều máy hoặc nhiều mã trong ca
+  const shiftAggregatedKpiMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { totalEarnedSec: number; totalStopMin: number; logsCount: number }
+    >();
+    for (const l of logs) {
+      if (l.isVoided) continue;
+      const key = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
+      const ok = Number(l.okQty || 0);
+      const stopMin = Number(l.stopMinutes || 0);
+      const stdSec = Number(l.stdSeconds || 1800);
+      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
+      const earnedSec = ok * stdSec * machRate;
+
+      if (!map.has(key)) {
+        map.set(key, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0 });
+      }
+      const cur = map.get(key)!;
+      cur.totalEarnedSec += earnedSec;
+      cur.totalStopMin += stopMin;
+      cur.logsCount += 1;
+    }
+    return map;
+  }, [logs]);
+
   const openEditLogModal = (log: ProductionLogDto) => {
     setEditLog(log);
     setEditOkQty(log.okQty);
@@ -1293,11 +1319,51 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const earnedSec = ok * stdSec * machRate;
                       const netSec = Math.max(1, 28800 - stopMin * 60);
                       const calcKpi = Math.round((earnedSec / netSec) * 100);
+
+                      // Phân bổ định mức ca gộp
+                      const shiftKey = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
+                      const shiftStats = shiftAggregatedKpiMap.get(shiftKey);
+                      const shiftNetSec = Math.max(1, 28800 - (shiftStats?.totalStopMin || 0) * 60);
+                      const shiftTotalKpi = shiftStats
+                        ? Math.round((shiftStats.totalEarnedSec / shiftNetSec) * 100)
+                        : calcKpi;
+                      const hasMultiJobs = shiftStats && shiftStats.logsCount > 1;
+
                       const isOldFalse100 =
-                        l.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0;
+                        l.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 100 && stopMin === 0;
                       const realKpi = isOldFalse100 ? calcKpi : (l.kpiPct ?? calcKpi);
-                      const isCriticalLow = realKpi < 50 && stopMin === 0;
-                      const isWarnLow = realKpi < 85 && stopMin === 0;
+
+                      let badgeText = l.kpiStatus;
+                      let isCrit = false;
+                      let isWarn = false;
+
+                      if (ok === 0 && rework > 0) {
+                        badgeText = `🛠️ Sửa hàng (${rework} SP)`;
+                        isWarn = true;
+                      } else if (ok === 0 && rework === 0 && stopMin === 0) {
+                        badgeText = '🚨 0% ĐM';
+                        isCrit = true;
+                      } else if (hasMultiJobs) {
+                        if (shiftTotalKpi >= 100) {
+                          badgeText = `✅ Ca gộp ${shiftTotalKpi}% ĐM (${realKpi}%)`;
+                        } else if (shiftTotalKpi < 50 && (shiftStats?.totalStopMin || 0) === 0) {
+                          badgeText = `🚨 Ca rất thấp (${shiftTotalKpi}% ĐM)`;
+                          isCrit = true;
+                        } else {
+                          badgeText = `⚠️ Ca chưa đạt (${shiftTotalKpi}%)`;
+                          isWarn = true;
+                        }
+                      } else if (realKpi < 50 && stopMin === 0) {
+                        badgeText = `🚨 RẤT THẤP (${realKpi}% ĐM)`;
+                        isCrit = true;
+                      } else if (realKpi < 100 && stopMin === 0) {
+                        badgeText = `⚠️ Chưa đạt ĐM (${realKpi}%)`;
+                        isWarn = true;
+                      } else if (realKpi >= 100) {
+                        badgeText = `Đạt ${realKpi}% ĐM`;
+                      } else if (isOldFalse100) {
+                        badgeText = `Đạt ${realKpi}% ĐM`;
+                      }
 
                       return (
                         <>
@@ -1314,30 +1380,23 @@ const HANDOVER_RECEIVER_OPTIONS = [
                               {l.qcStatus}
                             </Badge>
                             <div className="mt-1">
-                              {ok === 0 && rework > 0 ? (
-                                <span
-                                  className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
-                                  title={`Chỉ sửa hàng (${rework} SP), chưa tạo sản lượng OK mới`}
-                                >
-                                  🛠️ Sửa hàng ({rework} SP)
-                                </span>
-                              ) : isCriticalLow ? (
+                              {isCrit ? (
                                 <span
                                   className="inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700 animate-pulse"
-                                  title={`Sản lượng ca 8h (${ok} SP) chỉ đạt ${realKpi}% định mức, không có giải trình dừng máy!`}
+                                  title="Sản lượng ca quá thấp so với định mức 100%"
                                 >
-                                  🚨 RẤT THẤP ({realKpi}% ĐM)
+                                  {badgeText}
                                 </span>
-                              ) : isWarnLow ? (
+                              ) : isWarn ? (
                                 <span
                                   className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
-                                  title={`Chưa đạt định mức ca 8h (${realKpi}% < 85%)`}
+                                  title="Chưa đạt định mức ca 100%"
                                 >
-                                  ⚠️ Chưa đạt ĐM ({realKpi}%)
+                                  {badgeText}
                                 </span>
                               ) : (
                                 <span className="text-[11px] font-medium text-slate-500">
-                                  {isOldFalse100 ? `Đạt ${realKpi}% ĐM` : l.kpiStatus}
+                                  {badgeText}
                                 </span>
                               )}
                             </div>
@@ -1347,7 +1406,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
                             {l.income > 0 ? (
                               <div>
                                 <span className="text-blue-700">{formatVnd(l.income)}</span>
-                                {isCriticalLow && (
+                                {isCrit && (
                                   <div
                                     className="text-[10px] font-extrabold text-rose-600"
                                     title="Sản lượng quá thấp không đủ bù đắp chi phí máy đứng 8h"

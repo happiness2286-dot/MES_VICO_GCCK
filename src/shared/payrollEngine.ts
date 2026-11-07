@@ -12,7 +12,7 @@ export const DEFAULT_PAYROLL_CONFIG: SystemPayrollConfig = {
   mealShift23: 20000,
   mealOt2h: 15000,
   mealSunday: 30000,
-  kpiWarningThreshold: 0.85,
+  kpiWarningThreshold: 1.0, // Chuẩn định mức ca 100%, dưới 100% cảnh báo chưa đạt định mức
 };
 
 /**
@@ -249,7 +249,7 @@ export function calculateTurnPayroll(
         ? 100
         : 0;
 
-  const rawThr = Number(config.kpiWarningThreshold) || 0.85;
+  const rawThr = Number(config.kpiWarningThreshold) || 1.0;
   const warnThresholdPct = Math.round(rawThr > 2 ? rawThr : rawThr * 100);
   const kpiStatus =
     earnedStdSeconds === 0 && effectivePaidStopMinutes > 0

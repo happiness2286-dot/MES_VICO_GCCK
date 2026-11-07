@@ -1387,14 +1387,14 @@ export function WorkerPortal() {
       }
     }
     // Cảnh báo định mức ca 8h nếu sản lượng quá thấp và không có giải trình dừng máy
-    if (okQty > 0 && effectivePayroll.kpiPct < 85 && stopMinutes === 0) {
+    if (okQty > 0 && effectivePayroll.kpiPct < 100 && stopMinutes === 0) {
       if (effectivePayroll.kpiPct < 50) {
         list.push(
           `🚨 CẢNH BÁO ĐỊNH MỨC CA: Sản lượng dự kiến (${okQty} SP) chỉ đạt ${effectivePayroll.kpiPct}% định mức ca 8h (rất thấp!). Nếu ca làm việc gặp sự cố máy, đứt dây, chờ phôi, mất điện hoặc gá đặt thử mẫu, bạn BẮT BUỘC phải bấm giờ hoặc nhập số phút dừng máy tại mục 'Báo Cáo Sự Cố Dừng Máy' để được bảo lưu lương ca!`
         );
       } else {
         list.push(
-          `⚠️ Chưa đạt định mức ca 8h (${effectivePayroll.kpiPct}% < 85%). Nếu có thời gian dừng máy do chờ việc/sự cố, hãy nhập số phút dừng máy để hệ thống bù trừ giờ làm thực tế.`
+          `⚠️ Chưa đạt định mức ca 8h (${effectivePayroll.kpiPct}% < 100%). Nếu có thời gian dừng máy do chờ việc/sự cố hoặc làm ghép 2 máy trong cùng ca, hãy nhập số phút dừng máy để hệ thống bù trừ giờ làm thực tế.`
         );
       }
     }
@@ -4239,7 +4239,7 @@ export function WorkerPortal() {
                           const hasMultiJobs = shiftStats && shiftStats.logsCount > 1;
 
                           const isOldFalse100 =
-                            log.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 85 && stopMin === 0;
+                            log.kpiStatus === 'Đạt 100% ĐM' && calcKpi < 100 && stopMin === 0;
                           const actualKpi = isOldFalse100 ? calcKpi : (log.kpiPct ?? calcKpi);
 
                           let displayStatus = log.kpiStatus;
@@ -4252,14 +4252,26 @@ export function WorkerPortal() {
                           } else if (ok === 0 && rework === 0 && stopMin === 0) {
                             displayStatus = '🚨 0% ĐM';
                             isCritical = true;
-                          } else if (hasMultiJobs && shiftTotalKpi >= 85) {
-                            displayStatus = `✅ Ca gộp đạt ${shiftTotalKpi}% ĐM (Mã này: ${actualKpi}%)`;
+                          } else if (hasMultiJobs) {
+                            // Phân bổ định mức theo ca gộp (ghép máy / nhiều mã):
+                            // 1 máy làm X% + máy kia làm Y% = Tổng % ca. Đạt nếu tổng >= 100%, ít hơn 100% thì cảnh báo.
+                            if (shiftTotalKpi >= 100) {
+                              displayStatus = `✅ Ca gộp đạt ${shiftTotalKpi}% ĐM (Mã này: ${actualKpi}%)`;
+                            } else if (shiftTotalKpi < 50 && (shiftStats?.totalStopMin || 0) === 0) {
+                              displayStatus = `🚨 Ca rất thấp (${shiftTotalKpi}% ĐM) · Mã này: ${actualKpi}%`;
+                              isCritical = true;
+                            } else {
+                              displayStatus = `⚠️ Ca chưa đạt ĐM (${shiftTotalKpi}% < 100%) · Mã này: ${actualKpi}%`;
+                              isWarning = true;
+                            }
                           } else if (actualKpi < 50 && stopMin === 0) {
                             displayStatus = `🚨 RẤT THẤP (${actualKpi}% ĐM)`;
                             isCritical = true;
-                          } else if (actualKpi < 85 && stopMin === 0) {
-                            displayStatus = `⚠️ Chưa đạt ĐM (${actualKpi}%)`;
+                          } else if (actualKpi < 100 && stopMin === 0) {
+                            displayStatus = `⚠️ Chưa đạt ĐM (${actualKpi}% < 100%)`;
                             isWarning = true;
+                          } else if (actualKpi >= 100) {
+                            displayStatus = `✅ Đạt ${actualKpi}% ĐM`;
                           } else if (isOldFalse100) {
                             displayStatus = `Đạt ${actualKpi}% ĐM`;
                           }
@@ -4277,7 +4289,7 @@ export function WorkerPortal() {
                               ) : (
                                 <Badge
                                   variant={
-                                    actualKpi >= 85 || (hasMultiJobs && shiftTotalKpi >= 85)
+                                    (hasMultiJobs ? shiftTotalKpi >= 100 : actualKpi >= 100)
                                       ? 'success'
                                       : 'info'
                                   }

@@ -239,3 +239,31 @@ export function getWinWinPreferredMachines(productName: string | undefined | nul
   return [];
 }
 
+/**
+ * 11 cấu trúc ghép máy chuẩn tại phân xưởng (1 máy chạy hàng dài kiêm 1 máy chạy hàng ngắn)
+ * Đạt chuẩn định mức: Tổng % các máy cộng dồn = 100% (ví dụ máy 1 đạt 40% + máy 2 đạt 60% = 100%)
+ * Dưới 100% ca: Cảnh báo chưa đạt định mức ca máy
+ */
+export interface WorkshopMachinePairing {
+  id: string;
+  name: string;
+  desc: string;
+  machineA: string;
+  machineB: string;
+}
+
+export const WORKSHOP_MACHINE_PAIRINGS: WorkshopMachinePairing[] = [
+  { id: 'PAIR_01', name: 'Tiện + Cắt Dây', desc: 'Một máy tiện kiêm một máy cắt dây tự động', machineA: 'Máy tiện', machineB: 'Máy cắt dây' },
+  { id: 'PAIR_02', name: '2 Máy Phay Vạn Năng', desc: 'Hai máy phay vạn năng song song', machineA: 'Máy phay vạn năng', machineB: 'Máy phay vạn năng' },
+  { id: 'PAIR_03', name: '2 Máy Phay CNC', desc: 'Hai máy phay CNC song song', machineA: 'Máy phay CNC', machineB: 'Máy phay CNC' },
+  { id: 'PAIR_04', name: '2 Máy Tiện CNC', desc: 'Hai máy tiện CNC song song', machineA: 'Máy tiện CNC', machineB: 'Máy tiện CNC' },
+  { id: 'PAIR_05', name: 'Phay Vạn Năng OIGO + Tiện Đứng T1516', desc: 'Máy phay vạn năng OIGO ghép máy tiện đứng T1516', machineA: 'Máy phay vạn năng OIGO', machineB: 'Máy tiện đứng T1516' },
+  { id: 'PAIR_06', name: '2 Máy Tiện Đứng T1516', desc: 'Máy tiện đứng T1516 ghép với một máy tương tự', machineA: 'Máy tiện đứng T1516', machineB: 'Máy tiện đứng T1516' },
+  { id: 'PAIR_07', name: 'Phay Vạn Năng + Cắt Dây', desc: 'Máy phay vạn năng ghép máy cắt dây', machineA: 'Máy phay vạn năng', machineB: 'Máy cắt dây' },
+  { id: 'PAIR_08', name: 'Phay Vạn Năng + Tiện CNC', desc: 'Máy phay vạn năng ghép máy tiện CNC', machineA: 'Máy phay vạn năng', machineB: 'Máy tiện CNC' },
+  { id: 'PAIR_09', name: 'Phay CNC + Phay Vạn Năng OIGO', desc: 'Máy phay CNC ghép máy phay vạn năng OIGO', machineA: 'Máy phay CNC', machineB: 'Máy phay vạn năng OIGO' },
+  { id: 'PAIR_10', name: 'Tiện FUJI + Phay Vạn Năng OIGO', desc: 'Máy tiện FUJI ghép máy phay vạn năng OIGO', machineA: 'Máy tiện FUJI', machineB: 'Máy phay vạn năng OIGO' },
+  { id: 'PAIR_11', name: 'Phay Vạn Năng + Phay CNC', desc: 'Máy phay vạn năng ghép máy phay CNC', machineA: 'Máy phay vạn năng', machineB: 'Máy phay CNC' },
+];
+
+
