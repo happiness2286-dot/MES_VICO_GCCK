@@ -168,16 +168,18 @@ export function resolveQrToShopfloorSelection(
         ? orders.find((o) => o.poId.toUpperCase() === resolvedPoId) ?? null
         : null;
 
-      // Reconcile if PO doesn't match this operation's product
+      // Reconcile if PO doesn't match this operation's product (prioritize earliest due date)
       if (!matchedPo || (matchedOp.spId && matchedPo.spId && matchedPo.spId !== matchedOp.spId)) {
-        const compatiblePo = orders.find(
-          (o) =>
-            ((matchedOp.spId && o.spId === matchedOp.spId) ||
-              (matchedOp.productName &&
-                o.productName.trim().toLowerCase() === matchedOp.productName.trim().toLowerCase())) &&
-            o.status !== '✅ Đã giao đủ' &&
-            o.remainQty > 0
-        );
+        const compatiblePo = orders
+          .filter(
+            (o) =>
+              ((matchedOp.spId && o.spId === matchedOp.spId) ||
+                (matchedOp.productName &&
+                  o.productName.trim().toLowerCase() === matchedOp.productName.trim().toLowerCase())) &&
+              o.status !== '✅ Đã giao đủ' &&
+              o.remainQty > 0
+          )
+          .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'))[0];
         resolvedPoId = compatiblePo ? compatiblePo.poId : (matchedPo ? matchedPo.poId : 'PO-THEO-KH');
       }
 
@@ -267,13 +269,15 @@ export function resolveQrToShopfloorSelection(
         cleanProd.includes(o.productName.toLowerCase())
     );
 
-    const matchedPo = orders.find(
-      (o) =>
-        (o.productName.trim().toLowerCase() === cleanProd ||
-          o.productName.toLowerCase().includes(cleanProd) ||
-          cleanProd.includes(o.productName.toLowerCase())) &&
-        o.status !== '✅ Đã giao đủ'
-    );
+    const matchedPo = orders
+      .filter(
+        (o) =>
+          (o.productName.trim().toLowerCase() === cleanProd ||
+            o.productName.toLowerCase().includes(cleanProd) ||
+            cleanProd.includes(o.productName.toLowerCase())) &&
+          o.status !== '✅ Đã giao đủ'
+      )
+      .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'))[0];
 
     if (matchedOp) {
       return {

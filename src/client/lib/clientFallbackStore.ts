@@ -1094,146 +1094,220 @@ export function syncOrdersWithHandovers(): void {
     const allLogs = getAllFallbackLogs();
     let changed = false;
 
-    // Identify active (open) orders per product name to route unconsumed phôi and logs accurately
-    const activePoByProduct = new Map<string, PurchaseOrderInfo>();
+    // Group POs by product (linking by spId or normalized productName)
+    const productGroups: PurchaseOrderInfo[][] = [];
     for (const po of FALLBACK_ORDERS) {
-      const cleanProd = po.productName.trim().toLowerCase();
-      const isClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
-      if (!isClosed && cleanProd && !activePoByProduct.has(cleanProd)) {
-        activePoByProduct.set(cleanProd, po);
+      const pName = (po.productName || '').trim().toLowerCase();
+      const pSp = (po.spId || '').trim().toUpperCase();
+
+      let matchedGroup = productGroups.find((g) =>
+        g.some(
+          (item) =>
+            (pSp && item.spId && item.spId.trim().toUpperCase() === pSp) ||
+            (pName && item.productName.trim().toLowerCase() === pName)
+        )
+      );
+
+      if (matchedGroup) {
+        matchedGroup.push(po);
+      } else {
+        productGroups.push([po]);
       }
     }
 
-    // Pass 1: For any closed order that has leftover/unconsumed phôi (e.g. DH-343 with 122 phôi),
-    // transfer the unconsumed phôi to the open active PO of that product (e.g. P02611-193-01)!
-    for (const po of FALLBACK_ORDERS) {
-      const cleanProdName = po.productName.trim().toLowerCase();
-      const isClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
-      if (isClosed) {
-        const rawAlloc = Math.max(Number((po as any).initialWipQty || 0), Number(po.wipQty || 0));
-        if (rawAlloc > 0) {
-          const activePo = activePoByProduct.get(cleanProdName);
-          if (activePo && activePo.poId !== po.poId) {
-            const transferQty = rawAlloc;
-            const currentActiveRaw = Math.max(Number((activePo as any).initialWipQty || 0), Number(activePo.wipQty || 0));
-            if (transferQty > currentActiveRaw) {
-              (activePo as any).initialWipQty = transferQty;
-              activePo.wipQty = transferQty;
-              changed = true;
-            }
-          }
-          (po as any).initialWipQty = 0;
-          if (po.wipQty !== 0) {
-            po.wipQty = 0;
-            changed = true;
-          }
-        }
+    // Process each product group with FIFO Waterfall allocation (Ưu tiên ngày gần nhất, thừa tự vào đơn tiếp, đơn cuối nhận tồn kho)
+    for (const group of productGroups) {
+      const groupPoNorms = new Set<string>();
+      const groupSpIds = new Set<string>();
+      const groupNames = new Set<string>();
+
+      for (const o of group) {
+        if (o.poId) groupPoNorms.add(normalizePoKey(o.poId));
+        if (o.spId) groupSpIds.add(o.spId.trim().toUpperCase());
+        if (o.productName) groupNames.add(o.productName.trim().toLowerCase());
       }
-    }
 
-    // Pass 2: Synchronize logs and handovers for each PO
-    for (const po of FALLBACK_ORDERS) {
-      const cleanPoId = po.poId.trim().toLowerCase();
-      const normPo = normalizePoKey(po.poId);
-      const cleanProdName = po.productName.trim().toLowerCase();
-      const isThisPoClosed = (Number(po.deliveredQty || 0) >= po.qtyPo) || po.status === '✅ Đã giao đủ';
-      const activePo = activePoByProduct.get(cleanProdName);
-      const isActivePo = activePo?.poId === po.poId;
-
-      // 1. Phôi nhận và BTP từ Sổ bàn giao thuộc đúng PO này
-      const relatedHandovers = (handovers || []).filter((h) => {
-        const hPo = (h.poId || '').trim();
-        if (hPo) {
-          return normalizePoKey(hPo) === normPo;
-        }
-        return isActivePo && Boolean(cleanProdName && (h.productName || '').trim().toLowerCase() === cleanProdName);
-      });
-
-      let hovRaw = relatedHandovers.reduce((s, h) => Math.max(s, Number(h.rawQtyTransferred) || 0), 0);
-      const hovFin = relatedHandovers.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
-
-      // 2. Sản lượng hoàn thiện thực tế từ Nhật ký ca (thợ nộp báo cáo ca)
+      // Collect all logs matching this product group
       const matchingLogs = allLogs.filter((l) => {
         if (l.isVoided) return false;
         const lPo = (l.poId || '').trim();
-        const lNorm = normalizePoKey(lPo);
-        if (lNorm && lNorm === normPo) return true;
-        // If this is the active open PO for this product, also claim logs under generic PO or matching product name
-        if (isActivePo) {
-          const lProd = (l.productName || '').trim().toLowerCase();
-          if (lProd && lProd === cleanProdName) return true;
-          if ((lPo === 'PO-THEO-KH' || lPo === po.spId || (po.spId && l.spId === po.spId)) && (!lProd || lProd === cleanProdName)) return true;
-        }
+        if (lPo && groupPoNorms.has(normalizePoKey(lPo))) return true;
+        const lSp = (l.spId || '').trim().toUpperCase();
+        if (lSp && groupSpIds.has(lSp)) return true;
+        const lProd = (l.productName || '').trim().toLowerCase();
+        if (lProd && groupNames.has(lProd)) return true;
         return false;
       });
 
-      const logFin = matchingLogs.reduce((s, l) => {
+      // Total finished quantity produced across all logs for final/completed ops
+      const logFinTotal = matchingLogs.reduce((sum, l) => {
         const isFinal =
           l.isFinalOp === 1 ||
           l.stage === 'End' ||
-          ((po as any).opCount !== undefined && (po as any).opCount <= 1) ||
           String(l.opName || '').toLowerCase().includes('hoàn thiện') ||
           String(l.opName || '').toLowerCase().includes('end') ||
           String(l.opName || '').toLowerCase().includes('g/c') ||
           String(l.opName || '').toLowerCase().includes('tiện') ||
           String(l.opName || '').toLowerCase().includes('phay');
-        return isFinal ? s + (Number(l.okQty) || 0) : s;
+        return isFinal ? sum + (Number(l.okQty) || 0) : sum;
       }, 0);
 
-      // 3. Số hoàn thành Xong CK (End): Kết hợp số đã xong trước đó (nhập tay) + số BTP bàn giao + số xong từ nhật ký ca
-      const currentManualFin = Number((po as any).initialFinishedQty ?? po.finishedQty ?? 0);
-      const totalFin = Math.max(currentManualFin, hovFin, logFin, ((po as any).initialFinishedQty || 0) + logFin);
+      // Total handovers
+      const relatedHandovers = (handovers || []).filter((h) => {
+        const hPo = (h.poId || '').trim();
+        if (hPo && groupPoNorms.has(normalizePoKey(hPo))) return true;
+        const hProd = (h.productName || '').trim().toLowerCase();
+        return Boolean(hProd && groupNames.has(hProd));
+      });
+      const hovFinTotal = relatedHandovers.reduce((s, h) => s + (Number(h.prodQtyTransferred) || 0), 0);
+      const hovRawTotal = relatedHandovers.reduce((s, h) => s + (Number(h.rawQtyTransferred) || 0), 0);
 
-      // 4. Phôi nhận ban đầu
-      let manualRaw = Number((po as any).initialWipQty ?? po.wipQty ?? 0);
-      if (isThisPoClosed) {
-        manualRaw = 0;
-        hovRaw = 0;
-      }
-      const totalRawAllocated = isThisPoClosed ? 0 : Math.max(hovRaw, manualRaw);
+      const manualFinTotal = group.reduce((s, o) => s + Number((o as any).initialFinishedQty || 0), 0);
+      const manualRawTotal = group.reduce((s, o) => s + Number((o as any).initialWipQty || 0), 0);
 
-      // 5. Số phôi ĐANG SX (Phôi nhận/WIP) CÒN LẠI:
-      // = Số phôi nhận trừ đi số lượng đã gia công hoàn thành (khấu trừ thực tế)
-      // Nếu đơn đã giao đủ -> WIP = 0. Nếu chưa gia công hết thì số phôi còn lại vẫn phải ở cột Số phôi Đang SX!
-      const remainingWip = isThisPoClosed ? 0 : Math.max(0, totalRawAllocated - totalFin);
+      let poolFin = Math.max(manualFinTotal + logFinTotal, hovFinTotal, logFinTotal);
+      let poolRaw = Math.max(hovRawTotal, manualRawTotal);
 
-      if (po.wipQty !== remainingWip) {
-        po.wipQty = remainingWip;
-        changed = true;
-      }
+      // Separate closed vs open orders
+      const closedOrders: PurchaseOrderInfo[] = [];
+      const openOrders: PurchaseOrderInfo[] = [];
 
-      if (totalFin !== Number(po.finishedQty || 0)) {
-        po.finishedQty = totalFin;
-        po.stockQty = Math.max(0, po.finishedQty - (po.deliveredQty || 0));
-        po.remainQty = Math.max(0, po.qtyPo - (po.deliveredQty || 0));
-        changed = true;
-      }
-
-      if ((logFin > 0 || totalFin > 0) && po.faiStatus !== 'FAI_PASSED') {
-        po.faiStatus = 'FAI_PASSED';
-        changed = true;
+      for (const po of group) {
+        const isClosed = Number(po.deliveredQty || 0) >= po.qtyPo || po.status === '✅ Đã giao đủ';
+        if (isClosed) {
+          closedOrders.push(po);
+        } else {
+          openOrders.push(po);
+        }
       }
 
-      const delivered = Number(po.deliveredQty || 0);
-      let expectedStatus = '⏳ Đang chờ SX';
-      if (delivered >= po.qtyPo) {
-        expectedStatus = '✅ Đã giao đủ';
-      } else if (po.finishedQty >= po.qtyPo) {
-        expectedStatus = '📦 Xong CK - Chờ giao';
-      } else if (po.wipQty > 0 || po.finishedQty > 0) {
-        expectedStatus = '⚙️ Đang gia công';
+      // 1. Maintain closed orders (delivered)
+      for (const cPo of closedOrders) {
+        const delivered = Number(cPo.deliveredQty || 0);
+        if (cPo.finishedQty !== delivered) {
+          cPo.finishedQty = delivered;
+          changed = true;
+        }
+        if (cPo.wipQty !== 0) {
+          cPo.wipQty = 0;
+          changed = true;
+        }
+        if (cPo.stockQty !== 0) {
+          cPo.stockQty = 0;
+          changed = true;
+        }
+        if (cPo.remainQty !== 0) {
+          cPo.remainQty = 0;
+          changed = true;
+        }
+        if (cPo.status !== '✅ Đã giao đủ') {
+          cPo.status = '✅ Đã giao đủ';
+          changed = true;
+        }
+        poolFin = Math.max(0, poolFin - delivered);
       }
 
-      if (po.status !== expectedStatus) {
-        po.status = expectedStatus;
-        changed = true;
+      // 2. Waterfall Rollover for Open Orders:
+      // Sắp xếp ưu tiên các đơn hàng có ngày gần nhất (dueDate ASC)
+      if (openOrders.length > 0) {
+        openOrders.sort((a, b) => {
+          const dateA = a.dueDate ? a.dueDate.trim() : '9999-12-31';
+          const dateB = b.dueDate ? b.dueDate.trim() : '9999-12-31';
+          const cmp = dateA.localeCompare(dateB);
+          if (cmp !== 0) return cmp;
+          return a.poId.localeCompare(b.poId);
+        });
+
+        for (let i = 0; i < openOrders.length; i++) {
+          const po = openOrders[i];
+          const isLastOrder = i === openOrders.length - 1;
+          const delivered = Number(po.deliveredQty || 0);
+          const needed = Math.max(0, po.qtyPo - delivered);
+
+          // Phân bổ Finished Qty (Sản lượng hoàn thiện):
+          let allocFin = 0;
+          if (!isLastOrder) {
+            // Đơn hàng chưa phải cuối: nhận tối đa đến đủ số lượng đặt của đơn
+            allocFin = Math.min(poolFin, needed);
+            poolFin -= allocFin; // Thừa đơn thì tự vào các đơn tiếp theo!
+          } else {
+            // Đơn cuối cùng: không có đơn tiếp thì tính cho hàng tồn của đơn cuối!
+            allocFin = poolFin;
+            poolFin = 0;
+          }
+
+          const targetFin = delivered + allocFin;
+          if (po.finishedQty !== targetFin) {
+            po.finishedQty = targetFin;
+            changed = true;
+          }
+
+          // Phân bổ Phôi WIP:
+          const neededRaw = Math.max(0, po.qtyPo - targetFin);
+          let allocRaw = 0;
+          if (!isLastOrder) {
+            allocRaw = Math.min(poolRaw, neededRaw);
+            poolRaw -= allocRaw;
+          } else {
+            allocRaw = poolRaw;
+            poolRaw = 0;
+          }
+          if (po.wipQty !== allocRaw) {
+            po.wipQty = allocRaw;
+            changed = true;
+          }
+
+          // Tính tồn kho & số còn lại:
+          const targetStock = Math.max(0, po.finishedQty - delivered);
+          const targetRemain = Math.max(0, po.qtyPo - delivered);
+          if (po.stockQty !== targetStock) {
+            po.stockQty = targetStock;
+            changed = true;
+          }
+          if (po.remainQty !== targetRemain) {
+            po.remainQty = targetRemain;
+            changed = true;
+          }
+
+          if (targetFin > 0 && po.faiStatus !== 'FAI_PASSED') {
+            po.faiStatus = 'FAI_PASSED';
+            changed = true;
+          }
+
+          // Trạng thái đơn:
+          let targetStatus = '⏳ Đang chờ SX';
+          if (delivered >= po.qtyPo) {
+            targetStatus = '✅ Đã giao đủ';
+          } else if (po.finishedQty >= po.qtyPo) {
+            targetStatus = '📦 Xong CK - Chờ giao';
+          } else if (po.wipQty > 0 || po.finishedQty > 0) {
+            targetStatus = '⚙️ Đang gia công';
+          }
+          if (po.status !== targetStatus) {
+            po.status = targetStatus;
+            changed = true;
+          }
+        }
+      } else if (closedOrders.length > 0 && poolFin > 0) {
+        // Nếu tất cả các đơn đều đã giao đủ mà xưởng vẫn gia công thêm:
+        // Đơn cuối cùng giữ số lượng thừa làm hàng tồn kho
+        const lastPo = closedOrders[closedOrders.length - 1];
+        const delivered = Number(lastPo.deliveredQty || 0);
+        const targetFin = delivered + poolFin;
+        if (lastPo.finishedQty !== targetFin) {
+          lastPo.finishedQty = targetFin;
+          lastPo.stockQty = poolFin;
+          lastPo.status = '📦 Xong CK - Chờ giao';
+          changed = true;
+        }
       }
     }
+
     if (changed) {
       saveFallbackOrdersToStorage();
     }
-  } catch {
-    // ignore
+  } catch (err) {
+    console.warn('syncOrdersWithHandovers error:', err);
   }
 }
 

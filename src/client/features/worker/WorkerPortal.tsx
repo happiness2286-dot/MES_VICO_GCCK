@@ -380,36 +380,42 @@ export function WorkerPortal() {
           : FALLBACK_ORDERS;
       if (!targetPoId && planRow.productName) {
         const cleanPName = planRow.productName.trim().toLowerCase();
-        // Priority 1: Open/active orders with remaining quantity to produce
-        const openPos = ordList.filter(
-          (p) =>
-            (p.productName.trim().toLowerCase() === cleanPName ||
-              p.productName.toLowerCase().includes(cleanPName) ||
-              cleanPName.includes(p.productName.toLowerCase())) &&
-            p.status !== '✅ Đã giao đủ' &&
-            (p.remainQty ?? (p.qtyPo - (p.deliveredQty || 0))) > 0
-        );
-        if (openPos.length > 0) {
-          targetPoId = openPos[0].poId;
-        } else {
-          // Priority 2: Any open order for this product
-          const anyActive = ordList.filter(
+        // Priority 1: Open/active orders with remaining quantity to produce (sorted by earliest due date)
+        const openPos = ordList
+          .filter(
             (p) =>
               (p.productName.trim().toLowerCase() === cleanPName ||
                 p.productName.toLowerCase().includes(cleanPName) ||
                 cleanPName.includes(p.productName.toLowerCase())) &&
-              p.status !== '✅ Đã giao đủ'
-          );
+              p.status !== '✅ Đã giao đủ' &&
+              (p.remainQty ?? (p.qtyPo - (p.deliveredQty || 0))) > 0
+          )
+          .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'));
+        if (openPos.length > 0) {
+          targetPoId = openPos[0].poId;
+        } else {
+          // Priority 2: Any open order for this product (sorted by earliest due date)
+          const anyActive = ordList
+            .filter(
+              (p) =>
+                (p.productName.trim().toLowerCase() === cleanPName ||
+                  p.productName.toLowerCase().includes(cleanPName) ||
+                  cleanPName.includes(p.productName.toLowerCase())) &&
+                p.status !== '✅ Đã giao đủ'
+            )
+            .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'));
           if (anyActive.length > 0) {
             targetPoId = anyActive[0].poId;
           } else {
             // Priority 3: Any matching order
-            const anyMatch = ordList.find(
-              (p) =>
-                p.productName.trim().toLowerCase() === cleanPName ||
-                p.productName.toLowerCase().includes(cleanPName) ||
-                cleanPName.includes(p.productName.toLowerCase())
-            );
+            const anyMatch = ordList
+              .filter(
+                (p) =>
+                  p.productName.trim().toLowerCase() === cleanPName ||
+                  p.productName.toLowerCase().includes(cleanPName) ||
+                  cleanPName.includes(p.productName.toLowerCase())
+              )
+              .sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''))[0];
             if (anyMatch) targetPoId = anyMatch.poId;
           }
         }
@@ -965,9 +971,23 @@ export function WorkerPortal() {
         if (poObj?.materialLot) setMaterialLot(poObj.materialLot);
       } else if (selectedPo && selectedPo.spId && selectedPo.spId !== op.spId) {
         const cleanOpProd = (op.productName || '').trim().toLowerCase();
-        const matchingPo = ordersList.find((p) => (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) && p.status !== '✅ Đã giao đủ' && p.remainQty > 0)
-          || ordersList.find((p) => (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) && p.status !== '✅ Đã giao đủ')
-          || ordersList.find((p) => p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd));
+        const matchingPo =
+          ordersList
+            .filter(
+              (p) =>
+                (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) &&
+                p.status !== '✅ Đã giao đủ' &&
+                p.remainQty > 0
+            )
+            .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'))[0] ||
+          ordersList
+            .filter(
+              (p) =>
+                (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) &&
+                p.status !== '✅ Đã giao đủ'
+            )
+            .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'))[0] ||
+          ordersList.find((p) => p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd));
         setSelectedPoId(matchingPo ? matchingPo.poId : 'PO-THEO-KH');
         if (matchingPo?.materialLot) setMaterialLot(matchingPo.materialLot);
       }
@@ -1338,7 +1358,7 @@ export function WorkerPortal() {
     if (selectedPo && okQty > 0 && selectedOp?.isFinalOp === 1) {
       if (selectedPo.finishedQty + okQty > selectedPo.qtyPo) {
         list.push(
-          `SL hoàn thành cộng dồn (${selectedPo.finishedQty + okQty} SP) vượt SL đặt của Lệnh ${selectedPo.poId} (${selectedPo.qtyPo} SP).`
+          `ℹ️ SL báo cáo (${okQty} SP) làm lệnh ${selectedPo.poId} vượt SL đặt (${selectedPo.finishedQty + okQty}/${selectedPo.qtyPo} SP). Hệ thống sẽ tự động gối đầu sang đơn tiếp theo (ưu tiên ngày gần nhất) hoặc chuyển vào tồn kho đơn cuối.`
         );
       }
     }

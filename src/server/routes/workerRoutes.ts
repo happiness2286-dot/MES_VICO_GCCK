@@ -669,26 +669,82 @@ export function createWorkerRoutes(db: DatabaseSync, uploadsDir: string): Router
           }
 
           if (poRow && okQty > 0) {
-            const qtyPo = Number(poRow.qty_po);
-            const deliveredQty = Number(poRow.delivered_qty);
-            const newFinished =
-              isFinalOp === 1
-                ? Number(poRow.finished_qty) + okQty
-                : Number(poRow.finished_qty);
-            const newWip =
-              isFinalOp === 0
-                ? Math.max(Number(poRow.wip_qty), okQty)
-                : Math.max(0, Number(poRow.wip_qty));
-            const newStock = Math.max(0, newFinished - deliveredQty);
-            const newRemain = Math.max(0, qtyPo - deliveredQty);
-            const newStatus = derivePoStatus(qtyPo, newWip, newFinished, deliveredQty);
+            if (isFinalOp === 1 && poRow.sp_id) {
+              // Quy tắc thác nước: Ưu tiên đơn ngày gần nhất, thừa tự vào đơn tiếp, hết đơn tính tồn kho đơn cuối
+              const candidateOrders = db
+                .prepare(
+                  `SELECT * FROM purchase_orders 
+                   WHERE sp_id = ? AND status != '✅ Đã giao đủ' AND delivered_qty < qty_po
+                   ORDER BY due_date ASC, po_id ASC`
+                )
+                .all(poRow.sp_id) as Array<Record<string, any>>;
 
-            db.prepare(
-              `UPDATE purchase_orders
-               SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?,
-                   material_lot = CASE WHEN ? != '' THEN ? ELSE material_lot END
-               WHERE po_id = ?`
-            ).run(newWip, newFinished, newStock, newRemain, newStatus, materialLot, materialLot, poId);
+              if (candidateOrders.length > 0) {
+                let remainToAlloc = okQty;
+                for (let i = 0; i < candidateOrders.length; i++) {
+                  const cPo = candidateOrders[i];
+                  const isLast = (i === candidateOrders.length - 1);
+                  const qPo = Number(cPo.qty_po || 0);
+                  const deliv = Number(cPo.delivered_qty || 0);
+                  const curFin = Number(cPo.finished_qty || 0);
+                  const needed = Math.max(0, qPo - curFin);
+
+                  let alloc = 0;
+                  if (!isLast) {
+                    alloc = Math.min(remainToAlloc, needed);
+                    remainToAlloc -= alloc;
+                  } else {
+                    alloc = remainToAlloc;
+                    remainToAlloc = 0;
+                  }
+
+                  const updFin = curFin + alloc;
+                  const updStock = Math.max(0, updFin - deliv);
+                  const updRemain = Math.max(0, qPo - deliv);
+                  const updStatus = derivePoStatus(qPo, Number(cPo.wip_qty || 0), updFin, deliv);
+
+                  db.prepare(
+                    `UPDATE purchase_orders
+                     SET finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?,
+                         material_lot = CASE WHEN ? != '' THEN ? ELSE material_lot END
+                     WHERE po_id = ?`
+                  ).run(updFin, updStock, updRemain, updStatus, materialLot, materialLot, cPo.po_id);
+
+                  if (remainToAlloc <= 0) break;
+                }
+              } else {
+                // Đơn cuối cùng hoặc đơn lẻ: nhận toàn bộ sản lượng vào tồn kho
+                const qtyPo = Number(poRow.qty_po);
+                const deliveredQty = Number(poRow.delivered_qty);
+                const newFinished = Number(poRow.finished_qty) + okQty;
+                const newStock = Math.max(0, newFinished - deliveredQty);
+                const newRemain = Math.max(0, qtyPo - deliveredQty);
+                const newStatus = derivePoStatus(qtyPo, Number(poRow.wip_qty || 0), newFinished, deliveredQty);
+
+                db.prepare(
+                  `UPDATE purchase_orders
+                   SET finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?,
+                       material_lot = CASE WHEN ? != '' THEN ? ELSE material_lot END
+                   WHERE po_id = ?`
+                ).run(newFinished, newStock, newRemain, newStatus, materialLot, materialLot, poId);
+              }
+            } else {
+              // Nguyên công trung gian (WIP) hoặc không phải bước cuối
+              const qtyPo = Number(poRow.qty_po);
+              const deliveredQty = Number(poRow.delivered_qty);
+              const newFinished = Number(poRow.finished_qty);
+              const newWip = Math.max(Number(poRow.wip_qty), okQty);
+              const newStock = Math.max(0, newFinished - deliveredQty);
+              const newRemain = Math.max(0, qtyPo - deliveredQty);
+              const newStatus = derivePoStatus(qtyPo, newWip, newFinished, deliveredQty);
+
+              db.prepare(
+                `UPDATE purchase_orders
+                 SET wip_qty = ?, finished_qty = ?, stock_qty = ?, remain_qty = ?, status = ?,
+                     material_lot = CASE WHEN ? != '' THEN ? ELSE material_lot END
+                 WHERE po_id = ?`
+              ).run(newWip, newFinished, newStock, newRemain, newStatus, materialLot, materialLot, poId);
+            }
           }
         }
 
