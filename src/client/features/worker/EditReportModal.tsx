@@ -126,6 +126,9 @@ export function EditReportModal({
       const existingTime = log.timeStr && log.timeStr.includes(':') ? log.timeStr.slice(-5) : '07:30';
       const newTimeStr = (wD && wM) ? `${wD}/${wM} ${existingTime}` : (log.timeStr || '');
 
+      const matchedPo = purchaseOrders.find((p) => p.poId === selectedPoId);
+      const effectiveProductName = matchedPo?.productName || currentOp?.productName || log.productName;
+
       const updatedLog: ProductionLogDto = res?.log || {
         ...log,
         workDate,
@@ -134,8 +137,8 @@ export function EditReportModal({
         poId: selectedPoId,
         ncId: selectedNcId,
         opName: currentOp?.opName || log.opName,
-        spId: currentOp?.spId || log.spId,
-        productName: currentOp?.productName || log.productName,
+        spId: currentOp?.spId || matchedPo?.spId || log.spId,
+        productName: effectiveProductName,
         machineName,
         okQty,
         reworkQty,
@@ -280,7 +283,18 @@ export function EditReportModal({
               </label>
               <select
                 value={selectedPoId}
-                onChange={(e) => setSelectedPoId(e.target.value)}
+                onChange={(e) => {
+                  const newPoId = e.target.value;
+                  setSelectedPoId(newPoId);
+                  const matchedPo = purchaseOrders.find((p) => p.poId === newPoId);
+                  if (matchedPo?.spId) {
+                    const matchedOp = operations.find((o) => o.spId === matchedPo.spId);
+                    if (matchedOp) {
+                      setSelectedNcId(matchedOp.ncId);
+                      if (matchedOp.defaultMachine) setMachineName(matchedOp.defaultMachine);
+                    }
+                  }
+                }}
                 className="w-full rounded-xl border border-slate-300 bg-slate-50 px-2.5 py-2 font-semibold text-slate-800 focus:border-blue-600 focus:bg-white focus:outline-hidden"
               >
                 <option value={log.poId}>{log.poId}</option>

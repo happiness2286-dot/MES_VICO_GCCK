@@ -1019,6 +1019,29 @@ export function getClientStoredLogs(): any[] {
       const netSec = Math.max(1, 28800 - stopMin * 60);
       const computedPct = Math.round((earnedSec / netSec) * 100);
 
+      // Sanitize mislabeled log for Đinh Văn Nhận on 06/11 (was misrecorded as NC039 / ALKTOP II 2681H instead of ISHIZUEOMEGA S406.4-850)
+      if (
+        (l.workerName?.includes('Nhận') || l.workerId === 'NV00279') &&
+        (l.ncId === 'NC039' || l.productName?.includes('ALKTOP')) &&
+        (l.workDate?.includes('2026-11-06') || l.timeStr?.includes('06/11'))
+      ) {
+        const correctStdSec = 4800;
+        const correctCostPerSec = 14.064;
+        const correctWage = Math.round(ok * correctStdSec * correctCostPerSec);
+        return {
+          ...l,
+          poId: 'PO490-01',
+          spId: 'SP038',
+          customer: 'Win-Win',
+          productName: 'ISHIZUEOMEGA S406.4-850',
+          ncId: 'NC061',
+          opName: 'G/c hoàn thiện',
+          stdSeconds: correctStdSec,
+          income: correctWage > 0 ? correctWage : l.income,
+          pieceWage: correctWage > 0 ? correctWage : l.pieceWage,
+        };
+      }
+
       // If log claimed 100% ĐM but actually computedPct < 85 with 0 stop minutes:
       if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 85 && ok > 0 && stopMin === 0) {
         return {

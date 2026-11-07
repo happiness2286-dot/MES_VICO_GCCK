@@ -882,6 +882,20 @@ export function WorkerPortal() {
       .sort((a, b) => b.count - a.count);
   }, [productsList]);
 
+  // Fast lookup map of PO product names and drawing aliases by spId
+  const spAliasesMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const po of ordersList) {
+      if (!po.spId) continue;
+      const key = po.spId.trim().toUpperCase();
+      if (!map.has(key)) map.set(key, []);
+      const cur = map.get(key)!;
+      if (po.productName && !cur.includes(po.productName)) cur.push(po.productName);
+      if (po.contractRef && !cur.includes(po.contractRef)) cur.push(po.contractRef);
+    }
+    return map;
+  }, [ordersList]);
+
   const selectedPo = useMemo(
     () =>
       selectedPoId === 'PO-THEO-KH'
@@ -969,13 +983,14 @@ export function WorkerPortal() {
         setSelectedPoId(nextPoId);
         const poObj = ordersList.find((p) => p.poId === nextPoId);
         if (poObj?.materialLot) setMaterialLot(poObj.materialLot);
-      } else if (selectedPo && selectedPo.spId && selectedPo.spId !== op.spId) {
+      } else {
         const cleanOpProd = (op.productName || '').trim().toLowerCase();
         const matchingPo =
           ordersList
             .filter(
               (p) =>
-                (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) &&
+                (p.spId === op.spId ||
+                  (cleanOpProd && p.productName?.trim().toLowerCase() === cleanOpProd)) &&
                 p.status !== '✅ Đã giao đủ' &&
                 p.remainQty > 0
             )
@@ -983,13 +998,22 @@ export function WorkerPortal() {
           ordersList
             .filter(
               (p) =>
-                (p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd)) &&
+                (p.spId === op.spId ||
+                  (cleanOpProd && p.productName?.trim().toLowerCase() === cleanOpProd)) &&
                 p.status !== '✅ Đã giao đủ'
             )
             .sort((a, b) => (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31'))[0] ||
-          ordersList.find((p) => p.spId === op.spId || (cleanOpProd && p.productName.trim().toLowerCase() === cleanOpProd));
-        setSelectedPoId(matchingPo ? matchingPo.poId : 'PO-THEO-KH');
-        if (matchingPo?.materialLot) setMaterialLot(matchingPo.materialLot);
+          ordersList.find(
+            (p) =>
+              p.spId === op.spId ||
+              (cleanOpProd && p.productName?.trim().toLowerCase() === cleanOpProd)
+          );
+        if (matchingPo) {
+          setSelectedPoId(matchingPo.poId);
+          if (matchingPo.materialLot) setMaterialLot(matchingPo.materialLot);
+        } else if (!selectedPoId || selectedPoId === 'PO-THEO-KH') {
+          setSelectedPoId('PO-THEO-KH');
+        }
       }
       const targetProdName = op.productName || selectedProduct?.productName || selectedPo?.productName;
       const prefMachines = getWinWinPreferredMachines(targetProdName);
@@ -1466,16 +1490,22 @@ export function WorkerPortal() {
     }
 
     if (activePicker === 'PRODUCT') {
-      const opts: PickerOptionItem[] = productsList.map((prod) => ({
-        id: prod.spId,
-        primaryText: prod.productName,
-        secondaryText: `Khách hàng: ${prod.customer} · Vật liệu: ${prod.matName || 'Thép CK'} · ${prod.opCount || 1} nguyên công`,
-        category: prod.customer,
-        metaBadge: prod.spId,
-        metaVariant: 'sky',
-        rightText: prod.opsSummary || '',
-        searchKeywords: `${prod.spId} ${prod.customer} ${prod.productName} ${prod.matName || ''}`,
-      }));
+      const opts: PickerOptionItem[] = productsList.map((prod) => {
+        const key = prod.spId ? prod.spId.trim().toUpperCase() : '';
+        const aliasesList = key ? spAliasesMap.get(key) || [] : [];
+        const aliasText =
+          aliasesList.length > 0 ? ` (PO: ${aliasesList.slice(0, 2).join(', ')})` : '';
+        return {
+          id: prod.spId,
+          primaryText: `${prod.productName}${aliasText}`,
+          secondaryText: `Khách hàng: ${prod.customer} · Vật liệu: ${prod.matName || 'Thép CK'} · ${prod.opCount || 1} nguyên công`,
+          category: prod.customer,
+          metaBadge: prod.spId,
+          metaVariant: 'sky',
+          rightText: prod.opsSummary || '',
+          searchKeywords: `${prod.spId} ${prod.customer} ${prod.productName} ${aliasesList.join(' ')} ${prod.matName || ''}`,
+        };
+      });
       return {
         title: 'Chọn Sản Phẩm / Bản Vẽ Chi Tiết',
         subtitle: `Hiển thị đầy đủ ${productsList.length} bản vẽ chi tiết (không cắt chữ)`,
@@ -1490,16 +1520,56 @@ export function WorkerPortal() {
         onCategoryChange: (cat: string) => setSelectedCustomerFilter(cat),
         onSelect: (spId: string) => {
           setSelectedSpId(spId);
-          const firstOp = operationsList
-            .filter((o) => o.spId === spId)
-            .sort((a, b) => a.stepOrder - b.stepOrder)[0];
           const prodObj = productsList.find((p) => p.spId === spId);
           const cleanP = (prodObj?.productName || '').trim().toLowerCase();
-          const matchingPo = ordersList.find((p) => (p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP)) && p.status !== '✅ Đã giao đủ' && p.remainQty > 0)
-            || ordersList.find((p) => (p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP)) && p.status !== '✅ Đã giao đủ')
-            || ordersList.find((p) => p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP));
+          const firstOp =
+            operationsList
+              .filter(
+                (o) =>
+                  (spId && o.spId === spId) ||
+                  (cleanP && o.productName?.trim().toLowerCase() === cleanP)
+              )
+              .sort((a, b) => a.stepOrder - b.stepOrder)[0] ||
+            operationsList.find(
+              (o) =>
+                spId &&
+                spAliasesMap
+                  .get(spId.trim().toUpperCase())
+                  ?.some((al) => o.productName?.trim().toLowerCase().includes(al.toLowerCase()))
+            );
+
+          const matchingPo =
+            ordersList
+              .filter(
+                (p) =>
+                  (p.spId === spId ||
+                    (cleanP && p.productName.trim().toLowerCase() === cleanP)) &&
+                  p.status !== '✅ Đã giao đủ' &&
+                  p.remainQty > 0
+              )
+              .sort(
+                (a, b) =>
+                  (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31')
+              )[0] ||
+            ordersList
+              .filter(
+                (p) =>
+                  (p.spId === spId ||
+                    (cleanP && p.productName.trim().toLowerCase() === cleanP)) &&
+                  p.status !== '✅ Đã giao đủ'
+              )
+              .sort(
+                (a, b) =>
+                  (a.dueDate || '9999-12-31').localeCompare(b.dueDate || '9999-12-31')
+              )[0] ||
+            ordersList.find(
+              (p) => p.spId === spId || (cleanP && p.productName.trim().toLowerCase() === cleanP)
+            );
+
           if (firstOp) {
             applyOperationSelection(firstOp, matchingPo ? matchingPo.poId : 'PO-THEO-KH');
+          } else if (matchingPo) {
+            setSelectedPoId(matchingPo.poId);
           }
         },
       };
@@ -1522,20 +1592,25 @@ export function WorkerPortal() {
           metaBadge: 'NC_STOP',
           metaVariant: 'amber',
         },
-        ...sortedOps.map((op) => ({
-          id: op.ncId,
-          primaryText: `${op.opName} — ${op.productName}`,
-          secondaryText: `KH: ${op.customer} · Máy: ${op.defaultMachine} · Dao: ${op.toolCode || '—'} · Vật liệu: ${op.matName || '—'}`,
-          category: op.customer,
-          metaBadge: `${op.ncId} · Bước ${op.stepOrder}${op.isFinalOp === 1 ? ' [END]' : ' [WIP]'}`,
-          metaVariant: (op.spId === curSp
-            ? op.isFinalOp === 1
-              ? 'emerald'
-              : 'sky'
-            : 'slate') as PickerOptionItem['metaVariant'],
-          rightText: `${op.stdSeconds}s${op.isCriticalCheck === 1 ? ' ★' : ''}`,
-          searchKeywords: `${op.ncId} ${op.spId} ${op.customer} ${op.productName} ${op.opName} ${op.defaultMachine}`,
-        })),
+        ...sortedOps.map((op) => {
+          const key = op.spId ? op.spId.trim().toUpperCase() : '';
+          const aliasesList = key ? spAliasesMap.get(key) || [] : [];
+          const aliasText = aliasesList.length > 0 ? ` [Bản vẽ PO: ${aliasesList[0]}]` : '';
+          return {
+            id: op.ncId,
+            primaryText: `${op.opName} — ${op.productName}${aliasText}`,
+            secondaryText: `KH: ${op.customer} · Máy: ${op.defaultMachine} · Dao: ${op.toolCode || '—'} · Vật liệu: ${op.matName || '—'}${aliasesList.length > 1 ? ` · Đơn: ${aliasesList.slice(1, 3).join(', ')}` : ''}`,
+            category: op.customer,
+            metaBadge: `${op.ncId} · Bước ${op.stepOrder}${op.isFinalOp === 1 ? ' [END]' : ' [WIP]'}`,
+            metaVariant: (op.spId === curSp
+              ? op.isFinalOp === 1
+                ? 'emerald'
+                : 'sky'
+              : 'slate') as PickerOptionItem['metaVariant'],
+            rightText: `${op.stdSeconds}s${op.isCriticalCheck === 1 ? ' ★' : ''}`,
+            searchKeywords: `${op.ncId} ${op.spId} ${op.customer} ${op.productName} ${aliasesList.join(' ')} ${op.opName} ${op.defaultMachine}`,
+          };
+        }),
       ];
       return {
         title: 'Tìm & Chọn Nguyên Công Gia Công (627 NC)',
