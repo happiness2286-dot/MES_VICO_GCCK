@@ -690,13 +690,13 @@ export function WorkerPortal() {
 
         const mergedMap = new Map<string, any>();
         for (const l of (data.recentLogs || [])) {
-          if (l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
+          if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         for (const l of getAllFallbackLogs()) {
-          if (l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
+          if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         for (const l of cloudLogs) {
-          if (l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
+          if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
           const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
@@ -1916,6 +1916,7 @@ export function WorkerPortal() {
       setRunTimer(resetPersistentStopTimer());
       setPhotoBase64('');
       setHandoverNote('');
+      setMachineMode('FIRST');
       setToolEdgesState(
         syncAutoToolEdges(
           { edgesUsed: 0, isEdgesDirty: false },
@@ -2044,11 +2045,17 @@ export function WorkerPortal() {
   const { machineAggregatedKpiMap, shiftAggregatedKpiMap } = useMemo(() => {
     const mM = new Map<
       string,
-      { totalEarnedSec: number; totalStopMin: number; logsCount: number; itemsSummary: string[] }
+      { totalEarnedSec: number; totalStopMin: number; logsCount: number; isSecondMach: boolean; sKey: string; mName: string }
     >();
     const sM = new Map<
       string,
-      { totalEarnedSec: number; totalStopMin: number; logsCount: number; machinesCount: number; distinctMachines: Set<string> }
+      {
+        mainEarnedSec: number;
+        mainStopMin: number;
+        mainMachinesCount: number;
+        distinctMainMachines: Set<string>;
+        anyMainOver100: boolean;
+      }
     >();
 
     for (const l of myRecentLogs) {
@@ -2061,36 +2068,42 @@ export function WorkerPortal() {
       const rework = Number(l.reworkQty || 0);
       const scrap = Number(l.scrapQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      // ĐỊNH MỨC KỸ THUẬT CHUẨN:
-      // NC603: 2400s (12 cái/ca)
-      // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
-      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
-        ? 2400
-        : Number(l.stdSeconds || 1800);
-      // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG), không nhân 0.33
+      const stdSec = Number(l.stdSeconds || 1800);
       const totalMachined = ok + rework + scrap;
       const earnedSec = totalMachined * stdSec;
+      const isSecond = l.machineMode === 'SECOND';
 
-      // 1. Cập nhật nhóm theo máy
       if (!mM.has(mKey)) {
-        mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, itemsSummary: [] });
+        mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, isSecondMach: isSecond, sKey, mName });
       }
       const curM = mM.get(mKey)!;
       curM.totalEarnedSec += earnedSec;
       curM.totalStopMin += stopMin;
       curM.logsCount += 1;
-      if (ok > 0) curM.itemsSummary.push(`${ok} ${l.productName?.slice(0, 15) || l.ncId}`);
+      if (!isSecond) curM.isSecondMach = false;
+    }
 
-      // 2. Cập nhật nhóm theo toàn ca (để tính ca gộp 2 máy)
-      if (!sM.has(sKey)) {
-        sM.set(sKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, machinesCount: 0, distinctMachines: new Set() });
+    for (const [, mVal] of mM.entries()) {
+      if (mVal.isSecondMach) continue;
+      if (!sM.has(mVal.sKey)) {
+        sM.set(mVal.sKey, {
+          mainEarnedSec: 0,
+          mainStopMin: 0,
+          mainMachinesCount: 0,
+          distinctMainMachines: new Set(),
+          anyMainOver100: false,
+        });
       }
-      const curS = sM.get(sKey)!;
-      curS.totalEarnedSec += earnedSec;
-      curS.totalStopMin += stopMin;
-      curS.logsCount += 1;
-      if (mName) curS.distinctMachines.add(mName);
-      curS.machinesCount = curS.distinctMachines.size;
+      const curS = sM.get(mVal.sKey)!;
+      curS.mainEarnedSec += mVal.totalEarnedSec;
+      curS.mainStopMin += mVal.totalStopMin;
+      if (mVal.mName) curS.distinctMainMachines.add(mVal.mName);
+      curS.mainMachinesCount = curS.distinctMainMachines.size;
+      const mNetSec = Math.max(1, 28800 - mVal.totalStopMin * 60);
+      const mKpi = (mVal.totalEarnedSec / mNetSec) * 100;
+      if (mKpi >= 99.9) {
+        curS.anyMainOver100 = true;
+      }
     }
 
     return { machineAggregatedKpiMap: mM, shiftAggregatedKpiMap: sM };
@@ -4216,32 +4229,25 @@ export function WorkerPortal() {
                           const rework = Number(log.reworkQty || 0);
                           const scrap = Number(log.scrapQty || 0);
                           const stopMin = Number(log.stopMinutes || 0);
-                          // Định mức kỹ thuật chuẩn:
-                          // NC603: 2400s (12 cái/ca)
-                          // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
-                          const stdSec = (log.ncId === 'NC603' || log.opName?.includes('NC603') || log.productName?.toLowerCase().includes('sealing strip'))
-                            ? 2400
-                            : Number(log.stdSeconds || 1800);
+                          const stdSec = Number(log.stdSeconds || 1800);
 
-                          // ĐỊNH MỨC SẢN LƯỢNG MÁY / CÔNG SỨC VẬN HÀNH:
-                          // Kể cả có xử lý lại (Rework) hay NG thì máy vẫn đã vận hành gia công, tính trên tổng số sản phẩm đã gia công
+                          // ĐỊNH MỨC KHOÁN MÁY: tính trên tổng số sản phẩm đã gia công (OK + Sửa + NG)
                           const totalMachined = ok + rework + scrap;
                           const earnedSec = totalMachined * stdSec;
                           const netSec = Math.max(1, 28800 - stopMin * 60);
                           const actualKpi = Math.round((earnedSec / netSec) * 10000) / 100;
 
-                          // Định dạng %: nếu tròn số thì ghi 100%, lẻ thì ghi 83.33%, 58.33%, 33.33%, 8.33%
                           const fmtPct = (val: number) => {
                             const r = Math.round(val * 100) / 100;
                             if (Math.abs(r - Math.round(r)) < 0.01) return `${Math.round(r)}%`;
                             return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
                           };
 
-                          const defectDetail = rework > 0 || scrap > 0
-                            ? ` (${ok} OK${rework > 0 ? `, ${rework} Sửa` : ''}${scrap > 0 ? `, ${scrap} NG` : ''})`
-                            : '';
+                          const defectDetail =
+                            rework > 0 || scrap > 0
+                              ? ` (${ok} OK${rework > 0 ? `, ${rework} Sửa` : ''}${scrap > 0 ? `, ${scrap} NG` : ''})`
+                              : '';
 
-                          // Nhóm theo từng máy & toàn ca:
                           const mName = (log.machineName || '').trim();
                           const sKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}`;
                           const mKey = `${sKey}_${mName}`;
@@ -4250,67 +4256,54 @@ export function WorkerPortal() {
                           const sStats = shiftAggregatedKpiMap.get(sKey);
 
                           const mNetSec = Math.max(1, 28800 - (mStats?.totalStopMin || 0) * 60);
-                          const sNetSec = Math.max(1, 28800 - (sStats?.totalStopMin || 0) * 60);
+                          const sMainNetSec = Math.max(1, 28800 - (sStats?.mainStopMin || 0) * 60);
 
                           const mTotalKpi = mStats
                             ? Math.round((mStats.totalEarnedSec / mNetSec) * 10000) / 100
                             : actualKpi;
-                          const sTotalKpi = sStats
-                            ? Math.round((sStats.totalEarnedSec / sNetSec) * 10000) / 100
+                          const sMainTotalKpi = sStats
+                            ? Math.round((sStats.mainEarnedSec / sMainNetSec) * 10000) / 100
                             : actualKpi;
 
-                          const hasMultiJobsOnMachine = mStats && mStats.logsCount > 1;
-                          const hasMultiMachinesInShift = sStats && sStats.machinesCount > 1;
+                          const hasMultiJobsOnMachine = Boolean(mStats && mStats.logsCount > 1);
                           const isSecondMach = log.machineMode === 'SECOND';
+                          const canCombineMainShift = Boolean(
+                            !isSecondMach &&
+                              sStats &&
+                              sStats.mainMachinesCount > 1 &&
+                              !sStats.anyMainOver100
+                          );
+                          const prefix = isSecondMach ? 'Máy phụ' : 'Máy';
 
                           let displayStatus = log.kpiStatus;
                           let isCritical = false;
                           let isWarning = false;
 
                           if (totalMachined === 0 && stopMin === 0) {
-                            if (isSecondMach) {
-                              displayStatus = 'Máy phụ (chưa chạy)';
-                            } else {
-                              displayStatus = '🚨 0% ĐM';
-                              isCritical = true;
-                            }
+                            displayStatus = `🚨 ${prefix} 0% ĐM`;
+                            isCritical = true;
                           } else if (hasMultiJobsOnMachine) {
-                            // Trường hợp 1: Nhiều mã trên cùng 1 máy (như Thắng làm 3 mã tấm lót trên OKK1):
                             if (mTotalKpi >= 100) {
-                              displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM (Mã này: ${fmtPct(actualKpi)}${defectDetail})`;
+                              displayStatus = `✅ ${prefix} đạt ${fmtPct(mTotalKpi)} (Mã này: ${fmtPct(actualKpi)}${defectDetail})`;
+                            } else if (canCombineMainShift && sMainTotalKpi >= 100) {
+                              displayStatus = `✅ Mã này: ${fmtPct(actualKpi)} (Máy: ${fmtPct(mTotalKpi)} · Ghép ca: ${fmtPct(sMainTotalKpi)})${defectDetail}`;
                             } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
-                              displayStatus = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM) · Mã này: ${fmtPct(actualKpi)}${defectDetail}`;
+                              displayStatus = `🚨 Mã này: ${fmtPct(actualKpi)} (Tổng ${prefix.toLowerCase()}: ${fmtPct(mTotalKpi)} < 100%)${defectDetail}`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(mTotalKpi)} < 100%) · Mã này: ${fmtPct(actualKpi)}${defectDetail}`;
-                              isWarning = true;
-                            }
-                          } else if (isSecondMach) {
-                            // Trường hợp 2: Máy phụ độc lập (như Cắt dây DK7745-1 hoặc OKK3 làm NC603 10 cái -> 83.33%):
-                            if (actualKpi >= 100) {
-                              displayStatus = `✅ Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
-                            } else {
-                              displayStatus = `Máy phụ đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
-                            }
-                          } else if (hasMultiMachinesInShift) {
-                            // Trường hợp 3: Ghép nhiều máy trong ca (như Tráng chạy FUJI 100% + T1516 75%):
-                            if (mTotalKpi >= 100) {
-                              displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
-                            } else if (sTotalKpi >= 100) {
-                              displayStatus = `✅ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
-                            } else {
-                              displayStatus = `⚠️ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM (Tổng ca: ${fmtPct(sTotalKpi)})${defectDetail}`;
+                              displayStatus = `⚠️ Mã này: ${fmtPct(actualKpi)} (Tổng ${prefix.toLowerCase()}: ${fmtPct(mTotalKpi)} < 100%)${defectDetail}`;
                               isWarning = true;
                             }
                           } else {
-                            // Trường hợp 4: Máy đơn bình thường 1 mã:
                             if (actualKpi >= 100) {
-                              displayStatus = `✅ Máy đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
+                              displayStatus = `✅ ${prefix} đạt ${fmtPct(actualKpi)} ĐM${defectDetail}`;
+                            } else if (canCombineMainShift && sMainTotalKpi >= 100) {
+                              displayStatus = `✅ Đạt ${fmtPct(actualKpi)} ĐM (Ghép 2 máy: ${fmtPct(sMainTotalKpi)})${defectDetail}`;
                             } else if (actualKpi < 50 && stopMin === 0) {
-                              displayStatus = `🚨 Máy rất thấp (${fmtPct(actualKpi)} ĐM)${defectDetail}`;
+                              displayStatus = `🚨 ${prefix} rất thấp (${fmtPct(actualKpi)} ĐM)${defectDetail}`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(actualKpi)} < 100%)${defectDetail}`;
+                              displayStatus = `⚠️ ${prefix} chưa đạt (${fmtPct(actualKpi)} < 100%)${defectDetail}`;
                               isWarning = true;
                             }
                           }
@@ -4326,21 +4319,7 @@ export function WorkerPortal() {
                                   {displayStatus}
                                 </span>
                               ) : (
-                                <Badge
-                                  variant={
-                                    isSecondMach
-                                      ? (actualKpi >= 100 ? 'success' : 'info')
-                                      : (hasMultiJobsOnMachine
-                                        ? mTotalKpi >= 100
-                                        : hasMultiMachinesInShift
-                                          ? (mTotalKpi >= 100 || sTotalKpi >= 100)
-                                          : actualKpi >= 100)
-                                        ? 'success'
-                                        : 'info'
-                                  }
-                                >
-                                  {displayStatus}
-                                </Badge>
+                                <Badge variant="success">{displayStatus}</Badge>
                               )}
                               {log.qcStatus !== 'PASSED' && (
                                 <Badge variant="warning">{log.qcStatus}</Badge>

@@ -49,6 +49,7 @@ export function EditReportModal({
   const [selectedPoId, setSelectedPoId] = useState(log.poId || 'PO-THEO-KH');
   const [selectedNcId, setSelectedNcId] = useState(log.ncId);
   const [machineName, setMachineName] = useState(log.machineName || 'Máy phay OKK3');
+  const [machineMode, setMachineMode] = useState<string>(log.machineMode || 'FIRST');
   const [okQty, setOkQty] = useState(log.okQty);
   const [reworkQty, setReworkQty] = useState(log.reworkQty || 0);
   const [scrapQty, setScrapQty] = useState(log.scrapQty || 0);
@@ -76,10 +77,20 @@ export function EditReportModal({
   // Estimated new piece wage
   const estNewWage = useMemo(() => {
     const stdSec = Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0);
+    const prevMode = log.machineMode || 'FIRST';
+    if (
+      okQty === log.okQty &&
+      selectedNcId === log.ncId &&
+      machineMode === prevMode &&
+      Number(log.income || 0) > 0
+    ) {
+      return Number(log.income);
+    }
     const effCostPerSec = Number(costPerSec || 13.37);
-    const pieceWage = Math.round(okQty * stdSec * effCostPerSec);
+    const modeMult = machineMode === 'SECOND' ? 0.5 : 1;
+    const pieceWage = Math.round(okQty * stdSec * effCostPerSec * modeMult);
     return pieceWage;
-  }, [currentOp, log.stdSeconds, costPerSec, okQty]);
+  }, [currentOp, log.stdSeconds, log.okQty, log.ncId, log.machineMode, log.income, costPerSec, okQty, selectedNcId, machineMode]);
 
   const diffWage = estNewWage - Number(log.income || 0);
 
@@ -93,18 +104,25 @@ export function EditReportModal({
     setErrorMsg('');
 
     try {
+      const effectiveStdSeconds =
+        selectedNcId === log.ncId && Number(log.stdSeconds) > 0
+          ? Number(log.stdSeconds)
+          : Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800);
+
       const payload = {
+        ...log,
         workDate,
         shiftType,
         poId: selectedPoId,
         ncId: selectedNcId,
         machineName,
+        machineMode,
         okQty,
         reworkQty,
         scrapQty,
         stopMinutes,
         stopReason: stopMinutes > 0 ? (stopReason || 'Dừng máy sự cố/điều chỉnh') : 'Không có dừng máy',
-        stdSeconds: Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0),
+        stdSeconds: effectiveStdSeconds,
         income: estNewWage,
         pieceWage: estNewWage,
       };
@@ -129,8 +147,28 @@ export function EditReportModal({
       const matchedPo = purchaseOrders.find((p) => p.poId === selectedPoId);
       const effectiveProductName = matchedPo?.productName || currentOp?.productName || log.productName;
 
-      const updatedLog: ProductionLogDto = res?.log || {
+      const totalMachined = okQty + reworkQty + scrapQty;
+      const netSec = Math.max(1, 28800 - stopMinutes * 60);
+      const computedKpi = Math.round(((totalMachined * effectiveStdSeconds) / netSec) * 100);
+      const defectInfo = reworkQty > 0 || scrapQty > 0
+        ? ` (${okQty} OK${reworkQty > 0 ? `, ${reworkQty} Sửa` : ''}${scrapQty > 0 ? `, ${scrapQty} NG` : ''})`
+        : '';
+      const computedStatus =
+        totalMachined === 0 && stopMinutes === 0
+          ? '🚨 0% ĐM'
+          : computedKpi >= 100
+          ? `Đạt ${computedKpi}% ĐM${defectInfo}`
+          : computedKpi < 50 && stopMinutes === 0
+          ? `🚨 Rất thấp (${computedKpi}% ĐM)${defectInfo}`
+          : `⚠️ Chưa đạt ĐM (${computedKpi}%)${defectInfo}`;
+
+      const updatedLog: ProductionLogDto = {
         ...log,
+        ...(res?.log || {}),
+        id: log.id,
+        recordUid: log.recordUid,
+        workerId: log.workerId,
+        workerName: log.workerName,
         workDate,
         shiftType,
         timeStr: newTimeStr,
@@ -140,6 +178,7 @@ export function EditReportModal({
         spId: currentOp?.spId || matchedPo?.spId || log.spId,
         productName: effectiveProductName,
         machineName,
+        machineMode,
         okQty,
         reworkQty,
         scrapQty,
@@ -147,33 +186,13 @@ export function EditReportModal({
         stopReason: stopMinutes > 0 ? (stopReason || 'Dừng máy sự cố/điều chỉnh') : 'Không có dừng máy',
         income: estNewWage,
         pieceWage: estNewWage,
-        stdSeconds: Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0),
-        kpiPct: (() => {
-          const totalMachined = okQty + reworkQty + scrapQty;
-          const stdSec = Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800);
-          const netSec = Math.max(1, 28800 - stopMinutes * 60);
-          return Math.round(((totalMachined * stdSec) / netSec) * 100);
-        })(),
-        kpiStatus: (() => {
-          const totalMachined = okQty + reworkQty + scrapQty;
-          const stdSec = Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800);
-          const netSec = Math.max(1, 28800 - stopMinutes * 60);
-          const computedKpi = Math.round(((totalMachined * stdSec) / netSec) * 100);
-          const defectInfo = reworkQty > 0 || scrapQty > 0
-            ? ` (${okQty} OK${reworkQty > 0 ? `, ${reworkQty} Sửa` : ''}${scrapQty > 0 ? `, ${scrapQty} NG` : ''})`
-            : '';
-
-          if (totalMachined === 0 && stopMinutes === 0) return '🚨 0% ĐM';
-          if (computedKpi >= 100) return `Đạt ${computedKpi}% ĐM${defectInfo}`;
-          if (computedKpi < 50 && stopMinutes === 0) return `🚨 Rất thấp (${computedKpi}% ĐM)${defectInfo}`;
-          return `⚠️ Chưa đạt ĐM (${computedKpi}%)${defectInfo}`;
-        })(),
+        stdSeconds: effectiveStdSeconds,
+        kpiPct: computedKpi,
+        kpiStatus: computedStatus,
       };
 
       const newTodayIncome =
-        res?.todayTotalIncome !== undefined
-          ? res.todayTotalIncome
-          : Math.max(0, (Number(currentTodayIncome ?? 0) - Number(log.income || 0)) + estNewWage);
+        Math.max(0, (Number(currentTodayIncome ?? 0) - Number(log.income || 0)) + estNewWage);
 
       // 2. Sync to Supabase Cloud directly if active
       await updateLogOnSupabase(log.id, log.recordUid, {
@@ -186,6 +205,7 @@ export function EditReportModal({
         sp_id: updatedLog.spId,
         product_name: updatedLog.productName,
         machine_name: updatedLog.machineName,
+        machine_mode: updatedLog.machineMode,
         std_seconds: updatedLog.stdSeconds,
         ok_qty: updatedLog.okQty,
         rework_qty: updatedLog.reworkQty,
@@ -200,23 +220,9 @@ export function EditReportModal({
 
       // 3. Update localStorage fallback immediately
       saveClientStoredLog(updatedLog);
-      updateFallbackLog(log.id, {
-        ...payload,
-        opName: updatedLog.opName,
-        productName: updatedLog.productName,
-        income: updatedLog.income,
-        pieceWage: updatedLog.pieceWage,
-        stdSeconds: updatedLog.stdSeconds,
-      });
+      updateFallbackLog(log.id, updatedLog);
       if (log.recordUid && String(log.recordUid) !== String(log.id)) {
-        updateFallbackLog(log.recordUid, {
-          ...payload,
-          opName: updatedLog.opName,
-          productName: updatedLog.productName,
-          income: updatedLog.income,
-          pieceWage: updatedLog.pieceWage,
-          stdSeconds: updatedLog.stdSeconds,
-        });
+        updateFallbackLog(log.recordUid, updatedLog);
       }
 
       onSaveSuccess(updatedLog, newTodayIncome);
@@ -328,15 +334,25 @@ export function EditReportModal({
 
             <div>
               <label className="block font-bold text-slate-700 mb-1">
-                Máy Gia Công
+                Máy Gia Công & Chế Độ
               </label>
-              <input
-                type="text"
-                value={machineName}
-                onChange={(e) => setMachineName(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-slate-50 px-2.5 py-2 font-semibold text-slate-800 focus:border-blue-600 focus:bg-white focus:outline-hidden"
-                placeholder="VD: Máy phay OKK3"
-              />
+              <div className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={machineName}
+                  onChange={(e) => setMachineName(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-2.5 py-2 font-semibold text-slate-800 focus:border-blue-600 focus:bg-white focus:outline-hidden"
+                  placeholder="VD: Máy phay OKK3"
+                />
+                <select
+                  value={machineMode}
+                  onChange={(e) => setMachineMode(e.target.value)}
+                  className="rounded-xl border border-slate-300 bg-slate-50 px-2 py-2 font-bold text-slate-800 focus:border-blue-600 focus:bg-white focus:outline-hidden shrink-0"
+                >
+                  <option value="FIRST">Máy chính</option>
+                  <option value="SECOND">Máy phụ (0.33)</option>
+                </select>
+              </div>
             </div>
           </div>
 

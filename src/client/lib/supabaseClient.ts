@@ -289,18 +289,29 @@ export async function updateLogOnSupabase(
   const sb = getSupabase();
   if (!sb) return false;
   try {
-    let query = sb.from('production_logs').update(updates);
+    const numId = Number(id);
+    if (!Number.isNaN(numId) && numId > 0 && numId < 1e11) {
+      const { data, error } = await sb
+        .from('production_logs')
+        .update(updates)
+        .eq('id', numId)
+        .select('id');
+      if (!error && data && data.length > 0) {
+        return true;
+      }
+    }
     if (recordUid) {
-      query = query.eq('record_uid', recordUid);
-    } else {
-      query = query.eq('id', Number(id));
+      const { error } = await sb
+        .from('production_logs')
+        .update(updates)
+        .eq('record_uid', recordUid);
+      if (error) {
+        console.warn('Failed to update log on Supabase by record_uid:', error);
+        return false;
+      }
+      return true;
     }
-    const { error } = await query;
-    if (error) {
-      console.warn('Failed to update log on Supabase:', error);
-      return false;
-    }
-    return true;
+    return false;
   } catch (err) {
     console.warn('updateLogOnSupabase error:', err);
     return false;

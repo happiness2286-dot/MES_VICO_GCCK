@@ -1023,53 +1023,28 @@ export function getClientStoredLogs(): any[] {
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
 
-    // Sanitize any historically hardcoded 100% KPI logs where actual output was severely deficient
-    return parsed.map((l) => {
+    // Filter out any corrupted orphan entries missing workerName & workerId
+    const validLogs = parsed.filter(
+      (l) => l && typeof l === 'object' && (Boolean(l.workerName) || Boolean(l.workerId))
+    );
+    if (validLogs.length !== parsed.length) {
+      try {
+        localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(validLogs));
+      } catch { }
+    }
+
+    return validLogs.map((l) => {
       const ok = Number(l.okQty || 0);
+      const rework = Number(l.reworkQty || 0);
+      const scrap = Number(l.scrapQty || 0);
+      const totalMachined = ok + rework + scrap;
       const stopMin = Number(l.stopMinutes || 0);
-      // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca)
-      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
-        ? 2400
-        : Number(l.stdSeconds || 1800);
-      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
-      const earnedSec = ok * stdSec;
+      const stdSec = Number(l.stdSeconds || 1800);
+      const earnedSec = totalMachined * stdSec;
       const netSec = Math.max(1, 28800 - stopMin * 60);
       const computedPct = Math.round((earnedSec / netSec) * 100);
 
-      // Sanitize mislabeled log for Đinh Văn Nhận on 06/11 (was misrecorded as NC039 / ALKTOP II 2681H instead of ISHIZUEOMEGA S406.4-850)
-      if (
-        (l.workerName?.includes('Nhận') || l.workerId === 'NV00279') &&
-        (l.ncId === 'NC039' || l.productName?.includes('ALKTOP')) &&
-        (l.workDate?.includes('2026-11-06') || l.timeStr?.includes('06/11'))
-      ) {
-        const correctStdSec = 4800;
-        const correctCostPerSec = 14.064;
-        const correctWage = Math.round(ok * correctStdSec * correctCostPerSec);
-        return {
-          ...l,
-          poId: 'PO490-01',
-          spId: 'SP038',
-          customer: 'Win-Win',
-          productName: 'ISHIZUEOMEGA S406.4-850',
-          ncId: 'NC061',
-          opName: 'G/c hoàn thiện',
-          stdSeconds: correctStdSec,
-          income: correctWage > 0 ? correctWage : l.income,
-          pieceWage: correctWage > 0 ? correctWage : l.pieceWage,
-        };
-      }
-
-      const rework = Number(l.reworkQty || 0);
-
-      // Sửa lỗi hiển thị Đạt 100% ĐM khi OK = 0 (chỉ sửa hàng hoặc không có sản lượng)
-      if (ok === 0 && rework > 0 && l.kpiStatus === 'Đạt 100% ĐM') {
-        return {
-          ...l,
-          kpiPct: 0,
-          kpiStatus: `🛠️ Sửa hàng (${rework} SP) · 0% ĐM`,
-        };
-      }
-      if (ok === 0 && rework === 0 && stopMin === 0 && l.kpiStatus === 'Đạt 100% ĐM') {
+      if (totalMachined === 0 && stopMin === 0 && l.kpiStatus === 'Đạt 100% ĐM') {
         return {
           ...l,
           kpiPct: 0,
@@ -1077,7 +1052,6 @@ export function getClientStoredLogs(): any[] {
         };
       }
 
-      // If log claimed 100% ĐM but actually computedPct < 100 with 0 stop minutes:
       if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 100 && stopMin === 0) {
         return {
           ...l,
@@ -1110,9 +1084,15 @@ export function clearAllClientStoredLogs(): void {
 
 export function saveClientStoredLog(log: any): void {
   try {
+    if (!log || (!log.workerName && !log.workerId)) return;
     const existing = getClientStoredLogs();
-    const key = String(log.recordUid || log.id);
-    const idx = existing.findIndex((e) => String(e.recordUid || e.id) === key);
+    const uidKey = log.recordUid ? String(log.recordUid) : '';
+    const idKey = log.id !== undefined && log.id !== null ? String(log.id) : '';
+    const idx = existing.findIndex(
+      (e) =>
+        (uidKey && String(e.recordUid) === uidKey) ||
+        (idKey && String(e.id) === idKey)
+    );
     if (idx >= 0) {
       existing[idx] = { ...existing[idx], ...log };
     } else {

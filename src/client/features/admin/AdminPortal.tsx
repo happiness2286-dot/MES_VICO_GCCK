@@ -141,13 +141,13 @@ export function AdminPortal() {
               }
               const mergedMap = new Map<string, any>();
               for (const l of (data.recentLogs || [])) {
-                mergedMap.set(l.recordUid || String(l.id), l);
+                if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
               }
               for (const l of getAllFallbackLogs()) {
-                mergedMap.set(l.recordUid || String(l.id), l);
+                if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
               }
               for (const l of sbLogs) {
-                mergedMap.set(l.recordUid || String(l.id), l);
+                if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
               }
               data.recentLogs = Array.from(mergedMap.values()).sort((a, b) => {
                 const tA = new Date(a.createdAt || a.workDate).getTime() || 0;

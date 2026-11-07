@@ -31,10 +31,10 @@ import type {
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover, getFallbackTraceability } from '@client/lib/clientFallbackStore';
+import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover, getFallbackTraceability, saveClientStoredLog, updateFallbackLog, deleteFallbackLog } from '@client/lib/clientFallbackStore';
 import { buildConsolidatedQcList } from '@client/lib/qcLogHelper';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
-import { deleteAllLogsFromSupabase, fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
+import { deleteAllLogsFromSupabase, fetchLogsFromSupabase, subscribeSupabaseLogChanges, updateLogOnSupabase } from '@client/lib/supabaseClient';
 import {
   formatDateVn,
   formatVnd,
@@ -127,6 +127,14 @@ export function LogsQcTraceTab({
 
   // Edit / Void Log Modal
   const [editLog, setEditLog] = useState<ProductionLogDto | null>(null);
+  const [editWorkDate, setEditWorkDate] = useState('');
+  const [editShiftType, setEditShiftType] = useState('Ca 1 (06:00-14:00)');
+  const [editMachineName, setEditMachineName] = useState('');
+  const [editMachineMode, setEditMachineMode] = useState<'FIRST' | 'SECOND'>('FIRST');
+  const [editPoId, setEditPoId] = useState('');
+  const [editNcId, setEditNcId] = useState('');
+  const [editStdSeconds, setEditStdSeconds] = useState(1800);
+  const [editStopMinutes, setEditStopMinutes] = useState(0);
   const [editOkQty, setEditOkQty] = useState(0);
   const [editReworkQty, setEditReworkQty] = useState(0);
   const [editScrapQty, setEditScrapQty] = useState(0);
@@ -212,24 +220,26 @@ export function LogsQcTraceTab({
 
       if (bootstrap?.recentLogs) {
         for (const l of bootstrap.recentLogs) {
+          if (!l || (!l.workerName && !l.workerId)) continue;
           mergedMap.set(l.recordUid || String(l.id), l);
         }
       }
 
       for (const l of localFallbackLogs) {
+        if (!l || (!l.workerName && !l.workerId)) continue;
         const key = l.recordUid || String(l.id);
-        if (!mergedMap.has(key)) {
-          mergedMap.set(key, l);
-        }
+        mergedMap.set(key, l);
       }
 
       if (sbLogs && sbLogs.length > 0) {
         for (const l of sbLogs) {
+          if (!l || (!l.workerName && !l.workerId)) continue;
           mergedMap.set(l.recordUid || String(l.id), l);
         }
       }
 
       for (const l of serverLogs) {
+        if (!l || (!l.workerName && !l.workerId)) continue;
         mergedMap.set(l.recordUid || String(l.id), l);
       }
 
@@ -784,11 +794,17 @@ const HANDOVER_RECEIVER_OPTIONS = [
   const { machineAggregatedKpiMap, shiftAggregatedKpiMap } = useMemo(() => {
     const mM = new Map<
       string,
-      { totalEarnedSec: number; totalStopMin: number; logsCount: number }
+      { totalEarnedSec: number; totalStopMin: number; logsCount: number; isSecondMach: boolean; sKey: string; mName: string }
     >();
     const sM = new Map<
       string,
-      { totalEarnedSec: number; totalStopMin: number; logsCount: number; machinesCount: number; distinctMachines: Set<string> }
+      {
+        mainEarnedSec: number;
+        mainStopMin: number;
+        mainMachinesCount: number;
+        distinctMainMachines: Set<string>;
+        anyMainOver100: boolean;
+      }
     >();
 
     for (const l of logs) {
@@ -801,33 +817,42 @@ const HANDOVER_RECEIVER_OPTIONS = [
       const rework = Number(l.reworkQty || 0);
       const scrap = Number(l.scrapQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      // ĐỊNH MỨC KỸ THUẬT CHUẨN:
-      // NC603: 2400s (12 cái/ca)
-      // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
-      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
-        ? 2400
-        : Number(l.stdSeconds || 1800);
-      // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG), không nhân 0.33
+      const stdSec = Number(l.stdSeconds || 1800);
       const totalMachined = ok + rework + scrap;
       const earnedSec = totalMachined * stdSec;
+      const isSecond = l.machineMode === 'SECOND';
 
       if (!mM.has(mKey)) {
-        mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0 });
+        mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, isSecondMach: isSecond, sKey, mName });
       }
       const curM = mM.get(mKey)!;
       curM.totalEarnedSec += earnedSec;
       curM.totalStopMin += stopMin;
       curM.logsCount += 1;
+      if (!isSecond) curM.isSecondMach = false;
+    }
 
-      if (!sM.has(sKey)) {
-        sM.set(sKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, machinesCount: 0, distinctMachines: new Set() });
+    for (const [, mVal] of mM.entries()) {
+      if (mVal.isSecondMach) continue;
+      if (!sM.has(mVal.sKey)) {
+        sM.set(mVal.sKey, {
+          mainEarnedSec: 0,
+          mainStopMin: 0,
+          mainMachinesCount: 0,
+          distinctMainMachines: new Set(),
+          anyMainOver100: false,
+        });
       }
-      const curS = sM.get(sKey)!;
-      curS.totalEarnedSec += earnedSec;
-      curS.totalStopMin += stopMin;
-      curS.logsCount += 1;
-      if (mName) curS.distinctMachines.add(mName);
-      curS.machinesCount = curS.distinctMachines.size;
+      const curS = sM.get(mVal.sKey)!;
+      curS.mainEarnedSec += mVal.totalEarnedSec;
+      curS.mainStopMin += mVal.totalStopMin;
+      if (mVal.mName) curS.distinctMainMachines.add(mVal.mName);
+      curS.mainMachinesCount = curS.distinctMainMachines.size;
+      const mNetSec = Math.max(1, 28800 - mVal.totalStopMin * 60);
+      const mKpi = (mVal.totalEarnedSec / mNetSec) * 100;
+      if (mKpi >= 99.9) {
+        curS.anyMainOver100 = true;
+      }
     }
 
     return { machineAggregatedKpiMap: mM, shiftAggregatedKpiMap: sM };
@@ -835,6 +860,14 @@ const HANDOVER_RECEIVER_OPTIONS = [
 
   const openEditLogModal = (log: ProductionLogDto) => {
     setEditLog(log);
+    setEditWorkDate(log.workDate || bootstrap.vietnamToday);
+    setEditShiftType(log.shiftType || 'Ca 1 (06:00-14:00)');
+    setEditMachineName(log.machineName || bootstrap.machines[0]?.name || 'Máy Tiện CNC 1');
+    setEditMachineMode(log.machineMode === 'SECOND' ? 'SECOND' : 'FIRST');
+    setEditPoId(log.poId || 'PO-THEO-KH');
+    setEditNcId(log.ncId || '');
+    setEditStdSeconds(Number(log.stdSeconds || 1800));
+    setEditStopMinutes(Number(log.stopMinutes || 0));
     setEditOkQty(log.okQty);
     setEditReworkQty(log.reworkQty);
     setEditScrapQty(log.scrapQty);
@@ -847,21 +880,147 @@ const HANDOVER_RECEIVER_OPTIONS = [
     if (!editLog) return;
     setSavingLogEdit(true);
     try {
-      await apiClient.patch(`/logs/${editLog.id}`, {
+      const matchedOp = bootstrap.operations.find((o) => o.ncId === editNcId);
+      const matchedPo = bootstrap.ordersList.find((p) => p.poId === editPoId);
+      const matchedMach = bootstrap.machines.find((m) => m.name === editMachineName);
+
+      const effectiveStdSec = Math.max(1, Number(editStdSeconds || matchedOp?.stdSeconds || editLog.stdSeconds || 1800));
+      const prevMode = editLog.machineMode === 'SECOND' ? 'SECOND' : 'FIRST';
+
+      // Preserve existing wage if okQty, stdSeconds, and machineMode did not change; otherwise recalculate proportionally
+      let newIncome = Number(editLog.income || 0);
+      if (
+        editOkQty !== editLog.okQty ||
+        effectiveStdSec !== Number(editLog.stdSeconds || 0) ||
+        editMachineMode !== prevMode
+      ) {
+        const baseRatePerSec =
+          editLog.okQty > 0 && Number(editLog.stdSeconds) > 0 && Number(editLog.income) > 0
+            ? Number(editLog.income) / (editLog.okQty * Number(editLog.stdSeconds) * (prevMode === 'SECOND' ? 0.5 : 1))
+            : 13.37;
+        const modeMult = editMachineMode === 'SECOND' ? 0.5 : 1;
+        newIncome = Math.round(editOkQty * effectiveStdSec * baseRatePerSec * modeMult);
+      }
+
+      const totalMachined = editOkQty + editReworkQty + editScrapQty;
+      const netSec = Math.max(1, 28800 - editStopMinutes * 60);
+      const computedKpi = Math.round(((totalMachined * effectiveStdSec) / netSec) * 100);
+      const defectInfo =
+        editReworkQty > 0 || editScrapQty > 0
+          ? ` (${editOkQty} OK${editReworkQty > 0 ? `, ${editReworkQty} Sửa` : ''}${editScrapQty > 0 ? `, ${editScrapQty} NG` : ''})`
+          : '';
+      const computedStatus =
+        totalMachined === 0 && editStopMinutes === 0
+          ? '🚨 0% ĐM'
+          : computedKpi >= 100
+          ? `Đạt ${computedKpi}% ĐM${defectInfo}`
+          : computedKpi < 50 && editStopMinutes === 0
+          ? `🚨 Rất thấp (${computedKpi}% ĐM)${defectInfo}`
+          : `⚠️ Chưa đạt ĐM (${computedKpi}%)${defectInfo}`;
+
+      const updatedLog: ProductionLogDto = {
+        ...editLog,
+        workDate: editWorkDate || editLog.workDate,
+        shiftType: editShiftType || editLog.shiftType,
+        machineId: matchedMach?.id || editLog.machineId,
+        machineName: editMachineName || editLog.machineName,
+        machineMode: editMachineMode,
+        poId: editPoId || editLog.poId,
+        ncId: editNcId || editLog.ncId,
+        opName: matchedOp?.opName || editLog.opName,
+        spId: matchedOp?.spId || matchedPo?.spId || editLog.spId,
+        productName: matchedPo?.productName || matchedOp?.productName || editLog.productName,
+        customer: matchedPo?.customer || matchedOp?.customer || editLog.customer,
+        stdSeconds: effectiveStdSec,
+        stopMinutes: editStopMinutes,
         okQty: editOkQty,
         reworkQty: editReworkQty,
         scrapQty: editScrapQty,
         qcStatus: editQcStatus,
-        isVoided: editIsVoided,
+        isVoided: editIsVoided ? 1 : 0,
+        income: newIncome,
+        pieceWage: newIncome,
+        kpiPct: computedKpi,
+        kpiStatus: computedStatus,
+      };
+
+      // 1. Update Supabase Cloud directly
+      await updateLogOnSupabase(editLog.id, editLog.recordUid, {
+        work_date: updatedLog.workDate,
+        shift_type: updatedLog.shiftType,
+        machine_id: updatedLog.machineId,
+        machine_name: updatedLog.machineName,
+        machine_mode: updatedLog.machineMode,
+        po_id: updatedLog.poId,
+        nc_id: updatedLog.ncId,
+        op_name: updatedLog.opName,
+        sp_id: updatedLog.spId,
+        product_name: updatedLog.productName,
+        customer: updatedLog.customer,
+        std_seconds: updatedLog.stdSeconds,
+        stop_minutes: updatedLog.stopMinutes,
+        ok_qty: updatedLog.okQty,
+        rework_qty: updatedLog.reworkQty,
+        scrap_qty: updatedLog.scrapQty,
+        qc_status: updatedLog.qcStatus,
+        is_voided: updatedLog.isVoided,
+        income: updatedLog.income,
+        piece_wage: updatedLog.pieceWage,
+        kpi_pct: updatedLog.kpiPct,
+        kpi_status: updatedLog.kpiStatus,
       });
+
+      // 2. Update Backend API if running
+      try {
+        await apiClient.patch(`/logs/${editLog.id}`, {
+          workDate: updatedLog.workDate,
+          shiftType: updatedLog.shiftType,
+          machineName: updatedLog.machineName,
+          machineMode: updatedLog.machineMode,
+          poId: updatedLog.poId,
+          ncId: updatedLog.ncId,
+          stdSeconds: updatedLog.stdSeconds,
+          stopMinutes: updatedLog.stopMinutes,
+          okQty: editOkQty,
+          reworkQty: editReworkQty,
+          scrapQty: editScrapQty,
+          qcStatus: editQcStatus,
+          isVoided: editIsVoided,
+          income: updatedLog.income,
+          pieceWage: updatedLog.pieceWage,
+        });
+      } catch {
+        // Ignore if backend server is static/offline
+      }
+
+      // 3. Update localStorage fallback immediately
+      if (editIsVoided) {
+        deleteFallbackLog(editLog.id);
+        if (editLog.recordUid) deleteFallbackLog(editLog.recordUid);
+      } else {
+        saveClientStoredLog(updatedLog);
+        updateFallbackLog(editLog.id, updatedLog);
+        if (editLog.recordUid) updateFallbackLog(editLog.recordUid, updatedLog);
+      }
+
+      // 4. Update React state immediately so UI never reverts to old values
+      setLogs((prev) =>
+        prev.map((item) =>
+          String(item.id) === String(editLog.id) ||
+          (editLog.recordUid && item.recordUid === editLog.recordUid)
+            ? updatedLog
+            : item
+        )
+      );
+
       toast.success(
         editIsVoided
-          ? `Đã hủy phiếu nhầm #${editLog.recordUid} và hoàn trả tồn PO tự động.`
-          : `Đã cập nhật phiếu sản lượng #${editLog.recordUid}.`
+          ? `Đã hủy phiếu nhầm #${editLog.recordUid || editLog.id} và đồng bộ lên Cloud.`
+          : `Đã lưu cập nhật phiếu #${editLog.recordUid || editLog.id} lên Cloud thành công!`
       );
       setEditLog(null);
       await reloadLogs();
-      await onRefreshBootstrap();
+      if (onRefreshBootstrap) await onRefreshBootstrap();
     } catch (err: any) {
       toast.error(err?.message || 'Không thể chỉnh sửa phiếu sản lượng.');
     } finally {
@@ -1342,13 +1501,8 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const rework = Number(l.reworkQty || 0);
                       const scrap = Number(l.scrapQty || 0);
                       const stopMin = Number(l.stopMinutes || 0);
-                      // Định mức kỹ thuật chuẩn:
-                      // NC603: 2400s (12 cái/ca)
-                      // NC061 (ISHIZUE 406Dw850 / S406.4-850): 4800s (6 cái/ca: 6 cái = 100% ĐM)
-                      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
-                        ? 2400
-                        : Number(l.stdSeconds || 1800);
-                      // ĐỊNH MỨC SẢN LƯỢNG MÁY: tính trên tổng số sản phẩm đã gia công (OK + Sửa + NG)
+                      const stdSec = Number(l.stdSeconds || 1800);
+                      // ĐỊNH MỨC KHOÁN MÁY: tính trên tổng số sản phẩm đã gia công trên máy (OK + Sửa + NG)
                       const totalMachined = ok + rework + scrap;
                       const earnedSec = totalMachined * stdSec;
                       const netSec = Math.max(1, 28800 - stopMin * 60);
@@ -1360,11 +1514,12 @@ const HANDOVER_RECEIVER_OPTIONS = [
                         return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
                       };
 
-                      const defectDetail = rework > 0 || scrap > 0
-                        ? ` (${ok} OK${rework > 0 ? `, ${rework} Sửa` : ''}${scrap > 0 ? `, ${scrap} NG` : ''})`
-                        : '';
+                      const defectDetail =
+                        rework > 0 || scrap > 0
+                          ? ` (${ok} OK${rework > 0 ? `, ${rework} Sửa` : ''}${scrap > 0 ? `, ${scrap} NG` : ''})`
+                          : '';
 
-                      // Phân bổ định mức theo máy & ca gộp
+                      // Phân bổ định mức theo từng máy & ca gộp (chỉ ghép các máy chính chưa đủ 100%)
                       const mName = (l.machineName || '').trim();
                       const sKey = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
                       const mKey = `${sKey}_${mName}`;
@@ -1373,63 +1528,54 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const sStats = shiftAggregatedKpiMap.get(sKey);
 
                       const mNetSec = Math.max(1, 28800 - (mStats?.totalStopMin || 0) * 60);
-                      const sNetSec = Math.max(1, 28800 - (sStats?.totalStopMin || 0) * 60);
+                      const sMainNetSec = Math.max(1, 28800 - (sStats?.mainStopMin || 0) * 60);
 
                       const mTotalKpi = mStats
                         ? Math.round((mStats.totalEarnedSec / mNetSec) * 10000) / 100
                         : realKpi;
-                      const sTotalKpi = sStats
-                        ? Math.round((sStats.totalEarnedSec / sNetSec) * 10000) / 100
+                      const sMainTotalKpi = sStats
+                        ? Math.round((sStats.mainEarnedSec / sMainNetSec) * 10000) / 100
                         : realKpi;
 
-                      const hasMultiJobsOnMachine = mStats && mStats.logsCount > 1;
-                      const hasMultiMachinesInShift = sStats && sStats.machinesCount > 1;
+                      const hasMultiJobsOnMachine = Boolean(mStats && mStats.logsCount > 1);
                       const isSecondMach = l.machineMode === 'SECOND';
+                      const canCombineMainShift = Boolean(
+                        !isSecondMach &&
+                          sStats &&
+                          sStats.mainMachinesCount > 1 &&
+                          !sStats.anyMainOver100
+                      );
+                      const prefix = isSecondMach ? 'Máy phụ' : 'Máy';
 
                       let badgeText = l.kpiStatus;
                       let isCrit = false;
                       let isWarn = false;
 
                       if (totalMachined === 0 && stopMin === 0) {
-                        if (isSecondMach) {
-                          badgeText = 'Máy phụ (chưa chạy)';
-                        } else {
-                          badgeText = '🚨 0% ĐM';
-                          isCrit = true;
-                        }
+                        badgeText = `🚨 ${prefix} 0% ĐM`;
+                        isCrit = true;
                       } else if (hasMultiJobsOnMachine) {
                         if (mTotalKpi >= 100) {
-                          badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} (${fmtPct(realKpi)}${defectDetail})`;
+                          badgeText = `✅ ${prefix} đạt ${fmtPct(mTotalKpi)} (Mã này: ${fmtPct(realKpi)}${defectDetail})`;
+                        } else if (canCombineMainShift && sMainTotalKpi >= 100) {
+                          badgeText = `✅ Mã này: ${fmtPct(realKpi)} (Máy: ${fmtPct(mTotalKpi)} · Ghép ca: ${fmtPct(sMainTotalKpi)})${defectDetail}`;
                         } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
-                          badgeText = `🚨 Máy rất thấp (${fmtPct(mTotalKpi)} ĐM)`;
+                          badgeText = `🚨 Mã này: ${fmtPct(realKpi)} (Tổng ${prefix.toLowerCase()}: ${fmtPct(mTotalKpi)} < 100%)${defectDetail}`;
                           isCrit = true;
                         } else {
-                          badgeText = `⚠️ Máy chưa đạt (${fmtPct(mTotalKpi)})`;
-                          isWarn = true;
-                        }
-                      } else if (isSecondMach) {
-                        if (realKpi >= 100) {
-                          badgeText = `✅ Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
-                        } else {
-                          badgeText = `Máy phụ đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
-                        }
-                      } else if (hasMultiMachinesInShift) {
-                        if (mTotalKpi >= 100) {
-                          badgeText = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
-                        } else if (sTotalKpi >= 100) {
-                          badgeText = `✅ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM${defectDetail}`;
-                        } else {
-                          badgeText = `⚠️ Ghép máy đạt ${fmtPct(mTotalKpi)} ĐM (Tổng ca: ${fmtPct(sTotalKpi)})${defectDetail}`;
+                          badgeText = `⚠️ Mã này: ${fmtPct(realKpi)} (Tổng ${prefix.toLowerCase()}: ${fmtPct(mTotalKpi)} < 100%)${defectDetail}`;
                           isWarn = true;
                         }
                       } else {
                         if (realKpi >= 100) {
-                          badgeText = `✅ Máy đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
+                          badgeText = `✅ ${prefix} đạt ${fmtPct(realKpi)} ĐM${defectDetail}`;
+                        } else if (canCombineMainShift && sMainTotalKpi >= 100) {
+                          badgeText = `✅ Đạt ${fmtPct(realKpi)} ĐM (Ghép 2 máy: ${fmtPct(sMainTotalKpi)})${defectDetail}`;
                         } else if (realKpi < 50 && stopMin === 0) {
-                          badgeText = `🚨 Máy rất thấp (${fmtPct(realKpi)} ĐM)`;
+                          badgeText = `🚨 ${prefix} rất thấp (${fmtPct(realKpi)} ĐM)${defectDetail}`;
                           isCrit = true;
                         } else {
-                          badgeText = `⚠️ Máy chưa đạt (${fmtPct(realKpi)})`;
+                          badgeText = `⚠️ ${prefix} chưa đạt (${fmtPct(realKpi)} < 100%)${defectDetail}`;
                           isWarn = true;
                         }
                       }
@@ -1452,23 +1598,19 @@ const HANDOVER_RECEIVER_OPTIONS = [
                               {isCrit ? (
                                 <span
                                   className="inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10px] font-extrabold text-rose-700 animate-pulse"
-                                  title="Sản lượng ca quá thấp so với định mức 100%"
+                                  title="Sản lượng máy rất thấp (< 50% định mức ca)"
                                 >
                                   {badgeText}
                                 </span>
                               ) : isWarn ? (
                                 <span
                                   className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800"
-                                  title="Chưa đạt định mức ca 100%"
+                                  title="Sản lượng máy chưa đạt định mức 100%"
                                 >
                                   {badgeText}
                                 </span>
                               ) : badgeText?.startsWith('✅') ? (
                                 <span className="inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-                                  {badgeText}
-                                </span>
-                              ) : isSecondMach ? (
-                                <span className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
                                   {badgeText}
                                 </span>
                               ) : (
@@ -1483,14 +1625,6 @@ const HANDOVER_RECEIVER_OPTIONS = [
                             {l.income > 0 ? (
                               <div>
                                 <span className="text-blue-700">{formatVnd(l.income)}</span>
-                                {isCrit && !isSecondMach && sTotalKpi < 50 && (
-                                  <div
-                                    className="text-[10px] font-extrabold text-rose-600"
-                                    title="Sản lượng quá thấp không đủ bù đắp chi phí máy đứng 8h"
-                                  >
-                                    ⚠️ Thâm hụt ca
-                                  </div>
-                                )}
                               </div>
                             ) : (
                               <span className="text-slate-400">—</span>
@@ -3195,15 +3329,194 @@ const HANDOVER_RECEIVER_OPTIONS = [
       <Modal
         open={Boolean(editLog)}
         onClose={() => setEditLog(null)}
-        title={`✏️ Hiệu Chỉnh / Hủy Phiếu Sản Lượng: ${editLog?.recordUid || ''}`}
+        title={`✏️ Hiệu Chỉnh / Hủy Phiếu Sản Lượng: ${editLog?.recordUid || `#${editLog?.id || ''}`}`}
         subtitle={
           editLog
-            ? `${editLog.workerName} • ${editLog.machineName} • [${editLog.poId}] ${editLog.opName}`
+            ? `${editLog.workerName} • ${editLog.machineName} • [${editLog.poId}] ${editLog.productName}`
             : ''
         }
-        maxWidthClass="max-w-lg"
+        maxWidthClass="max-w-xl"
       >
-        <form noValidate onSubmit={handleSaveLogEdit} className="space-y-4 text-xs">
+        <form noValidate onSubmit={handleSaveLogEdit} className="space-y-3.5 text-xs">
+          {/* Ngày & Ca */}
+          <div className="grid grid-cols-2 gap-3 rounded-xl border border-blue-200 bg-blue-50/40 p-2.5">
+            <div>
+              <label className="mb-1 block font-bold uppercase text-blue-900">Ngày Làm Việc</label>
+              <input
+                type="date"
+                value={editWorkDate}
+                onChange={(e) => setEditWorkDate(e.target.value)}
+                className={modalInputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block font-bold uppercase text-blue-900">Ca Sản Xuất</label>
+              <select
+                value={editShiftType}
+                onChange={(e) => setEditShiftType(e.target.value)}
+                className={modalInputCls}
+              >
+                <option value="Ca 1 (06:00-14:00)">Ca 1 (06:00-14:00)</option>
+                <option value="Ca 2 (14:00-22:00)">Ca 2 (14:00-22:00)</option>
+                <option value="Ca 3 (22:00-06:00)">Ca 3 (22:00-06:00)</option>
+                <option value="Ca HC (08:00-17:00)">Ca HC (08:00-17:00)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Máy & Chế độ máy */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block font-bold uppercase text-slate-700">Máy Gia Công</label>
+              <select
+                value={editMachineName}
+                onChange={(e) => setEditMachineName(e.target.value)}
+                className={modalInputCls}
+              >
+                {editMachineName && !bootstrap.machines.some((m) => m.name === editMachineName) && (
+                  <option value={editMachineName}>{editMachineName}</option>
+                )}
+                {bootstrap.machines.map((m) => (
+                  <option key={m.id} value={m.name}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block font-bold uppercase text-slate-700">Chế Độ Khoán Máy</label>
+              <select
+                value={editMachineMode}
+                onChange={(e) => setEditMachineMode(e.target.value as 'FIRST' | 'SECOND')}
+                className={modalInputCls}
+              >
+                <option value="FIRST">Máy chính (100% ĐM máy)</option>
+                <option value="SECOND">Máy phụ / Ghép máy 0.33</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Lệnh PO & Nguyên Công */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block font-bold uppercase text-slate-700">Lệnh PO</label>
+              <select
+                value={editPoId}
+                onChange={(e) => {
+                  const nextPo = e.target.value;
+                  setEditPoId(nextPo);
+                  const poObj = bootstrap.ordersList.find((p) => p.poId === nextPo);
+                  if (poObj?.spId) {
+                    const opObj = bootstrap.operations.find((o) => o.spId === poObj.spId);
+                    if (opObj) {
+                      setEditNcId(opObj.ncId);
+                      setEditStdSeconds(Number(opObj.stdSeconds || 1800));
+                    }
+                  }
+                }}
+                className={modalInputCls}
+              >
+                {editPoId && !bootstrap.ordersList.some((p) => p.poId === editPoId) && (
+                  <option value={editPoId}>{editPoId}</option>
+                )}
+                {bootstrap.ordersList.map((po) => (
+                  <option key={po.poId} value={po.poId}>
+                    {po.poId} — {po.productName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block font-bold uppercase text-slate-700">Nguyên Công</label>
+              <select
+                value={editNcId}
+                onChange={(e) => {
+                  const nextNc = e.target.value;
+                  setEditNcId(nextNc);
+                  const opObj = bootstrap.operations.find((o) => o.ncId === nextNc);
+                  if (opObj?.stdSeconds) {
+                    setEditStdSeconds(Number(opObj.stdSeconds));
+                  }
+                }}
+                className={modalInputCls}
+              >
+                {bootstrap.operations.map((op) => (
+                  <option key={op.ncId} value={op.ncId}>
+                    [{op.ncId}] {op.opName} — {op.productName} ({op.stdSeconds}s)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Định mức giây/SP & Phút dừng máy */}
+          <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="font-bold uppercase text-slate-700">Định Mức (Giây/SP)</label>
+                <span className="font-mono-num text-[11px] font-extrabold text-blue-700">
+                  ≈ {editStdSeconds > 0 ? Math.round((28800 / editStdSeconds) * 100) / 100 : 0} SP/ca 8h
+                </span>
+              </div>
+              <input
+                type="number"
+                min={10}
+                step="any"
+                value={editStdSeconds}
+                onChange={(e) => setEditStdSeconds(Math.max(10, Number(e.target.value) || 1800))}
+                className={`${modalInputCls} font-mono-num font-bold text-blue-700`}
+              />
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {[
+                  { label: '12 SP/ca (2400s)', sec: 2400 },
+                  { label: '10 SP/ca (2880s)', sec: 2880 },
+                  { label: '8 SP/ca (3600s)', sec: 3600 },
+                  { label: '6 SP/ca (4800s)', sec: 4800 },
+                  { label: '5 SP/ca (5760s)', sec: 5760 },
+                ].map((preset) => (
+                  <button
+                    key={preset.sec}
+                    type="button"
+                    onClick={() => setEditStdSeconds(preset.sec)}
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
+                      editStdSeconds === preset.sec
+                        ? 'border-blue-600 bg-blue-600 text-white'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-blue-50'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block font-bold uppercase text-amber-800">
+                Phút Dừng Máy (Phút)
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={480}
+                step="any"
+                value={editStopMinutes}
+                onChange={(e) => setEditStopMinutes(Math.max(0, Number(e.target.value) || 0))}
+                className={`${modalInputCls} font-mono-num font-bold text-amber-800`}
+              />
+              <div className="mt-1.5 text-[11px] text-slate-600">
+                KPI dự kiến phiếu này:{' '}
+                <strong className="text-blue-700">
+                  {Math.round(
+                    (((editOkQty + editReworkQty + editScrapQty) * editStdSeconds) /
+                      Math.max(1, 28800 - editStopMinutes * 60)) *
+                      10000
+                  ) / 100}
+                  % ĐM
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Số lượng OK / Rework / NG */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="mb-1 block font-bold uppercase text-emerald-700">SL Đạt (OK)</label>
@@ -3217,7 +3530,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
               />
             </div>
             <div>
-              <label className="mb-1 block font-bold uppercase text-amber-700">SL Rework</label>
+              <label className="mb-1 block font-bold uppercase text-amber-700">SL Rework (Sửa)</label>
               <input
                 type="number"
                 min={0}
@@ -3286,7 +3599,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
             >
               {editIsVoided ? <XCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
               {savingLogEdit
-                ? 'Đang cập nhật...'
+                ? 'Đang lưu Cloud...'
                 : editIsVoided
                   ? 'Xác Nhận Hủy Phiếu'
                   : 'Lưu Hiệu Chỉnh'}

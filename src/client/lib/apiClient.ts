@@ -550,11 +550,11 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
           ? Number(body.income)
           : Math.round((Number(body.okQty) || 0) * stdSeconds * costPerSec);
 
-      const patchData = {
+      const patchData: Record<string, any> = {
         ...body,
-        opName: op?.opName,
-        spId: op?.spId,
-        productName: op?.productName,
+        opName: body.opName || op?.opName,
+        spId: body.spId || op?.spId,
+        productName: body.productName || op?.productName,
         stdSeconds,
         income: newWage,
         pieceWage: newWage,
@@ -567,8 +567,8 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
         success: true,
         message: 'Đã cập nhật báo cáo thành công!',
         log: {
-          id: logId,
           ...patchData,
+          id: body.id ?? logId,
         },
         todayTotalIncome: newWage,
       } as unknown as T;
