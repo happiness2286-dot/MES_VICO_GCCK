@@ -251,14 +251,22 @@ export function calculateTurnPayroll(
 
   const rawThr = Number(config.kpiWarningThreshold) || 1.0;
   const warnThresholdPct = Math.round(rawThr > 2 ? rawThr : rawThr * 100);
+  const reworkQty = Math.max(0, Number(input.reworkQty) || 0);
+
   const kpiStatus =
     earnedStdSeconds === 0 && effectivePaidStopMinutes > 0
       ? `Dừng máy KQ (${effectivePaidStopMinutes}p)`
-      : kpiPct >= 100
-        ? `Đạt ${kpiPct}% ĐM`
-        : kpiPct >= warnThresholdPct
-          ? `Đạt ${kpiPct}% ĐM`
-          : `⚠️ Chưa đạt ĐM (${kpiPct}%)`;
+      : okQty === 0 && reworkQty > 0
+        ? `🛠️ Sửa hàng (${reworkQty} SP) · 0% ĐM`
+        : okQty === 0 && stopMinutes === 0
+          ? '🚨 0% ĐM'
+          : kpiPct < 50 && stopMinutes === 0
+            ? `🚨 RẤT THẤP (${kpiPct}% ĐM)`
+            : kpiPct >= 100
+              ? `Đạt ${kpiPct}% ĐM`
+              : kpiPct >= warnThresholdPct
+                ? `Đạt ${kpiPct}% ĐM`
+                : `⚠️ Chưa đạt ĐM (${kpiPct}%)`;
 
   // Job Costing (always includes full standard/actual labor + machine + tool + net scrap loss)
   const edgesConsumed =

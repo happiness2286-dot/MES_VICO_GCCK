@@ -148,8 +148,14 @@ export function EditReportModal({
         income: estNewWage,
         pieceWage: estNewWage,
         stdSeconds: Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 0),
-        kpiPct: 100,
-        kpiStatus: 'DAT_MUC',
+        kpiPct: Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100),
+        kpiStatus: okQty === 0 && reworkQty > 0
+          ? `🛠️ Sửa hàng (${reworkQty} SP) · 0% ĐM`
+          : okQty === 0 && stopMinutes === 0
+            ? '🚨 0% ĐM'
+            : Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100) >= 100
+              ? `Đạt ${Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100)}% ĐM`
+              : `⚠️ Chưa đạt ĐM (${Math.round(((okQty * Number(currentOp?.stdSeconds ?? log.stdSeconds ?? 1800)) / Math.max(1, 28800 - stopMinutes * 60)) * 100)}%)`,
       };
 
       const newTodayIncome =

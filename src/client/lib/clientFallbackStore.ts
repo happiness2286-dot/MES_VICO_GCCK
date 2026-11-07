@@ -1035,9 +1035,12 @@ export function getClientStoredLogs(): any[] {
     return parsed.map((l) => {
       const ok = Number(l.okQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
-      const stdSec = Number(l.stdSeconds || 1800);
-      const machRate = l.machineMode === 'SECOND' ? 0.33 : 1;
-      const earnedSec = ok * stdSec * machRate;
+      // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca)
+      const stdSec = (l.ncId === 'NC603' || l.opName?.includes('NC603') || l.productName?.toLowerCase().includes('sealing strip'))
+        ? 2400
+        : Number(l.stdSeconds || 1800);
+      // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
+      const earnedSec = ok * stdSec;
       const netSec = Math.max(1, 28800 - stopMin * 60);
       const computedPct = Math.round((earnedSec / netSec) * 100);
 
@@ -1082,8 +1085,8 @@ export function getClientStoredLogs(): any[] {
         };
       }
 
-      // If log claimed 100% ĐM but actually computedPct < 85 with 0 stop minutes:
-      if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 85 && stopMin === 0) {
+      // If log claimed 100% ĐM but actually computedPct < 100 with 0 stop minutes:
+      if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 100 && stopMin === 0) {
         return {
           ...l,
           kpiPct: computedPct,

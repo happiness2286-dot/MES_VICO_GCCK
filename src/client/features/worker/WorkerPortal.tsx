@@ -266,7 +266,7 @@ export function WorkerPortal() {
   const [compressingPhoto, setCompressingPhoto] = useState<boolean>(false);
   const [materialLot, setMaterialLot] = useState<string>('');
 
-// ==================== DAILY PLAN AUTO-SUGGESTION FOR ACTIVE WORKER ====================
+  // ==================== DAILY PLAN AUTO-SUGGESTION FOR ACTIVE WORKER ====================
   const [dailyPlanRows, setDailyPlanRows] = useState<DailyPlanRow[]>(() =>
     getFallbackDailyPlan(getShiftProductionWorkDate(new Date()))
   );
@@ -310,7 +310,7 @@ export function WorkerPortal() {
           if (active && res.rows && res.rows.length > 0) {
             loadedRows = res.rows;
           }
-        } catch {}
+        } catch { }
       }
 
       // 3. Fallback to localStorage / default demo
@@ -1045,8 +1045,8 @@ export function WorkerPortal() {
       }
       const poOps = po.spId
         ? operationsList
-            .filter((o) => o.spId === po.spId)
-            .sort((a, b) => a.stepOrder - b.stepOrder)
+          .filter((o) => o.spId === po.spId)
+          .sort((a, b) => a.stepOrder - b.stepOrder)
         : operationsList.filter((o) => o.productName === po.productName);
       if (poOps[0]) {
         applyOperationSelection(poOps[0], po.poId);
@@ -1084,10 +1084,9 @@ export function WorkerPortal() {
         }
 
         toast.success(
-          `✅ Đã chọn nhanh: ${firstProd.productName} (${customer})${
-            customerProducts.length > 1
-              ? ` — Có ${customerProducts.length} bản vẽ (chạm ô bản vẽ để đổi nếu cần)`
-              : ''
+          `✅ Đã chọn nhanh: ${firstProd.productName} (${customer})${customerProducts.length > 1
+            ? ` — Có ${customerProducts.length} bản vẽ (chạm ô bản vẽ để đổi nếu cần)`
+            : ''
           }`
         );
       } else {
@@ -2041,16 +2040,23 @@ export function WorkerPortal() {
     return myLogs;
   }, [bootstrap?.recentLogs, user, logViewMode, isManagerOrLeader]);
 
-  // Group logs by worker + workDate + shift + machine to calculate total mixed KPI for each machine
-  const machineAggregatedKpiMap = useMemo(() => {
-    const map = new Map<
+  // Group logs by worker + workDate + shift + machine to calculate total mixed KPI for each machine and whole shift
+  const { machineAggregatedKpiMap, shiftAggregatedKpiMap } = useMemo(() => {
+    const mM = new Map<
       string,
       { totalEarnedSec: number; totalStopMin: number; logsCount: number; itemsSummary: string[] }
     >();
+    const sM = new Map<
+      string,
+      { totalEarnedSec: number; totalStopMin: number; logsCount: number; machinesCount: number; distinctMachines: Set<string> }
+    >();
+
     for (const l of myRecentLogs) {
       if (l.isVoided === 1) continue;
       const mName = (l.machineName || '').trim();
-      const key = `${l.workerId || user?.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}_${mName}`;
+      const sKey = `${l.workerId || user?.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
+      const mKey = `${sKey}_${mName}`;
+
       const ok = Number(l.okQty || 0);
       const stopMin = Number(l.stopMinutes || 0);
       // ĐỊNH MỨC KỸ THUẬT: NC603 là 2400s (12 cái/ca)
@@ -2060,18 +2066,29 @@ export function WorkerPortal() {
       // ĐỊNH MỨC SẢN LƯỢNG MÁY: KHÔNG NHÂN 0.33
       const earnedSec = ok * stdSec;
 
-      if (!map.has(key)) {
-        map.set(key, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, itemsSummary: [] });
+      // 1. Cập nhật nhóm theo máy
+      if (!mM.has(mKey)) {
+        mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, itemsSummary: [] });
       }
-      const cur = map.get(key)!;
-      cur.totalEarnedSec += earnedSec;
-      cur.totalStopMin += stopMin;
-      cur.logsCount += 1;
-      if (ok > 0) {
-        cur.itemsSummary.push(`${ok} ${l.productName?.slice(0, 15) || l.ncId}`);
+      const curM = mM.get(mKey)!;
+      curM.totalEarnedSec += earnedSec;
+      curM.totalStopMin += stopMin;
+      curM.logsCount += 1;
+      if (ok > 0) curM.itemsSummary.push(`${ok} ${l.productName?.slice(0, 15) || l.ncId}`);
+
+      // 2. Cập nhật nhóm theo toàn ca (để tính ca gộp 2 máy)
+      if (!sM.has(sKey)) {
+        sM.set(sKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, machinesCount: 0, distinctMachines: new Set() });
       }
+      const curS = sM.get(sKey)!;
+      curS.totalEarnedSec += earnedSec;
+      curS.totalStopMin += stopMin;
+      curS.logsCount += 1;
+      if (mName) curS.distinctMachines.add(mName);
+      curS.machinesCount = curS.distinctMachines.size;
     }
-    return map;
+
+    return { machineAggregatedKpiMap: mM, shiftAggregatedKpiMap: sM };
   }, [myRecentLogs, user?.workerId]);
 
   return (
@@ -2134,9 +2151,8 @@ export function WorkerPortal() {
                 className="flex h-7 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:border-blue-500 hover:bg-slate-50 hover:text-blue-700 disabled:opacity-50"
               >
                 <RefreshCw
-                  className={`h-3.5 w-3.5 ${
-                    loadingBootstrap ? 'animate-spin text-blue-600' : 'text-slate-600'
-                  }`}
+                  className={`h-3.5 w-3.5 ${loadingBootstrap ? 'animate-spin text-blue-600' : 'text-slate-600'
+                    }`}
                 />
               </button>
             </div>
@@ -2231,12 +2247,12 @@ export function WorkerPortal() {
                       plan.plannedQty === 0.25
                         ? '0.25 ca (¼)'
                         : plan.plannedQty === 0.5
-                        ? '0.5 ca (½)'
-                        : plan.plannedQty === 0.75
-                        ? '0.75 ca (¾)'
-                        : plan.plannedQty === 0.33
-                        ? '0.33 ca (⅓)'
-                        : `${plan.plannedQty} SP`;
+                          ? '0.5 ca (½)'
+                          : plan.plannedQty === 0.75
+                            ? '0.75 ca (¾)'
+                            : plan.plannedQty === 0.33
+                              ? '0.33 ca (⅓)'
+                              : `${plan.plannedQty} SP`;
 
                     return (
                       <button
@@ -2247,22 +2263,20 @@ export function WorkerPortal() {
                           appliedPlanRowKeyRef.current = '';
                           applyPlanRowSelection(plan, false);
                         }}
-                        className={`flex flex-col text-left p-2.5 rounded-xl border-2 transition-all relative ${
-                          isCurrentSelected
+                        className={`flex flex-col text-left p-2.5 rounded-xl border-2 transition-all relative ${isCurrentSelected
                             ? 'border-blue-600 bg-blue-600 text-white shadow-md ring-2 ring-blue-300 scale-[1.01]'
                             : 'border-blue-200 bg-white text-slate-800 hover:border-blue-400 hover:bg-blue-50/70 shadow-xs'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-1 text-xs font-black">
                           <span className="flex items-center gap-1.5 truncate">
                             <span>⚙️ {plan.machineName || 'Chưa gán máy'}</span>
                             {plan.note && /ghép 2 máy|\+0\.33/i.test(plan.note) && (
                               <span
-                                className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
-                                  isCurrentSelected
+                                className={`px-1.5 py-0.2 rounded text-[10px] font-black ${isCurrentSelected
                                     ? 'bg-amber-400 text-slate-950'
                                     : 'bg-amber-100 text-amber-900 border border-amber-300'
-                                }`}
+                                  }`}
                               >
                                 ⭐ Ghép (+0.33)
                               </span>
@@ -2275,38 +2289,34 @@ export function WorkerPortal() {
                               </span>
                             )}
                             <span
-                              className={`px-2 py-0.5 rounded font-mono text-[11px] font-black ${
-                                isCurrentSelected
+                              className={`px-2 py-0.5 rounded font-mono text-[11px] font-black ${isCurrentSelected
                                   ? 'bg-white/20 text-white'
                                   : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                              }`}
+                                }`}
                             >
                               {qtyDisplay}
                             </span>
                           </div>
                         </div>
                         <div
-                          className={`mt-1 text-xs truncate font-bold ${
-                            isCurrentSelected ? 'text-white' : 'text-blue-900'
-                          }`}
+                          className={`mt-1 text-xs truncate font-bold ${isCurrentSelected ? 'text-white' : 'text-blue-900'
+                            }`}
                         >
                           {plan.customer ? `[${plan.customer}] ` : ''}
                           {plan.productName || 'Chi tiết theo bản vẽ'}
                         </div>
                         {plan.opName && (
                           <div
-                            className={`text-[11px] truncate ${
-                              isCurrentSelected ? 'text-white/90 font-medium' : 'text-slate-600'
-                            }`}
+                            className={`text-[11px] truncate ${isCurrentSelected ? 'text-white/90 font-medium' : 'text-slate-600'
+                              }`}
                           >
                             {plan.opName}
                           </div>
                         )}
                         {plan.note && (
                           <div
-                            className={`mt-1 text-[10px] italic truncate ${
-                              isCurrentSelected ? 'text-white/80' : 'text-slate-500'
-                            }`}
+                            className={`mt-1 text-[10px] italic truncate ${isCurrentSelected ? 'text-white/80' : 'text-slate-500'
+                              }`}
                           >
                             📝 {plan.note}
                           </div>
@@ -2430,9 +2440,8 @@ export function WorkerPortal() {
                     <div className="flex shrink-0 items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700 border border-blue-200/80">
                       <span>{isCustomerDropdownOpen ? 'Thu gọn' : 'Chọn KH'}</span>
                       <ChevronDown
-                        className={`h-4 w-4 text-blue-600 transition-transform duration-200 ${
-                          isCustomerDropdownOpen ? 'rotate-180' : ''
-                        }`}
+                        className={`h-4 w-4 text-blue-600 transition-transform duration-200 ${isCustomerDropdownOpen ? 'rotate-180' : ''
+                          }`}
                       />
                     </div>
                   </button>
@@ -2463,22 +2472,20 @@ export function WorkerPortal() {
                           setIsCustomerDropdownOpen(false);
                           setActivePicker('PRODUCT');
                         }}
-                        className={`flex min-h-[44px] items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all text-left ${
-                          selectedCustomerFilter === 'ALL'
+                        className={`flex min-h-[44px] items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all text-left ${selectedCustomerFilter === 'ALL'
                             ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
                             : 'border border-slate-200 bg-white text-slate-800 hover:border-blue-300 hover:bg-blue-50'
-                        }`}
+                          }`}
                       >
                         <span className="flex items-center gap-1.5">
                           <Building2 className="h-3.5 w-3.5" />
                           <span>Tất cả khách hàng</span>
                         </span>
                         <span
-                          className={`rounded-full px-2 py-0.5 font-mono-num text-[11px] ${
-                            selectedCustomerFilter === 'ALL'
+                          className={`rounded-full px-2 py-0.5 font-mono-num text-[11px] ${selectedCustomerFilter === 'ALL'
                               ? 'bg-blue-800 text-white'
                               : 'bg-slate-100 text-slate-700'
-                          }`}
+                            }`}
                         >
                           {productsList.length} SP
                         </span>
@@ -2493,20 +2500,18 @@ export function WorkerPortal() {
                               handleQuickCustomerSelect(customer);
                               setIsCustomerDropdownOpen(false);
                             }}
-                            className={`flex min-h-[44px] items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all text-left ${
-                              isSelected
+                            className={`flex min-h-[44px] items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all text-left ${isSelected
                                 ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
                                 : 'border border-blue-200 bg-white text-blue-950 hover:border-blue-400 hover:bg-blue-100/70'
-                            }`}
+                              }`}
                           >
                             <span className="flex items-center gap-1.5 truncate pr-2">
                               <span className="shrink-0 text-sm">🏢</span>
                               <span className="truncate">{customer}</span>
                             </span>
                             <span
-                              className={`shrink-0 rounded-full px-2 py-0.5 font-mono-num text-[11px] font-black ${
-                                isSelected ? 'bg-blue-800 text-white' : 'bg-blue-100 text-blue-800'
-                              }`}
+                              className={`shrink-0 rounded-full px-2 py-0.5 font-mono-num text-[11px] font-black ${isSelected ? 'bg-blue-800 text-white' : 'bg-blue-100 text-blue-800'
+                                }`}
                             >
                               {count} SP
                             </span>
@@ -2575,8 +2580,8 @@ export function WorkerPortal() {
                       {selectedPo
                         ? `${selectedPo.poId} (${selectedPo.customer})`
                         : selectedPoId === 'PO-THEO-KH'
-                        ? `PO-THEO-KH (${selectedOp?.customer || selectedProduct?.customer || 'Vico - Nội bộ / Khách lẻ'})`
-                        : selectedPoId || 'PO-THEO-KH'}
+                          ? `PO-THEO-KH (${selectedOp?.customer || selectedProduct?.customer || 'Vico - Nội bộ / Khách lẻ'})`
+                          : selectedPoId || 'PO-THEO-KH'}
                     </div>
                   </div>
                   <ChevronRight className="h-5 w-5 shrink-0 text-slate-500" />
@@ -2614,11 +2619,10 @@ export function WorkerPortal() {
                           key={m}
                           type="button"
                           onClick={() => setMachineName(m)}
-                          className={`min-h-[26px] rounded-md px-2 text-[11px] font-bold transition-all shadow-2xs ${
-                            machineName === m
+                          className={`min-h-[26px] rounded-md px-2 text-[11px] font-bold transition-all shadow-2xs ${machineName === m
                               ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
                               : 'border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100'
-                          }`}
+                            }`}
                           title={`Chạm chọn nhanh ${m}`}
                         >
                           {machineName === m ? '✓ ' : ''}{m}
@@ -2692,11 +2696,10 @@ export function WorkerPortal() {
                       setMachineName(primaryPlanRow.machineName);
                     }
                   }}
-                  className={`flex min-h-[48px] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition-colors ${
-                    machineMode === 'FIRST'
+                  className={`flex min-h-[48px] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition-colors ${machineMode === 'FIRST'
                       ? 'border-emerald-400 bg-emerald-50 text-emerald-800 shadow-sm'
                       : 'border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   <Cpu className="h-4 w-4 shrink-0" />
                   <span className="truncate">Máy chính (100%)</span>
@@ -2709,11 +2712,10 @@ export function WorkerPortal() {
                       setMachineName(secondaryPlanRow.machineName);
                     }
                   }}
-                  className={`flex min-h-[48px] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition-colors ${
-                    machineMode === 'SECOND' || effectivePayroll.effectiveMachineMode === 'SECOND'
+                  className={`flex min-h-[48px] min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-xs font-extrabold transition-colors ${machineMode === 'SECOND' || effectivePayroll.effectiveMachineMode === 'SECOND'
                       ? 'border-violet-400 bg-violet-50 text-violet-800 shadow-sm'
                       : 'border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   <Layers className="h-4 w-4 shrink-0" />
                   <span className="truncate">Ghép máy 2 (0.33)</span>
@@ -2749,11 +2751,10 @@ export function WorkerPortal() {
                           appliedPlanRowKeyRef.current = '';
                           applyPlanRowSelection(primaryPlanRow, false);
                         }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                          machineName === primaryPlanRow.machineName
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${machineName === primaryPlanRow.machineName
                             ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
-                        }`}
+                          }`}
                       >
                         ⚙️ Máy chính: {primaryPlanRow.machineName}
                       </button>
@@ -2763,11 +2764,10 @@ export function WorkerPortal() {
                           appliedPlanRowKeyRef.current = '';
                           applyPlanRowSelection(secondaryPlanRow, false);
                         }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                          machineName === secondaryPlanRow.machineName
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${machineName === secondaryPlanRow.machineName
                             ? 'bg-violet-600 text-white shadow-xs'
                             : 'bg-white border border-violet-300 text-violet-800 hover:bg-violet-100'
-                        }`}
+                          }`}
                       >
                         ⭐ Máy phụ: {secondaryPlanRow.machineName} (+0.33)
                       </button>
@@ -2866,17 +2866,15 @@ export function WorkerPortal() {
                   role="checkbox"
                   aria-checked={selfCheckOk}
                   onClick={() => setSelfCheckOk((v) => !v)}
-                  className={`flex min-h-[52px] w-full min-w-0 items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
-                    selfCheckOk
+                  className={`flex min-h-[52px] w-full min-w-0 items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${selfCheckOk
                       ? 'border-emerald-300 bg-emerald-50/80 text-emerald-900'
                       : 'border-amber-300 bg-amber-50 text-amber-900'
-                  }`}
+                    }`}
                 >
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Star
-                      className={`h-5 w-5 shrink-0 ${
-                        selfCheckOk ? 'fill-amber-500 text-amber-500' : 'text-amber-600'
-                      }`}
+                      className={`h-5 w-5 shrink-0 ${selfCheckOk ? 'fill-amber-500 text-amber-500' : 'text-amber-600'
+                        }`}
                     />
                     <div className="min-w-0">
                       <div className="text-xs font-extrabold sm:text-sm">
@@ -2890,11 +2888,10 @@ export function WorkerPortal() {
                     </div>
                   </div>
                   <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border font-bold ${
-                      selfCheckOk
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border font-bold ${selfCheckOk
                         ? 'border-emerald-600 bg-emerald-600 text-white'
                         : 'border-amber-400 bg-white text-transparent'
-                    }`}
+                      }`}
                   >
                     ✓
                   </div>
@@ -2974,11 +2971,10 @@ export function WorkerPortal() {
                         key={preset.val}
                         type="button"
                         onClick={() => setOkQty(preset.val)}
-                        className={`min-h-[30px] rounded-lg px-2 text-[11px] font-mono-num font-bold transition-all shadow-xs ${
-                          okQty === preset.val
+                        className={`min-h-[30px] rounded-lg px-2 text-[11px] font-mono-num font-bold transition-all shadow-xs ${okQty === preset.val
                             ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
                             : 'border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100'
-                        }`}
+                          }`}
                         title={`Đặt sản lượng ca này = ${preset.val}`}
                       >
                         {preset.label}
@@ -3230,11 +3226,10 @@ export function WorkerPortal() {
                     <button
                       type="button"
                       onClick={() => setDefectType('Lỗi Phôi Đúc / Nguyên liệu')}
-                      className={`min-h-[50px] w-full rounded-xl border p-2.5 text-left text-xs transition-colors ${
-                        defectType.includes('Phôi')
+                      className={`min-h-[50px] w-full rounded-xl border p-2.5 text-left text-xs transition-colors ${defectType.includes('Phôi')
                           ? 'border-emerald-400 bg-emerald-50 text-emerald-900 shadow-sm'
                           : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       <div className="font-extrabold">
                         🪨 Lỗi Phôi Đúc / Rỗ Khí Nguyên Liệu (Khách quan)
@@ -3247,11 +3242,10 @@ export function WorkerPortal() {
                     <button
                       type="button"
                       onClick={() => setDefectType('Lỗi Chủ quan Cơ khí')}
-                      className={`min-h-[50px] w-full rounded-xl border p-2.5 text-left text-xs transition-colors ${
-                        !defectType.includes('Phôi')
+                      className={`min-h-[50px] w-full rounded-xl border p-2.5 text-left text-xs transition-colors ${!defectType.includes('Phôi')
                           ? 'border-rose-400 bg-rose-100/70 text-rose-900 shadow-sm'
                           : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       <div className="font-extrabold">
                         ⚠️ Lỗi Chủ Quan Gia Công Cơ Khí (Hụt dung sai / Gãy dao)
@@ -3404,11 +3398,10 @@ export function WorkerPortal() {
                               setStopReason('Chờ phôi / Chờ cẩu');
                             }
                           }}
-                          className={`font-mono-num min-h-[48px] rounded-xl border text-xs font-extrabold transition-colors ${
-                            stopMinutes === m
+                          className={`font-mono-num min-h-[48px] rounded-xl border text-xs font-extrabold transition-colors ${stopMinutes === m
                               ? 'border-amber-400 bg-amber-100 text-amber-900 shadow-sm'
                               : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           {m}p
                         </button>
@@ -3433,11 +3426,10 @@ export function WorkerPortal() {
                           key={r.value}
                           type="button"
                           onClick={() => setStopReason(r.value)}
-                          className={`flex min-h-[48px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors ${
-                            stopReason === r.value
+                          className={`flex min-h-[48px] w-full min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs transition-colors ${stopReason === r.value
                               ? 'border-blue-500 bg-blue-50/80 text-slate-900 shadow-sm'
                               : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900">{r.label}</div>
@@ -3510,11 +3502,10 @@ export function WorkerPortal() {
                             setStartTime(preset.startTime);
                             setEndTime(preset.endTime);
                           }}
-                          className={`flex min-h-[48px] min-w-0 flex-col items-start justify-center rounded-xl border px-3 py-1.5 text-left transition-colors ${
-                            shiftType === sh.value
+                          className={`flex min-h-[48px] min-w-0 flex-col items-start justify-center rounded-xl border px-3 py-1.5 text-left transition-colors ${shiftType === sh.value
                               ? 'border-blue-500 bg-blue-50 text-slate-900 shadow-sm'
                               : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                          }`}
+                            }`}
                         >
                           <span className="truncate text-xs font-extrabold">{sh.shortLabel}</span>
                           <span className="font-mono-num text-[11px] font-semibold text-blue-700">
@@ -3564,11 +3555,10 @@ export function WorkerPortal() {
                             key={ot}
                             type="button"
                             onClick={() => setOvertimeMinutes(ot)}
-                            className={`font-mono-num min-h-[48px] rounded-xl border text-xs font-extrabold transition-colors ${
-                              overtimeMinutes === ot
+                            className={`font-mono-num min-h-[48px] rounded-xl border text-xs font-extrabold transition-colors ${overtimeMinutes === ot
                                 ? 'border-blue-500 bg-blue-50 text-blue-800 shadow-sm'
                                 : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
                             {ot}p
                           </button>
@@ -3582,11 +3572,10 @@ export function WorkerPortal() {
                       role="switch"
                       aria-checked={isLightsOut}
                       onClick={() => setIsLightsOut((v) => !v)}
-                      className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
-                        isLightsOut
+                      className={`flex min-h-[52px] w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors ${isLightsOut
                           ? 'border-violet-400 bg-violet-50 text-violet-900 shadow-sm'
                           : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                      }`}
+                        }`}
                     >
                       <div className="flex min-w-0 items-center gap-2.5">
                         <Moon className="h-5 w-5 shrink-0 text-violet-600" />
@@ -3880,11 +3869,10 @@ export function WorkerPortal() {
                     key={f.id}
                     type="button"
                     onClick={() => setOrdersFilter(f.id)}
-                    className={`min-h-[48px] rounded-xl border px-2 text-xs font-extrabold transition-colors ${
-                      ordersFilter === f.id
+                    className={`min-h-[48px] rounded-xl border px-2 text-xs font-extrabold transition-colors ${ordersFilter === f.id
                         ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
                         : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     {f.label}
                   </button>
@@ -4140,18 +4128,16 @@ export function WorkerPortal() {
                       <button
                         type="button"
                         onClick={() => setLogViewMode('MY')}
-                        className={`rounded-md px-2 py-0.5 transition-colors ${
-                          logViewMode === 'MY' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`rounded-md px-2 py-0.5 transition-colors ${logViewMode === 'MY' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         Của tôi
                       </button>
                       <button
                         type="button"
                         onClick={() => setLogViewMode('ALL')}
-                        className={`rounded-md px-2 py-0.5 transition-colors ${
-                          logViewMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className={`rounded-md px-2 py-0.5 transition-colors ${logViewMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                          }`}
                       >
                         Toàn xưởng
                       </button>
@@ -4240,15 +4226,27 @@ export function WorkerPortal() {
                             return `${r.toFixed(2).replace(/\.?0+$/, '')}%`;
                           };
 
-                          // Nhóm theo từng máy trong ca làm việc:
+                          // Nhóm theo từng máy & toàn ca:
                           const mName = (log.machineName || '').trim();
-                          const mKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}_${mName}`;
+                          const sKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}`;
+                          const mKey = `${sKey}_${mName}`;
+
                           const mStats = machineAggregatedKpiMap.get(mKey);
+                          const sStats = shiftAggregatedKpiMap.get(sKey);
+
                           const mNetSec = Math.max(1, 28800 - (mStats?.totalStopMin || 0) * 60);
+                          const sNetSec = Math.max(1, 28800 - (sStats?.totalStopMin || 0) * 60);
+
                           const mTotalKpi = mStats
                             ? Math.round((mStats.totalEarnedSec / mNetSec) * 10000) / 100
                             : actualKpi;
+                          const sTotalKpi = sStats
+                            ? Math.round((sStats.totalEarnedSec / sNetSec) * 10000) / 100
+                            : actualKpi;
+
                           const hasMultiJobsOnMachine = mStats && mStats.logsCount > 1;
+                          const hasMultiMachinesInShift = sStats && sStats.machinesCount > 1;
+                          const isSecondMach = log.machineMode === 'SECOND';
 
                           let displayStatus = log.kpiStatus;
                           let isCritical = false;
@@ -4261,7 +4259,7 @@ export function WorkerPortal() {
                             displayStatus = '🚨 0% ĐM';
                             isCritical = true;
                           } else if (hasMultiJobsOnMachine) {
-                            // Nhiều mã cùng chạy trên 1 máy: tính tổng % định mức máy đó
+                            // Trường hợp 1: Nhiều mã trên cùng 1 máy (như Thắng làm 3 mã tấm lót trên OKK1):
                             if (mTotalKpi >= 100) {
                               displayStatus = `✅ Máy đạt ${fmtPct(mTotalKpi)} ĐM (Mã này: ${fmtPct(actualKpi)})`;
                             } else if (mTotalKpi < 50 && (mStats?.totalStopMin || 0) === 0) {
@@ -4271,18 +4269,33 @@ export function WorkerPortal() {
                               displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(mTotalKpi)} < 100%) · Mã này: ${fmtPct(actualKpi)}`;
                               isWarning = true;
                             }
-                          } else {
-                            // 1 mã trên máy (hoặc máy phụ / máy đơn):
-                            const isSecondMach = log.machineMode === 'SECOND';
-                            const prefix = isSecondMach ? 'Máy phụ' : 'Máy';
-
+                          } else if (isSecondMach) {
+                            // Trường hợp 2: Máy phụ độc lập (như OKK3 làm NC603 10 cái -> 83.33%):
                             if (actualKpi >= 100) {
-                              displayStatus = `✅ ${prefix} đạt ${fmtPct(actualKpi)} ĐM`;
+                              displayStatus = `✅ Máy phụ đạt ${fmtPct(actualKpi)} ĐM`;
                             } else if (actualKpi < 50 && stopMin === 0) {
-                              displayStatus = `🚨 ${prefix} rất thấp (${fmtPct(actualKpi)} ĐM)`;
+                              displayStatus = `🚨 Máy phụ rất thấp (${fmtPct(actualKpi)} ĐM)`;
                               isCritical = true;
                             } else {
-                              displayStatus = `⚠️ ${prefix} đạt ${fmtPct(actualKpi)} ĐM`;
+                              displayStatus = `⚠️ Máy phụ đạt ${fmtPct(actualKpi)} ĐM`;
+                              isWarning = true;
+                            }
+                          } else if (hasMultiMachinesInShift && mTotalKpi < 100 && sTotalKpi >= 100) {
+                            // Trường hợp 3: Ghép 2 máy chính (1 máy 40% + 1 máy 60% = 100% ca gộp):
+                            displayStatus = `✅ Ca gộp đạt ${fmtPct(sTotalKpi)} ĐM (Máy này: ${fmtPct(mTotalKpi)})`;
+                          } else if (hasMultiMachinesInShift && sTotalKpi < 100) {
+                            // Trường hợp 4: Ghép máy nhưng tổng ca chưa đạt 100%:
+                            displayStatus = `⚠️ Ca chưa đạt ĐM (${fmtPct(sTotalKpi)} < 100%) · Máy này: ${fmtPct(mTotalKpi)}`;
+                            isWarning = true;
+                          } else {
+                            // Trường hợp 5: Máy đơn bình thường 1 mã:
+                            if (actualKpi >= 100) {
+                              displayStatus = `✅ Máy đạt ${fmtPct(actualKpi)} ĐM`;
+                            } else if (actualKpi < 50 && stopMin === 0) {
+                              displayStatus = `🚨 Máy rất thấp (${fmtPct(actualKpi)} ĐM)`;
+                              isCritical = true;
+                            } else {
+                              displayStatus = `⚠️ Máy chưa đạt ĐM (${fmtPct(actualKpi)} < 100%)`;
                               isWarning = true;
                             }
                           }
@@ -4300,7 +4313,11 @@ export function WorkerPortal() {
                               ) : (
                                 <Badge
                                   variant={
-                                    (hasMultiJobsOnMachine ? mTotalKpi >= 100 : actualKpi >= 100)
+                                    (hasMultiJobsOnMachine
+                                      ? mTotalKpi >= 100
+                                      : hasMultiMachinesInShift
+                                        ? sTotalKpi >= 100
+                                        : actualKpi >= 100)
                                       ? 'success'
                                       : 'info'
                                   }
@@ -4340,12 +4357,12 @@ export function WorkerPortal() {
                                 log.okQty && log.income
                                   ? Math.round(log.income / log.okQty)
                                   : Math.round(
-                                      (Number(
-                                        operationsList.find((o) => o.ncId === log.ncId)?.stdSeconds ??
-                                          log.stdSeconds ??
-                                          0
-                                      )) * (user?.costPerSec || 13.37)
-                                    )
+                                    (Number(
+                                      operationsList.find((o) => o.ncId === log.ncId)?.stdSeconds ??
+                                      log.stdSeconds ??
+                                      0
+                                    )) * (user?.costPerSec || 13.37)
+                                  )
                               )}
                               /SP
                             </span>
@@ -4422,11 +4439,10 @@ export function WorkerPortal() {
           <button
             type="button"
             onClick={() => setActiveTab('REPORT')}
-            className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${
-              activeTab === 'REPORT'
+            className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${activeTab === 'REPORT'
                 ? 'bg-blue-50 font-extrabold text-blue-700'
                 : 'font-bold text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <CheckCircle2 className="h-5 w-5" />
             <span className="truncate">⚡ Báo Cáo SX</span>
@@ -4435,11 +4451,10 @@ export function WorkerPortal() {
           <button
             type="button"
             onClick={() => setActiveTab('ORDERS_FAI')}
-            className={`relative flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${
-              activeTab === 'ORDERS_FAI'
+            className={`relative flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${activeTab === 'ORDERS_FAI'
                 ? 'bg-blue-50 font-extrabold text-blue-700'
                 : 'font-bold text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <ClipboardCheck className="h-5 w-5" />
             <span className="truncate">📋 Lệnh SX &amp; FAI</span>
@@ -4453,11 +4468,10 @@ export function WorkerPortal() {
           <button
             type="button"
             onClick={() => setActiveTab('SALARY_HISTORY')}
-            className={`relative flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${
-              activeTab === 'SALARY_HISTORY'
+            className={`relative flex min-h-[48px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${activeTab === 'SALARY_HISTORY'
                 ? 'bg-blue-50 font-extrabold text-blue-700'
                 : 'font-bold text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <Coins className="h-5 w-5" />
             <span className="truncate">💰 Lương &amp; Cá Nhân</span>
@@ -4560,7 +4574,7 @@ export function WorkerPortal() {
               ...prev,
               recentLogs: prev.recentLogs.map((l) =>
                 String(l.id) === String(updatedLog.id) ||
-                (Boolean(l.recordUid) && Boolean(updatedLog.recordUid) && l.recordUid === updatedLog.recordUid)
+                  (Boolean(l.recordUid) && Boolean(updatedLog.recordUid) && l.recordUid === updatedLog.recordUid)
                   ? { ...l, ...updatedLog }
                   : l
               ),
