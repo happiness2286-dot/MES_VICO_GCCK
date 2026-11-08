@@ -199,9 +199,8 @@ export async function fetchLogsFromSupabase(): Promise<ProductionLogDto[] | null
     const { data, error } = await sb
       .from('production_logs')
       .select('*')
-      .neq('is_voided', 1)
       .order('id', { ascending: false })
-      .limit(200);
+      .limit(250);
 
     if (error || !data) return null;
 

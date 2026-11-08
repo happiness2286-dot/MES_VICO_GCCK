@@ -31,7 +31,7 @@ import type {
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover, getFallbackTraceability, saveClientStoredLog, updateFallbackLog, deleteFallbackLog } from '@client/lib/clientFallbackStore';
+import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover, getFallbackTraceability, saveClientStoredLog, syncClientStoredLogsWithCloud, updateFallbackLog, deleteFallbackLog } from '@client/lib/clientFallbackStore';
 import { buildConsolidatedQcList } from '@client/lib/qcLogHelper';
 import { downloadDailyLogsExcel } from '@client/lib/excelService';
 import { deleteAllLogsFromSupabase, fetchLogsFromSupabase, subscribeSupabaseLogChanges, updateLogOnSupabase } from '@client/lib/supabaseClient';
@@ -212,10 +212,14 @@ export function LogsQcTraceTab({
         sbLogs = null;
       }
 
+      if (sbLogs && sbLogs.length > 0) {
+        syncClientStoredLogsWithCloud(sbLogs);
+      }
+
       // 3. Fallback client stored logs (from offline/phone storage)
       const localFallbackLogs = getAllFallbackLogs();
 
-      // 4. Merge all sources, deduplicating by recordUid or id, newest first
+      // 4. Merge all sources, deduplicating by recordUid or id, newest first (Supabase Cloud is authoritative over stale local storage)
       const mergedMap = new Map<string, ProductionLogDto>();
 
       if (bootstrap?.recentLogs) {
@@ -231,16 +235,16 @@ export function LogsQcTraceTab({
         mergedMap.set(key, l);
       }
 
+      for (const l of serverLogs) {
+        if (!l || (!l.workerName && !l.workerId)) continue;
+        mergedMap.set(l.recordUid || String(l.id), l);
+      }
+
       if (sbLogs && sbLogs.length > 0) {
         for (const l of sbLogs) {
           if (!l || (!l.workerName && !l.workerId)) continue;
           mergedMap.set(l.recordUid || String(l.id), l);
         }
-      }
-
-      for (const l of serverLogs) {
-        if (!l || (!l.workerName && !l.workerId)) continue;
-        mergedMap.set(l.recordUid || String(l.id), l);
       }
 
       const finalList = Array.from(mergedMap.values()).sort((a, b) => {
@@ -260,10 +264,10 @@ export function LogsQcTraceTab({
       setLogs((current) => {
         if (current.length === 0) return bootstrap.recentLogs;
         const map = new Map<string, ProductionLogDto>();
-        for (const l of bootstrap.recentLogs) {
+        for (const l of current) {
           map.set(l.recordUid || String(l.id), l);
         }
-        for (const l of current) {
+        for (const l of bootstrap.recentLogs) {
           map.set(l.recordUid || String(l.id), l);
         }
         return Array.from(map.values()).sort((a, b) => {
@@ -810,8 +814,9 @@ const HANDOVER_RECEIVER_OPTIONS = [
     for (const l of logs) {
       if (l.isVoided) continue;
       const mName = (l.machineName || '').trim();
+      const isSecond = l.machineMode === 'SECOND';
       const sKey = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
-      const mKey = `${sKey}_${mName}`;
+      const mKey = `${sKey}_${mName}_${isSecond ? 'SECOND' : 'FIRST'}`;
 
       const ok = Number(l.okQty || 0);
       const rework = Number(l.reworkQty || 0);
@@ -820,7 +825,6 @@ const HANDOVER_RECEIVER_OPTIONS = [
       const stdSec = Number(l.stdSeconds || 1800);
       const totalMachined = ok + rework + scrap;
       const earnedSec = totalMachined * stdSec;
-      const isSecond = l.machineMode === 'SECOND';
 
       if (!mM.has(mKey)) {
         mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, isSecondMach: isSecond, sKey, mName });
@@ -1521,8 +1525,9 @@ const HANDOVER_RECEIVER_OPTIONS = [
 
                       // Phân bổ định mức theo từng máy & ca gộp (chỉ ghép các máy chính chưa đủ 100%)
                       const mName = (l.machineName || '').trim();
+                      const isSecondMach = l.machineMode === 'SECOND';
                       const sKey = `${l.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
-                      const mKey = `${sKey}_${mName}`;
+                      const mKey = `${sKey}_${mName}_${isSecondMach ? 'SECOND' : 'FIRST'}`;
 
                       const mStats = machineAggregatedKpiMap.get(mKey);
                       const sStats = shiftAggregatedKpiMap.get(sKey);
@@ -1538,7 +1543,6 @@ const HANDOVER_RECEIVER_OPTIONS = [
                         : realKpi;
 
                       const hasMultiJobsOnMachine = Boolean(mStats && mStats.logsCount > 1);
-                      const isSecondMach = l.machineMode === 'SECOND';
                       const canCombineMainShift = Boolean(
                         !isSecondMach &&
                           sStats &&

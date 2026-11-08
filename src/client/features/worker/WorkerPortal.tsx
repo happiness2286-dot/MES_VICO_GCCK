@@ -81,6 +81,7 @@ import {
 } from '../../lib/supabaseClient';
 import {
   saveClientStoredLog,
+  syncClientStoredLogsWithCloud,
   getAllFallbackLogs,
   getFallbackDailyPlan,
   saveFallbackDailyPlan,
@@ -679,9 +680,7 @@ export function WorkerPortal() {
             const sbLogs = await fetchLogsFromSupabase();
             if (sbLogs && sbLogs.length > 0) {
               cloudLogs = sbLogs;
-              for (const l of sbLogs) {
-                saveClientStoredLog(l);
-              }
+              syncClientStoredLogsWithCloud(sbLogs);
             }
           } catch (sbErr) {
             console.warn('Supabase fetch logs error in WorkerPortal:', sbErr);
@@ -696,7 +695,13 @@ export function WorkerPortal() {
           if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
         }
         for (const l of cloudLogs) {
-          if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
+          if (!l || (!l.workerName && !l.workerId)) continue;
+          const key = l.recordUid || String(l.id);
+          if (l.isVoided === 1) {
+            mergedMap.delete(key);
+          } else {
+            mergedMap.set(key, l);
+          }
         }
         const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
           const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
@@ -708,7 +713,7 @@ export function WorkerPortal() {
 
         // Recalculate todayAccumulated for active user from mergedList so edits/voids are immediately reflected
         if (user?.workerId) {
-          const targetDate = data.vietnamToday || getShiftProductionWorkDate(new Date());
+          const targetDate = getShiftProductionWorkDate(new Date());
           let userTodaySum = 0;
           for (const l of mergedList) {
             if (l.workerId === user.workerId && !l.isVoided) {
@@ -745,7 +750,7 @@ export function WorkerPortal() {
         // ONLY initialize form selections on the very first fresh load, NEVER during background polling (silent)
         if (!silent && !initializedSelectionRef.current && data.operations.length > 0) {
           initializedSelectionRef.current = true;
-          if (data.vietnamToday) setWorkDate(data.vietnamToday);
+          setWorkDate(getShiftProductionWorkDate(new Date()));
 
           // Check URL ?qr=... first
           const urlQr =
@@ -1018,9 +1023,9 @@ export function WorkerPortal() {
       const targetProdName = op.productName || selectedProduct?.productName || selectedPo?.productName;
       const prefMachines = getWinWinPreferredMachines(targetProdName);
       if (prefMachines.length > 0) {
-        setMachineName((cur) => (prefMachines.includes(cur) ? cur : prefMachines[0]));
+        setMachineName((cur) => (cur ? cur : prefMachines[0]));
       } else if (op.defaultMachine) {
-        setMachineName(op.defaultMachine);
+        setMachineName((cur) => (cur ? cur : op.defaultMachine));
       }
       if (op.toolCode) setToolCode(op.toolCode);
       setToolEdgesState(
@@ -1041,7 +1046,7 @@ export function WorkerPortal() {
       if (po.materialLot) setMaterialLot(po.materialLot);
       const prefMachines = getWinWinPreferredMachines(po.productName);
       if (prefMachines.length > 0) {
-        setMachineName((cur) => (prefMachines.includes(cur) ? cur : prefMachines[0]));
+        setMachineName((cur) => (cur ? cur : prefMachines[0]));
       }
       const poOps = po.spId
         ? operationsList
@@ -2061,8 +2066,9 @@ export function WorkerPortal() {
     for (const l of myRecentLogs) {
       if (l.isVoided === 1) continue;
       const mName = (l.machineName || '').trim();
+      const isSecond = l.machineMode === 'SECOND';
       const sKey = `${l.workerId || user?.workerId}_${l.workDate || 'today'}_${(l.shiftType || 'ca').slice(0, 4)}`;
-      const mKey = `${sKey}_${mName}`;
+      const mKey = `${sKey}_${mName}_${isSecond ? 'SECOND' : 'FIRST'}`;
 
       const ok = Number(l.okQty || 0);
       const rework = Number(l.reworkQty || 0);
@@ -2071,7 +2077,6 @@ export function WorkerPortal() {
       const stdSec = Number(l.stdSeconds || 1800);
       const totalMachined = ok + rework + scrap;
       const earnedSec = totalMachined * stdSec;
-      const isSecond = l.machineMode === 'SECOND';
 
       if (!mM.has(mKey)) {
         mM.set(mKey, { totalEarnedSec: 0, totalStopMin: 0, logsCount: 0, isSecondMach: isSecond, sKey, mName });
@@ -4249,8 +4254,9 @@ export function WorkerPortal() {
                               : '';
 
                           const mName = (log.machineName || '').trim();
+                          const isSecondMach = log.machineMode === 'SECOND';
                           const sKey = `${log.workerId || user?.workerId}_${log.workDate || 'today'}_${(log.shiftType || 'ca').slice(0, 4)}`;
-                          const mKey = `${sKey}_${mName}`;
+                          const mKey = `${sKey}_${mName}_${isSecondMach ? 'SECOND' : 'FIRST'}`;
 
                           const mStats = machineAggregatedKpiMap.get(mKey);
                           const sStats = shiftAggregatedKpiMap.get(sKey);
@@ -4266,7 +4272,6 @@ export function WorkerPortal() {
                             : actualKpi;
 
                           const hasMultiJobsOnMachine = Boolean(mStats && mStats.logsCount > 1);
-                          const isSecondMach = log.machineMode === 'SECOND';
                           const canCombineMainShift = Boolean(
                             !isSecondMach &&
                               sStats &&

@@ -27,7 +27,7 @@ import {
 import type { BootstrapPayload } from '@shared/types';
 import { matchesSearch } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
-import { getFallbackBootstrap, saveClientStoredLog, getAllFallbackLogs } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, saveClientStoredLog, syncClientStoredLogsWithCloud, getAllFallbackLogs } from '@client/lib/clientFallbackStore';
 import { isSupabaseConnected, fetchLogsFromSupabase, subscribeSupabaseLogChanges } from '@client/lib/supabaseClient';
 import { formatDateVn, formatNumber } from '@client/lib/formatters';
 import { navigateTo } from '@client/lib/navigation';
@@ -136,9 +136,7 @@ export function AdminPortal() {
           try {
             const sbLogs = await fetchLogsFromSupabase();
             if (sbLogs && sbLogs.length > 0) {
-              for (const l of sbLogs) {
-                saveClientStoredLog(l);
-              }
+              syncClientStoredLogsWithCloud(sbLogs);
               const mergedMap = new Map<string, any>();
               for (const l of (data.recentLogs || [])) {
                 if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
@@ -147,7 +145,13 @@ export function AdminPortal() {
                 if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
               }
               for (const l of sbLogs) {
-                if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
+                if (!l || (!l.workerName && !l.workerId)) continue;
+                const key = l.recordUid || String(l.id);
+                if (l.isVoided === 1) {
+                  mergedMap.delete(key);
+                } else {
+                  mergedMap.set(key, l);
+                }
               }
               data.recentLogs = Array.from(mergedMap.values()).sort((a, b) => {
                 const tA = new Date(a.createdAt || a.workDate).getTime() || 0;

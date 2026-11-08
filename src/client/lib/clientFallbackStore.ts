@@ -1104,6 +1104,39 @@ export function saveClientStoredLog(log: any): void {
   }
 }
 
+export function syncClientStoredLogsWithCloud(cloudLogs: any[]): void {
+  try {
+    if (typeof window === 'undefined' || !Array.isArray(cloudLogs) || cloudLogs.length === 0) return;
+    const existing = getClientStoredLogs();
+    const cloudMap = new Map<string, any>();
+    for (const c of cloudLogs) {
+      if (!c || (!c.workerName && !c.workerId)) continue;
+      const key = String(c.recordUid || c.id);
+      cloudMap.set(key, c);
+    }
+    // Preserve only very recent offline logs (< 2 mins old) not yet in cloud
+    const nowMs = Date.now();
+    for (const loc of existing) {
+      if (!loc || (!loc.workerName && !loc.workerId)) continue;
+      const key = String(loc.recordUid || loc.id);
+      if (!cloudMap.has(key)) {
+        const createdMs = new Date(loc.createdAt || 0).getTime() || 0;
+        if (nowMs - createdMs < 120000 && loc.isVoided !== 1) {
+          cloudMap.set(key, loc);
+        }
+      }
+    }
+    const merged = Array.from(cloudMap.values()).sort((a, b) => {
+      const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+      const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+      return tB - tA;
+    });
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(merged.slice(0, 250)));
+  } catch {
+    // ignore
+  }
+}
+
 export function updateFallbackLog(id: string | number, patch: any): void {
   try {
     const existing = getClientStoredLogs();
