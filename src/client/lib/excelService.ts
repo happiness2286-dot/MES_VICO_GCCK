@@ -10,6 +10,7 @@ import type {
 } from '@shared/types';
 import { normalizeVn } from '@shared/vnSearch';
 import { VICO_LOGO_BASE64 } from '../components/VicoLogo';
+import { sortDailyPlanRows } from './baselinePlan';
 
 async function createExcelWorkbook(): Promise<ExcelJS.Workbook> {
   const mod = await import('exceljs');
@@ -101,18 +102,18 @@ function appendSafeRow(
     }
 
     if (options.isHeader) {
-      cell.font = { bold: true, color: { argb: 'FFF8FAFC' }, size: 10 };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF0F172A' },
+        fgColor: { argb: 'FF00B050' },
       };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FF334155' } },
-        left: { style: 'thin', color: { argb: 'FF334155' } },
-        bottom: { style: 'thin', color: { argb: 'FF38BDF8' } },
-        right: { style: 'thin', color: { argb: 'FF334155' } },
+        top: { style: 'thin', color: { argb: 'FF008037' } },
+        left: { style: 'thin', color: { argb: 'FF008037' } },
+        bottom: { style: 'thin', color: { argb: 'FF008037' } },
+        right: { style: 'thin', color: { argb: 'FF008037' } },
       };
     }
   });
@@ -441,77 +442,249 @@ export async function buildDailyScheduleWorkbook(
   const wb = await createExcelWorkbook();
   wb.creator = 'GCCK Thắng Lợi Lean MES';
   const ws = wb.addWorksheet('KE_HOACH_NGAY', {
-    views: [{ state: 'frozen', ySplit: 4 }],
+    views: [{ state: 'frozen', ySplit: 3 }],
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation: 'landscape',
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: {
+        left: 0.25,
+        right: 0.25,
+        top: 0.3,
+        bottom: 0.3,
+        header: 0.15,
+        footer: 0.15,
+      },
+    },
   });
 
-  // Title rows
-  const [y, m, d] = workDate.split('-');
-  const displayDate = d && m && y ? `${d}/${m}/${y}` : workDate;
-
-  const r1 = ws.addRow(['CÔNG TY CỔ PHẦN CƠ KHÍ CHÍNH XÁC THẮNG LỢI (VICO)']);
-  r1.font = { bold: true, size: 12, color: { argb: 'FF1E3A8A' } };
-
-  const r2 = ws.addRow([`KẾ HOẠCH SẢN XUẤT NGÀY ${displayDate} (FORM VICO GCCK.QT.01.BM01)`]);
-  r2.font = { bold: true, size: 13, color: { argb: 'FF0F172A' } };
-
-  ws.addRow([]); // Blank spacer
-
-  appendSafeRow(
-    ws,
-    [
-      'STT',
-      'Ca Làm Việc',
-      'Người Thực Hiện (Thợ)',
-      'Khách Hàng',
-      'Tên Sản Phẩm / Bản Vẽ',
-      'Công Đoạn / Nguyên Công',
-      'Số Lượng Kế Hoạch',
-      'Máy Thực Hiện',
-      'Số Lượng Thực Tế',
-      'Ghi Chú',
-    ],
-    { isHeader: true }
-  );
-
-  let stt = 1;
-  rows.forEach((r) => {
-    appendSafeRow(ws, [
-      r.stt || stt++,
-      r.shiftType || 'Ca 2',
-      r.workerName,
-      r.customer,
-      r.productName,
-      r.opName,
-      r.plannedQty || 0,
-      r.machineName,
-      r.actualQty || 0,
-      r.note || '',
-    ]);
-  });
-
-  const totalPlanned = rows.reduce((sum, r) => sum + Number(r.plannedQty || 0), 0);
-  const totalActual = rows.reduce((sum, r) => sum + Number(r.actualQty || 0), 0);
-
-  const sumRow = appendSafeRow(ws, [
-    'TỔNG CỘNG',
-    '',
-    '',
-    '',
-    '',
-    '',
-    totalPlanned,
-    '',
-    totalActual,
-    '',
-  ]);
-  sumRow.font = { bold: true };
-  sumRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFF1F5F9' },
+  const thinBlackBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF000000' } },
+    left: { style: 'thin', color: { argb: 'FF000000' } },
+    bottom: { style: 'thin', color: { argb: 'FF000000' } },
+    right: { style: 'thin', color: { argb: 'FF000000' } },
   };
 
-  autoFitColumns(ws, 8, 38);
+  // Format date matching user's form (e.g. NGÀY 7/10/2026)
+  const [y, m, d] = (workDate || '').split('-');
+  const displayDate =
+    d && m && y ? `${Number(d) || d}/${Number(m) || m}/${y}` : workDate;
+
+  // Row 1 & Row 2: Top Form Header (Logo VICO left, KẾ HOẠCH SẢN XUẤT NGÀY center, NGÀY + GCCK.QT.01.BM01 right)
+  const r1 = ws.getRow(1);
+  const r2 = ws.getRow(2);
+  r1.height = 20;
+  r2.height = 22;
+
+  try {
+    const logoId = wb.addImage({
+      base64: VICO_LOGO_BASE64,
+      extension: 'png',
+    });
+    ws.addImage(logoId, {
+      tl: { col: 0.15, row: 0.12 } as any,
+      ext: { width: 120, height: 42 },
+    });
+  } catch {
+    ws.mergeCells('A1:B2');
+    const logoCell = ws.getCell('A1');
+    logoCell.value = 'VICO';
+    logoCell.font = { name: 'Arial', bold: true, size: 16, color: { argb: 'FF1E3A8A' } };
+    logoCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  }
+
+  ws.mergeCells('C1:H2');
+  const titleCell = ws.getCell('C1');
+  titleCell.value = 'KẾ HOẠCH SẢN XUẤT NGÀY';
+  titleCell.font = { name: 'Arial', bold: true, size: 16, color: { argb: 'FF000000' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  const dateBox = ws.getCell('I2');
+  dateBox.value = `NGÀY ${displayDate}`;
+  dateBox.font = {
+    name: 'Times New Roman',
+    bold: true,
+    italic: true,
+    size: 10,
+    color: { argb: 'FF000000' },
+  };
+  dateBox.alignment = { vertical: 'middle', horizontal: 'center' };
+  dateBox.border = thinBlackBorder;
+
+  const codeBox = ws.getCell('J2');
+  codeBox.value = 'GCCK.QT.01.BM01';
+  codeBox.font = {
+    name: 'Times New Roman',
+    bold: true,
+    size: 10,
+    color: { argb: 'FF000000' },
+  };
+  codeBox.alignment = { vertical: 'middle', horizontal: 'center' };
+  codeBox.border = thinBlackBorder;
+
+  // Row 3: Green Table Header Bar (#00B050)
+  const headers = [
+    'STT',
+    'Ca Làm Việc',
+    'Người Thực Hiện (Thợ)',
+    'Khách Hàng',
+    'Tên Sản Phẩm / Bản Vẽ',
+    'Công Đoạn / Nguyên Công',
+    'Số Lượng Kế Hoạch',
+    'Máy Thực Hiện',
+    'Số Lượng Thực Tế',
+    'Ghi Chú',
+  ];
+  const headerRow = ws.getRow(3);
+  headerRow.height = 26;
+  headers.forEach((hText, idx) => {
+    const cell = headerRow.getCell(idx + 1);
+    cell.value = hText;
+    cell.font = { name: 'Arial', bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF00B050' }, // Bright green matching user's template
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = thinBlackBorder;
+  });
+
+  // Sort rows sequentially: Ca 1 -> Ca 2 -> Ca 3, grouped contiguously by worker within each shift
+  const sortedRows = sortDailyPlanRows(rows);
+
+  const startDataRow = 4;
+  sortedRows.forEach((r, idx) => {
+    const rowNum = startDataRow + idx;
+    const xlRow = ws.getRow(rowNum);
+    xlRow.height = 24;
+
+    const noteStr = String(r.note || 'Máy chính');
+    const isSecondaryMachine = /ghép|0\.33|máy phụ/i.test(noteStr);
+
+    const rowValues: Array<string | number> = [
+      idx + 1,
+      r.shiftType || 'Ca 1',
+      r.workerName || '',
+      String(sanitizeForExcel(r.customer || '')),
+      String(sanitizeForExcel(r.productName || '')),
+      String(sanitizeForExcel(r.opName || '')),
+      Number(r.plannedQty || 0),
+      String(sanitizeForExcel(r.machineName || '')),
+      Number(r.actualQty || 0),
+      String(sanitizeForExcel(noteStr)),
+    ];
+
+    // Two soft, easy-on-the-eyes pastel palettes for Máy chính vs Máy phụ (Ghép 2 máy +0.33)
+    // - Máy chính: Soft sky-blue / mint pastel (Row D..G,I: #F0F9FF, Machine H & Note J: #DFF2FE, text #075985)
+    // - Máy phụ:   Soft warm cream / amber pastel (Row D..G,I: #FFFBEB, Machine H & Note J: #FEF3C7, text #92400E)
+    const detailRowFillArgb = isSecondaryMachine ? 'FFFFFBEB' : 'FFF0F9FF';
+    const machineAccentFillArgb = isSecondaryMachine ? 'FFFEF3C7' : 'FFDFF2FE';
+    const machineAccentTextArgb = isSecondaryMachine ? 'FF92400E' : 'FF075985';
+
+    rowValues.forEach((val, colIdx) => {
+      const colNum = colIdx + 1;
+      const cell = xlRow.getCell(colNum);
+      cell.value = val;
+      cell.border = thinBlackBorder;
+
+      if (colNum === 1) {
+        // STT
+        cell.font = { name: 'Arial', size: 10, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      } else if (colNum === 2) {
+        // Ca Làm Việc (merged vertically later)
+        cell.font = { name: 'Arial', bold: false, size: 10, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      } else if (colNum === 3) {
+        // Người Thực Hiện (Thợ) (merged vertically later)
+        cell.font = { name: 'Arial', bold: false, size: 10, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      } else if (colNum === 7 || colNum === 9) {
+        // Số Lượng Kế Hoạch (7) & Số Lượng Thực Tế (9)
+        cell.numFmt = '0.##';
+        cell.font = { name: 'Arial', size: 10, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: detailRowFillArgb },
+        };
+      } else if (colNum === 8 || colNum === 10) {
+        // Máy Thực Hiện (8) & Ghi Chú (10) -> Highlighted with soft pastel color for Máy chính vs Máy phụ
+        cell.font = {
+          name: 'Arial',
+          bold: colNum === 10,
+          size: 10,
+          color: { argb: machineAccentTextArgb },
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: machineAccentFillArgb },
+        };
+      } else {
+        // Khách Hàng (4), Tên Sản Phẩm (5), Công Đoạn (6)
+        cell.font = { name: 'Arial', size: 10, color: { argb: 'FF000000' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: detailRowFillArgb },
+        };
+      }
+    });
+  });
+
+  // Merge Column B (Ca Làm Việc) vertically across contiguous rows of each shift
+  if (sortedRows.length > 0) {
+    let shiftStartIdx = 0;
+    for (let i = 1; i <= sortedRows.length; i++) {
+      const prevShift = sortedRows[shiftStartIdx]?.shiftType || 'Ca 1';
+      const curShift = i < sortedRows.length ? sortedRows[i]?.shiftType || 'Ca 1' : null;
+      if (curShift !== prevShift) {
+        const startRow = startDataRow + shiftStartIdx;
+        const endRow = startDataRow + i - 1;
+        if (endRow > startRow) {
+          ws.mergeCells(startRow, 2, endRow, 2);
+        }
+        const mergedShiftCell = ws.getCell(startRow, 2);
+        mergedShiftCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        shiftStartIdx = i;
+      }
+    }
+
+    // Merge Column C (Người Thực Hiện (Thợ)) vertically across contiguous rows of same worker within same shift
+    let workerStartIdx = 0;
+    for (let i = 1; i <= sortedRows.length; i++) {
+      const prevRow = sortedRows[workerStartIdx];
+      const curRow = i < sortedRows.length ? sortedRows[i] : null;
+      const sameGroup =
+        curRow &&
+        (curRow.shiftType || 'Ca 1') === (prevRow.shiftType || 'Ca 1') &&
+        (curRow.workerName || '').trim() === (prevRow.workerName || '').trim();
+      if (!sameGroup) {
+        const startRow = startDataRow + workerStartIdx;
+        const endRow = startDataRow + i - 1;
+        if (endRow > startRow) {
+          ws.mergeCells(startRow, 3, endRow, 3);
+        }
+        const mergedWorkerCell = ws.getCell(startRow, 3);
+        mergedWorkerCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        workerStartIdx = i;
+      }
+    }
+  }
+
+  // Exact column widths matching form GCCK.QT.01.BM01
+  const colWidths = [6, 13, 22, 25, 34, 30, 18, 25, 17, 22];
+  colWidths.forEach((w, idx) => {
+    ws.getColumn(idx + 1).width = w;
+  });
+
   return workbookToBytes(wb);
 }
 

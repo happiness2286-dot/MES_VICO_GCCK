@@ -53,7 +53,7 @@ import {
   Modal,
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
-import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from '@client/lib/clientFallbackStore';
+import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows } from '@client/lib/clientFallbackStore';
 import {
   isSupabaseConnected,
   pushDailyPlanToSupabase,
@@ -662,54 +662,62 @@ export function DailyWeeklyScheduleTab({
 
   // Add extra row for a worker with smart note defaults
   const handleAddWorkerRow = (workerName: string, shiftType: string) => {
-    const existingCount = dailyRows.filter((r) => r.workerName === workerName).length;
+    const targetShift = shiftType || 'Ca 1';
+    const existingCount = dailyRows.filter(
+      (r) => r.workerName === workerName && (r.shiftType || 'Ca 1') === targetShift
+    ).length;
     let defaultNote = 'Máy chính';
     if (existingCount === 1) defaultNote = 'Ghép 2 máy (+0.33)';
     else if (existingCount >= 2) defaultNote = '🔥 Tăng ca 2h (14:00 - 16:00)';
 
-    setDailyRows((prev) => [
-      ...prev,
-      {
-        workDate: selectedDate,
-        shiftType: shiftType || 'Ca 2',
-        stt: prev.length + 1,
-        workerName,
-        customer: '',
-        productName: '',
-        opName: '',
-        plannedQty: 0,
-        machineName: '',
-        note: defaultNote,
-        isOvertime: defaultNote.includes('Tăng ca'),
-        overtimeHours: defaultNote.includes('Tăng ca') ? 2 : undefined,
-        actualQty: 0,
-        status: 'PLANNED',
-      },
-    ]);
+    setDailyRows((prev) =>
+      sortDailyPlanRows([
+        ...prev,
+        {
+          workDate: selectedDate,
+          shiftType: targetShift,
+          stt: prev.length + 1,
+          workerName,
+          customer: '',
+          productName: '',
+          opName: '',
+          plannedQty: 0,
+          machineName: '',
+          note: defaultNote,
+          isOvertime: defaultNote.includes('Tăng ca'),
+          overtimeHours: defaultNote.includes('Tăng ca') ? 2 : undefined,
+          actualQty: 0,
+          status: 'PLANNED',
+        },
+      ])
+    );
   };
 
   // Delete row
   const handleDeleteRow = (index: number) => {
-    setDailyRows((prev) => prev.filter((_, idx) => idx !== index));
+    setDailyRows((prev) => sortDailyPlanRows(prev.filter((_, idx) => idx !== index)));
   };
 
   // Save Daily Schedule
   const handleSaveDailySchedule = async () => {
     setSavingDaily(true);
     try {
+      const sortedRows = sortDailyPlanRows(dailyRows);
+      setDailyRows(sortedRows);
+      saveFallbackDailyPlan(selectedDate, sortedRows);
       await apiClient.post('/schedules/daily', {
         workDate: selectedDate,
-        rows: dailyRows,
+        rows: sortedRows,
       });
       if (isSupabaseConnected()) {
-        const pushed = await pushDailyPlanToSupabase(selectedDate, dailyRows);
+        const pushed = await pushDailyPlanToSupabase(selectedDate, sortedRows);
         if (pushed) {
-          toast.success(`Đã lưu ${dailyRows.length} dòng và đồng bộ tức thì lên Supabase Cloud cho điện thoại công nhân!`);
+          toast.success(`Đã lưu ${sortedRows.length} dòng (sắp xếp Ca 1 → Ca 2 → Ca 3) và đồng bộ tức thì lên Supabase Cloud!`);
         } else {
-          toast.warning(`Đã lưu thành công ${dailyRows.length} dòng vào bộ nhớ máy.`);
+          toast.warning(`Đã lưu thành công ${sortedRows.length} dòng vào bộ nhớ máy.`);
         }
       } else {
-        toast.success(`Đã lưu thành công ${dailyRows.length} dòng kế hoạch ngày ${selectedDate}!`);
+        toast.success(`Đã lưu thành công ${sortedRows.length} dòng kế hoạch ngày ${selectedDate}!`);
       }
       await loadAvailableDates();
       await onRefreshBootstrap();
@@ -952,7 +960,7 @@ export function DailyWeeklyScheduleTab({
         status: 'PLANNED',
       });
     }
-    setDailyRows((prev) => [...prev, ...newRows]);
+    setDailyRows((prev) => sortDailyPlanRows([...prev, ...newRows]));
     toast.success(`Đã thêm thợ ${workerName} (${shiftType}) với ${count} dòng công việc! Bấm "Lưu Kế Hoạch" để lưu.`);
     setShowAddWorkerModal(false);
   };
@@ -1085,8 +1093,15 @@ export function DailyWeeklyScheduleTab({
     });
   }, [dailyRows, selectedShift, searchFilter]);
 
-  // Group filtered rows by worker
+  // Group filtered rows sequentially by Shift (Ca 1 -> Ca 2 -> Ca 3) and then Worker
   const rowsByWorker = useMemo(() => {
+    const shiftRank: Record<string, number> = {
+      'Ca 1': 1,
+      'Ca 2': 2,
+      'Ca 3': 3,
+      'Ca Hành chính': 4,
+      'Tăng ca': 5,
+    };
     const map = new Map<string, Array<{ row: DailyPlanRow; originalIdx: number }>>();
     dailyRows.forEach((row, originalIdx) => {
       if (selectedShift !== 'ALL') {
@@ -1107,11 +1122,20 @@ export function DailyWeeklyScheduleTab({
           (row.note || '').toLowerCase().includes(q);
         if (!matches) return;
       }
-      const list = map.get(row.workerName) || [];
+      const sType = (row.shiftType || 'Ca 1').trim();
+      const groupKey = `${sType}__${(row.workerName || '').trim()}`;
+      const list = map.get(groupKey) || [];
       list.push({ row, originalIdx });
-      map.set(row.workerName, list);
+      map.set(groupKey, list);
     });
-    return Array.from(map.entries());
+    return Array.from(map.entries()).sort((a, b) => {
+      const shiftA = a[1][0]?.row.shiftType || 'Ca 1';
+      const shiftB = b[1][0]?.row.shiftType || 'Ca 1';
+      const rA = shiftRank[shiftA] ?? 99;
+      const rB = shiftRank[shiftB] ?? 99;
+      if (rA !== rB) return rA - rB;
+      return 0;
+    });
   }, [dailyRows, selectedShift, searchFilter]);
 
   // Overtime statistics
@@ -1790,7 +1814,26 @@ export function DailyWeeklyScheduleTab({
             </Card>
           ) : (
             <div className="space-y-3">
-              {rowsByWorker.map(([workerName, workerRows]) => {
+              {/* Chú thích màu sắc Máy chính & Máy phụ */}
+              <div className="flex flex-wrap items-center gap-4 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3.5 py-2 text-xs">
+                <span className="font-extrabold text-emerald-900">📋 Thứ tự tuần tự: Ca 1 &rarr; Ca 2 &rarr; Ca 3</span>
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-100/90 px-2.5 py-0.5 font-bold text-sky-900">
+                  <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                  Máy chính (Tông xanh dịu nhẹ)
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-100/90 px-2.5 py-0.5 font-bold text-amber-900">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  Máy phụ / Ghép 2 máy +0.33 (Tông vàng kem dịu nhẹ)
+                </span>
+              </div>
+
+              {rowsByWorker.map(([groupKey, workerRows], groupIdx) => {
+                const workerName = workerRows[0]?.row.workerName || groupKey.split('__')[1] || groupKey;
+                const currentShiftType = workerRows[0]?.row.shiftType || 'Ca 1';
+                const prevShiftType =
+                  groupIdx > 0 ? rowsByWorker[groupIdx - 1]?.[1]?.[0]?.row.shiftType || 'Ca 1' : null;
+                const showShiftBanner = groupIdx === 0 || currentShiftType !== prevShiftType;
+
                 const hasWorkerOt = workerRows.some(
                   ({ row }) =>
                     row.isOvertime ||
@@ -1809,18 +1852,30 @@ export function DailyWeeklyScheduleTab({
                 }, 0);
 
                 return (
-                <Card key={workerName} className="overflow-hidden border-slate-200 bg-white p-0">
+                <React.Fragment key={groupKey}>
+                  {showShiftBanner && (
+                    <div className="flex items-center justify-between rounded-lg bg-[#00B050] px-4 py-2 text-white shadow-xs">
+                      <div className="flex items-center gap-2 font-black text-sm uppercase tracking-wide">
+                        <Clock className="h-4 w-4" />
+                        <span>{currentShiftType}</span>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-50">
+                        Biểu mẫu chuẩn GCCK.QT.01.BM01
+                      </span>
+                    </div>
+                  )}
+                <Card className="overflow-hidden border-slate-200 bg-white p-0">
                   {/* Worker Header Header */}
                   <div className="flex flex-wrap items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
                     <div className="flex items-center gap-2.5">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 font-extrabold text-xs text-blue-700">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 font-extrabold text-xs text-emerald-800">
                         {workerName.charAt(0)}
                       </div>
                       <span className="font-extrabold text-sm text-slate-900">{workerName}</span>
 
                       {/* Dropdown Ca Làm Việc - Trỏ xuống để đổi ca nhanh */}
                       <select
-                        value={workerRows[0]?.row.shiftType || 'Ca 2'}
+                        value={currentShiftType}
                         onChange={(e) => {
                           const newShift = e.target.value;
                           workerRows.forEach(({ originalIdx }) => {
@@ -1828,7 +1883,7 @@ export function DailyWeeklyScheduleTab({
                           });
                           toast.info(`Đã đổi thợ ${workerName} sang ${newShift}. Bấm "Lưu Kế Hoạch" để cập nhật.`);
                         }}
-                        className="h-7 rounded-lg border border-blue-300 bg-blue-50 px-2 py-0.5 text-xs font-black text-blue-800 shadow-sm focus:border-blue-600 focus:outline-none cursor-pointer hover:bg-blue-100"
+                        className="h-7 rounded-lg border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-900 shadow-sm focus:border-emerald-600 focus:outline-none cursor-pointer hover:bg-emerald-100"
                         title="Đổi ca làm việc cho thợ này"
                       >
                         <option value="Ca 1">Ca 1</option>
@@ -1855,8 +1910,8 @@ export function DailyWeeklyScheduleTab({
                         type="button"
                         variant="secondary"
                         size="sm"
-                        onClick={() => handleAddWorkerRow(workerName, workerRows[0]?.row.shiftType || 'Ca 2')}
-                        className="text-xs font-bold text-blue-700"
+                        onClick={() => handleAddWorkerRow(workerName, currentShiftType)}
+                        className="text-xs font-bold text-emerald-800"
                       >
                         <Plus className="h-3.5 w-3.5" /> Thêm Mặt Hàng
                       </Button>
@@ -1872,20 +1927,20 @@ export function DailyWeeklyScheduleTab({
                     <div className="overflow-x-auto">
                     <table className="w-full min-w-[950px] border-collapse text-left text-xs text-slate-900">
                       <thead>
-                        <tr className="border-b border-slate-200 bg-slate-100/70 text-[11px] font-extrabold uppercase text-slate-700">
-                          <th className="w-10 px-2 py-2 text-center">#</th>
+                        <tr className="border-b border-emerald-700 bg-[#00B050] text-[11px] font-extrabold uppercase text-white">
+                          <th className="w-10 px-2 py-2 text-center">STT</th>
                           <th className="w-36 px-2 py-2">Khách Hàng (1)</th>
                           <th className="px-2 py-2">Sản Phẩm / Bản Vẽ (2)</th>
                           <th className="px-2 py-2">Công Đoạn HT (3)</th>
                           <th className="w-28 px-2 py-2 text-center">Kế Hoạch</th>
-                          <th className="w-40 px-2 py-2">Máy / Ca</th>
+                          <th className="w-40 px-2 py-2">Máy Thực Hiện</th>
                           <th className="w-32 px-2 py-2 text-center">🔥 Tăng Ca (OT)</th>
-                          <th className="w-36 px-2 py-2">Ghi Chú</th>
+                          <th className="w-36 px-2 py-2">Ghi Chú (Chính / Phụ)</th>
                           <th className="w-16 px-1 py-2 text-center">Mã QR</th>
                           <th className="w-10 px-1 py-2 text-center"></th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-slate-200">
                         {workerRows.map(({ row, originalIdx }, rowSubIdx) => {
                           // Cascade: products filtered by customer (from availableProducts which merges products + POs)
                           const filteredProducts = availableProducts.filter(
@@ -1916,10 +1971,18 @@ export function DailyWeeklyScheduleTab({
                             `GCCK|${row.customer || 'VICO'}|${row.productName}|${row.workerName}`
                           )}`;
 
+                          const isSecondaryMachine = /ghép|0\.33|máy phụ/i.test(String(row.note || ''));
+                          const rowPastelClass = isSecondaryMachine
+                            ? 'bg-amber-50/75 hover:bg-amber-100/75'
+                            : 'bg-sky-50/65 hover:bg-sky-100/65';
+                          const machineSelectClass = isSecondaryMachine
+                            ? 'border-amber-300 bg-amber-100/90 text-amber-950 focus:border-amber-600'
+                            : 'border-sky-300 bg-sky-100/90 text-sky-950 focus:border-sky-600';
+
                           return (
-                            <tr key={originalIdx} className="hover:bg-blue-50/30">
-                              <td className="px-2 py-1.5 text-center font-mono font-bold text-slate-500">
-                                {rowSubIdx + 1}
+                            <tr key={originalIdx} className={rowPastelClass}>
+                              <td className="px-2 py-1.5 text-center font-mono font-bold text-slate-700">
+                                {row.stt || rowSubIdx + 1}
                               </td>
 
                               {/* 1. Khách Hàng */}
@@ -2021,14 +2084,14 @@ export function DailyWeeklyScheduleTab({
                                 })()}
                               </td>
 
-                              {/* Máy / Ca */}
+                              {/* Máy Thực Hiện */}
                               <td className="px-2 py-1.5">
                                 <select
                                   value={row.machineName}
                                   onChange={(e) =>
                                     handleRowChange(originalIdx, 'machineName', e.target.value)
                                   }
-                                  className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-bold text-slate-800 focus:border-blue-600 focus:outline-none"
+                                  className={`h-8 w-full rounded-md border px-2 text-xs font-bold focus:outline-none ${machineSelectClass}`}
                                 >
                                   <option value="">-- Chọn Máy --</option>
                                   {machineList.map((m) => (
@@ -2058,7 +2121,7 @@ export function DailyWeeklyScheduleTab({
                                     className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-black transition-all ${
                                       row.isOvertime
                                         ? 'border border-orange-500 bg-orange-500 text-white shadow-xs'
-                                        : 'border border-slate-300 bg-slate-50 text-slate-500 hover:border-orange-400 hover:text-orange-600'
+                                        : 'border border-slate-300 bg-white text-slate-500 hover:border-orange-400 hover:text-orange-600'
                                     }`}
                                     title="Bấm để bật/tắt chế độ Tăng Ca cho công việc này"
                                   >
@@ -2103,7 +2166,7 @@ export function DailyWeeklyScheduleTab({
                                         }
                                       }
                                     }}
-                                    className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 pr-6 text-xs font-semibold text-slate-800 shadow-2xs hover:border-blue-500 focus:border-blue-600 focus:outline-none"
+                                    className={`h-8 w-full rounded-md border px-2 pr-6 text-xs font-bold shadow-2xs focus:outline-none ${machineSelectClass}`}
                                   >
                                     <option value="Máy chính">Máy chính</option>
                                     <option value="Ghép 2 máy (+0.33)">Ghép 2 máy (+0.33)</option>
@@ -2158,6 +2221,7 @@ export function DailyWeeklyScheduleTab({
                     </table>
                   </div>
                 </Card>
+                </React.Fragment>
               );
             })}
             </div>

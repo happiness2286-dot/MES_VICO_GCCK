@@ -387,6 +387,65 @@ export function getBaselineDailyPlan(workDate: string): DailyPlanRow[] {
   ];
 }
 
+const SHIFT_ORDER_MAP: Record<string, number> = {
+  'Ca 1': 1,
+  'Ca 2': 2,
+  'Ca 3': 3,
+  'Ca Hành chính': 4,
+  'Tăng ca': 5,
+};
+
+/**
+ * Sắp xếp tuần tự Kế Hoạch Sản Xuất Ngày theo đúng thứ tự Ca 1 -> Ca 2 -> Ca 3,
+ * gom nhóm các dòng của cùng 1 công nhân trong cùng 1 ca liền kề nhau (Máy chính đứng trước,
+ * Máy phụ / Ghép 2 máy (+0.33) đứng sau) và đánh lại số thứ tự STT 1..N.
+ */
+export function sortDailyPlanRows(rows: DailyPlanRow[]): DailyPlanRow[] {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  // Bucket rows by shiftType
+  const byShift = new Map<string, DailyPlanRow[]>();
+  for (const r of rows) {
+    const s = (r.shiftType || 'Ca 1').trim();
+    const list = byShift.get(s) || [];
+    list.push(r);
+    byShift.set(s, list);
+  }
+
+  const sortedShifts = Array.from(byShift.keys()).sort((a, b) => {
+    const oa = SHIFT_ORDER_MAP[a] ?? 99;
+    const ob = SHIFT_ORDER_MAP[b] ?? 99;
+    if (oa !== ob) return oa - ob;
+    return a.localeCompare(b, 'vi');
+  });
+
+  const result: DailyPlanRow[] = [];
+  for (const shift of sortedShifts) {
+    const shiftRows = byShift.get(shift) || [];
+    // Group contiguously by workerName in order of first appearance within this shift
+    const byWorker = new Map<string, DailyPlanRow[]>();
+    for (const r of shiftRows) {
+      const wKey = (r.workerName || '').trim();
+      const wList = byWorker.get(wKey) || [];
+      wList.push(r);
+      byWorker.set(wKey, wList);
+    }
+
+    for (const [, workerRows] of byWorker) {
+      // Keep original relative order within each worker
+      for (const r of workerRows) {
+        result.push({
+          ...r,
+          shiftType: shift,
+          stt: result.length + 1,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * Intelligently returns existing plan if available, or defaults to baseline template
  * if completely empty. Never injects dummy baseline items into an existing configured plan.
@@ -396,14 +455,16 @@ export function mergePlanWithBaseline(
   workDate: string
 ): DailyPlanRow[] {
   const baseline = getBaselineDailyPlan(workDate);
-  if (!existingRows || existingRows.length === 0) return baseline;
+  if (!existingRows || existingRows.length === 0) return sortDailyPlanRows(baseline);
 
-  // Real plan already exists: preserve the user's plan 100% without injecting dummy baseline rows
-  return existingRows.map((r, idx) => ({
-    ...r,
-    stt: r.stt || idx + 1,
-    workDate: r.workDate || workDate,
-  }));
+  // Real plan already exists: preserve the user's plan 100% and sort sequentially Ca 1 -> Ca 2 -> Ca 3
+  return sortDailyPlanRows(
+    existingRows.map((r, idx) => ({
+      ...r,
+      stt: r.stt || idx + 1,
+      workDate: r.workDate || workDate,
+    }))
+  );
 }
 
 /**

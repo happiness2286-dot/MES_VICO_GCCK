@@ -312,25 +312,25 @@ export function LogsQcTraceTab({
   };
 
   // ==================== SUB-VIEW D: HANDOVER BM.GC.01.02 STATE ====================
-const HANDOVER_SENDER_OPTIONS = [
-  'Hoàng Ngọc Hà',
-  'Lê Trung Hải',
-  'Nguyễn Văn Duy',
-  'Trần Văn Quỳnh',
-  'Trần Văn Dũng',
-  'Phạm Văn Tráng',
-  'Phùng Gia Phúc',
-];
+  const HANDOVER_SENDER_OPTIONS = [
+    'Hoàng Ngọc Hà',
+    'Lê Trung Hải',
+    'Nguyễn Văn Duy',
+    'Trần Văn Quỳnh',
+    'Trần Văn Dũng',
+    'Phạm Văn Tráng',
+    'Phùng Gia Phúc',
+  ];
 
-const HANDOVER_RECEIVER_OPTIONS = [
-  'Phùng Gia Phúc',
-  'Phạm Văn Tráng',
-  'Trần Văn Dũng',
-  'Lê Trung Hải',
-  'Nguyễn Văn Duy',
-  'Hoàng Ngọc Hà',
-  'Trần Văn Quỳnh',
-];
+  const HANDOVER_RECEIVER_OPTIONS = [
+    'Phùng Gia Phúc',
+    'Phạm Văn Tráng',
+    'Trần Văn Dũng',
+    'Lê Trung Hải',
+    'Nguyễn Văn Duy',
+    'Hoàng Ngọc Hà',
+    'Trần Văn Quỳnh',
+  ];
 
   type HandoverMetricFilter = 'ALL' | 'OK' | 'DEFECT' | 'RAW_DEFECT';
   const [hoMetricFilter, setHoMetricFilter] = useState<HandoverMetricFilter>('ALL');
@@ -397,7 +397,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
       .filter((h) =>
         (!editingHoId || h.id !== editingHoId) &&
         ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
-         (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
+          (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
       )
       .reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
   }, [handovers, editingHoId, hoSelectedPo, hoProdName]);
@@ -410,7 +410,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
       .filter((h) =>
         (!editingHoId || h.id !== editingHoId) &&
         ((cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
-         (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
+          (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd))
       )
       .reduce((sum, h) => sum + (Number(h.rawQtyTransferred) || 0), 0);
   }, [handovers, editingHoId, hoSelectedPo, hoProdName]);
@@ -668,7 +668,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
         saveFallbackHandover(targetRow);
         setHandovers((prev) => prev.map((h) => (h.id === editingHoId ? targetRow : h)));
         if (onRefreshBootstrap) {
-          try { await onRefreshBootstrap(); } catch {}
+          try { await onRefreshBootstrap(); } catch { }
         }
         toast.success('Đã cập nhật số liệu chuyển giao BM.GC.01.02 & tự động đồng bộ sang Lệnh PO & QR!');
       } else {
@@ -680,7 +680,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
         saveFallbackHandover(targetRow);
         setHandovers((prev) => [targetRow, ...prev]);
         if (onRefreshBootstrap) {
-          try { await onRefreshBootstrap(); } catch {}
+          try { await onRefreshBootstrap(); } catch { }
         }
         toast.success('Đã lưu phiếu chuyển giao BM.GC.01.02 & tự động đồng bộ sang Lệnh PO & QR!');
       }
@@ -917,10 +917,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
         totalMachined === 0 && editStopMinutes === 0
           ? '🚨 0% ĐM'
           : computedKpi >= 100
-          ? `Đạt ${computedKpi}% ĐM${defectInfo}`
-          : computedKpi < 50 && editStopMinutes === 0
-          ? `🚨 Rất thấp (${computedKpi}% ĐM)${defectInfo}`
-          : `⚠️ Chưa đạt ĐM (${computedKpi}%)${defectInfo}`;
+            ? `Đạt ${computedKpi}% ĐM${defectInfo}`
+            : computedKpi < 50 && editStopMinutes === 0
+              ? `🚨 Rất thấp (${computedKpi}% ĐM)${defectInfo}`
+              : `⚠️ Chưa đạt ĐM (${computedKpi}%)${defectInfo}`;
 
       const updatedLog: ProductionLogDto = {
         ...editLog,
@@ -1011,7 +1011,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
       setLogs((prev) =>
         prev.map((item) =>
           String(item.id) === String(editLog.id) ||
-          (editLog.recordUid && item.recordUid === editLog.recordUid)
+            (editLog.recordUid && item.recordUid === editLog.recordUid)
             ? updatedLog
             : item
         )
@@ -1072,11 +1072,11 @@ const HANDOVER_RECEIVER_OPTIONS = [
     const poObj = bootstrap.ordersList.find((p) => p.poId === chosenPoId);
     const firstOp = poObj
       ? bootstrap.operations.find(
-          (o) =>
-            (poObj.spId && o.spId === poObj.spId) ||
-            normalizeVn(o.productName).toLowerCase() ===
-              normalizeVn(poObj.productName).toLowerCase()
-        )
+        (o) =>
+          (poObj.spId && o.spId === poObj.spId) ||
+          normalizeVn(o.productName).toLowerCase() ===
+          normalizeVn(poObj.productName).toLowerCase()
+      )
       : bootstrap.operations[0];
     setQcNcId(firstOp?.ncId || '');
     setQcMachineName(firstOp?.defaultMachine || bootstrap.machines[0]?.name || '');
@@ -1160,11 +1160,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
           <button
             type="button"
             onClick={() => setSubView('LOGS')}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${
-              subView === 'LOGS'
+            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${subView === 'LOGS'
                 ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm'
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-            }`}
+              }`}
           >
             <FileSpreadsheet
               className={`h-4 w-4 ${subView === 'LOGS' ? 'text-blue-600' : 'text-slate-500'}`}
@@ -1175,11 +1174,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
           <button
             type="button"
             onClick={() => setSubView('QC')}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${
-              subView === 'QC'
+            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${subView === 'QC'
                 ? 'border-emerald-600 bg-emerald-50 text-emerald-800 shadow-sm'
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Microscope
               className={`h-4 w-4 ${subView === 'QC' ? 'text-emerald-600' : 'text-slate-500'}`}
@@ -1193,11 +1191,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
           <button
             type="button"
             onClick={() => setSubView('TRACE')}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${
-              subView === 'TRACE'
+            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${subView === 'TRACE'
                 ? 'border-violet-600 bg-violet-50 text-violet-800 shadow-sm'
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-            }`}
+              }`}
           >
             <GitCommit
               className={`h-4 w-4 ${subView === 'TRACE' ? 'text-violet-600' : 'text-slate-500'}`}
@@ -1208,11 +1205,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
           <button
             type="button"
             onClick={() => setSubView('HANDOVER')}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${
-              subView === 'HANDOVER'
+            className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-extrabold transition-all ${subView === 'HANDOVER'
                 ? 'border-amber-600 bg-amber-50 text-amber-800 shadow-sm'
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-            }`}
+              }`}
           >
             <Truck
               className={`h-4 w-4 ${subView === 'HANDOVER' ? 'text-amber-600' : 'text-slate-500'}`}
@@ -1310,11 +1306,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                     setLogIssueFilter(k);
                     setLogPage(1);
                   }}
-                  className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
-                    logIssueFilter === k
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${logIssueFilter === k
                       ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
                       : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   {lbl}
                 </button>
@@ -1415,11 +1410,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 {pagedLogs.map((l) => (
                   <tr
                     key={l.id}
-                    className={`transition-colors ${
-                      l.isVoided
+                    className={`transition-colors ${l.isVoided
                         ? 'bg-rose-50/40 opacity-70 line-through'
                         : 'hover:bg-blue-50/40'
-                    }`}
+                      }`}
                   >
                     <td className="px-3 py-2.5">
                       <div className="font-mono-num font-bold text-slate-900">
@@ -1545,9 +1539,9 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       const hasMultiJobsOnMachine = Boolean(mStats && mStats.logsCount > 1);
                       const canCombineMainShift = Boolean(
                         !isSecondMach &&
-                          sStats &&
-                          sStats.mainMachinesCount > 1 &&
-                          !sStats.anyMainOver100
+                        sStats &&
+                        sStats.mainMachinesCount > 1 &&
+                        !sStats.anyMainOver100
                       );
                       const prefix = isSecondMach ? 'Máy phụ' : 'Máy';
 
@@ -1738,11 +1732,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       setQcTypeFilter(tp);
                       setQcPage(1);
                     }}
-                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
-                      qcTypeFilter === tp
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${qcTypeFilter === tp
                         ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm'
                         : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     {tp === 'ALL'
                       ? `Tất cả (${qcList.length})`
@@ -1966,11 +1959,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                     setTracePoInput(po.poId);
                     void fetchTraceability(po.poId);
                   }}
-                  className={`font-mono-num rounded-md border px-2 py-0.5 font-semibold transition-colors ${
-                    traceData?.po?.poId === po.poId
+                  className={`font-mono-num rounded-md border px-2 py-0.5 font-semibold transition-colors ${traceData?.po?.poId === po.poId
                       ? 'border-violet-600 bg-violet-50 text-violet-800 shadow-sm'
                       : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   {po.poId}
                 </button>
@@ -2291,11 +2283,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 }
               }}
               title="Bấm để lọc toàn bộ phiếu bàn giao và thu lên / trải xuống bảng"
-              className={`cursor-pointer border-l-4 border-l-blue-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
-                hoMetricFilter === 'ALL'
+              className={`cursor-pointer border-l-4 border-l-blue-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${hoMetricFilter === 'ALL'
                   ? 'ring-2 ring-blue-500 ring-offset-2 bg-blue-50/40'
                   : 'hover:border-blue-300'
-              }`}
+                }`}
             >
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 1. Tổng Phiếu Bàn Giao
@@ -2339,11 +2330,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 }
               }}
               title="Bấm để lọc riêng các phiếu có BTP chuyển giao đạt và thu lên / trải xuống bảng"
-              className={`cursor-pointer border-l-4 border-l-emerald-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
-                hoMetricFilter === 'OK'
+              className={`cursor-pointer border-l-4 border-l-emerald-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${hoMetricFilter === 'OK'
                   ? 'ring-2 ring-emerald-500 ring-offset-2 bg-emerald-50/50'
                   : 'hover:border-emerald-300'
-              }`}
+                }`}
             >
               <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
                 2. BTP Chuyển Giao Đạt
@@ -2387,11 +2377,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 }
               }}
               title="Bấm để lọc riêng các phiếu có phát sinh phế phẩm hỏng gia công và thu lên / trải xuống bảng"
-              className={`cursor-pointer border-l-4 border-l-rose-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
-                hoMetricFilter === 'DEFECT'
+              className={`cursor-pointer border-l-4 border-l-rose-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${hoMetricFilter === 'DEFECT'
                   ? 'ring-2 ring-rose-500 ring-offset-2 bg-rose-50/50'
                   : 'hover:border-rose-300'
-              }`}
+                }`}
             >
               <div className="text-[11px] font-bold uppercase tracking-wider text-rose-700">
                 3. Phế Phẩm Gia Công
@@ -2435,11 +2424,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 }
               }}
               title="Bấm để lọc riêng các phiếu có phôi lỗi đúc hoặc thiếu hàng và thu lên / trải xuống bảng"
-              className={`cursor-pointer border-l-4 border-l-amber-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${
-                hoMetricFilter === 'RAW_DEFECT'
+              className={`cursor-pointer border-l-4 border-l-amber-600 p-3.5 transition-all hover:scale-[1.01] hover:shadow-md active:scale-[0.99] ${hoMetricFilter === 'RAW_DEFECT'
                   ? 'ring-2 ring-amber-500 ring-offset-2 bg-amber-50/50'
                   : 'hover:border-amber-300'
-              }`}
+                }`}
             >
               <div className="text-[11px] font-bold uppercase tracking-wider text-amber-700">
                 4. Phôi Lỗi &amp; Hao Hụt
@@ -2509,11 +2497,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       key={deptKey}
                       type="button"
                       onClick={() => setHoDeptFilter(deptKey)}
-                      className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${
-                        hoDeptFilter === deptKey
+                      className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-all ${hoDeptFilter === deptKey
                           ? 'bg-amber-600 text-white shadow-sm'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
+                        }`}
                     >
                       {deptLabel}
                     </button>
@@ -2666,9 +2653,8 @@ const HANDOVER_RECEIVER_OPTIONS = [
                                 </div>
                                 <div className="mt-1 h-2 w-full min-w-[60px] overflow-hidden rounded-full bg-slate-200">
                                   <div
-                                    className={`h-full rounded-full transition-all ${
-                                      sumItem.progressPct >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
-                                    }`}
+                                    className={`h-full rounded-full transition-all ${sumItem.progressPct >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
+                                      }`}
                                     style={{ width: `${sumItem.progressPct}%` }}
                                   />
                                 </div>
@@ -2710,10 +2696,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                   {hoMetricFilter === 'DEFECT'
                     ? `🚨 Danh Sách ${filteredHandovers.length} Phiếu Có Phế Phẩm Hỏng Gia Công`
                     : hoMetricFilter === 'RAW_DEFECT'
-                    ? `⚠️ Danh Sách ${filteredHandovers.length} Phiếu Có Phôi Lỗi Đúc / Hao Hụt`
-                    : hoMetricFilter === 'OK'
-                    ? `✅ Danh Sách ${filteredHandovers.length} Phiếu Chuyển Giao BTP Đạt`
-                    : `📋 Sổ Chuyển Giao Bán Thành Phẩm & Phôi (BM.GC.01.02) — ${filteredHandovers.length} Phiếu`}
+                      ? `⚠️ Danh Sách ${filteredHandovers.length} Phiếu Có Phôi Lỗi Đúc / Hao Hụt`
+                      : hoMetricFilter === 'OK'
+                        ? `✅ Danh Sách ${filteredHandovers.length} Phiếu Chuyển Giao BTP Đạt`
+                        : `📋 Sổ Chuyển Giao Bán Thành Phẩm & Phôi (BM.GC.01.02) — ${filteredHandovers.length} Phiếu`}
                 </span>
               </div>
 
@@ -2727,11 +2713,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                       ? `Thu gọn bảng danh sách ${filteredHandovers.length} phiếu`
                       : `Trải rộng bảng danh sách ${filteredHandovers.length} phiếu`
                   }
-                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black shadow-2xs transition-all active:scale-[0.98] ${
-                    hoExpandedByMetric[hoMetricFilter]
+                  className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-black shadow-2xs transition-all active:scale-[0.98] ${hoExpandedByMetric[hoMetricFilter]
                       ? 'border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100'
                       : 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200 hover:bg-emerald-100'
-                  }`}
+                    }`}
                 >
                   {hoExpandedByMetric[hoMetricFilter] ? (
                     <>
@@ -2792,177 +2777,177 @@ const HANDOVER_RECEIVER_OPTIONS = [
                 </span>
               </div>
             ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-800">
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5 text-center">STT</th>
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5">Ngày Bàn Giao</th>
-                    <th rowSpan={2} className="min-w-[180px] border-r border-slate-200 p-2.5">Tên Sản Phẩm / Lệnh PO</th>
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5">Khách Hàng</th>
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5 text-center">ĐVT</th>
-                    <th colSpan={3} className="border-r border-slate-200 p-2 text-center bg-emerald-50 text-emerald-900 font-extrabold">
-                      Chuyển Giao Sản Phẩm (BTP)
-                    </th>
-                    <th colSpan={3} className="border-r border-slate-200 p-2 text-center bg-blue-50 text-blue-900 font-extrabold">
-                      Chuyển Giao Phôi
-                    </th>
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5">Tuyến Bàn Giao</th>
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5">Người Nhận / Người Giao</th>
-                    <th rowSpan={2} className="border-r border-slate-200 p-2.5">Ghi Chú</th>
-                    <th rowSpan={2} className="p-2.5 text-center whitespace-nowrap min-w-[90px]">Thao Tác</th>
-                  </tr>
-                  <tr className="border-b border-slate-300 bg-slate-50 text-[11px] font-bold text-slate-700 text-center">
-                    <th className="border-r border-slate-200 p-1.5 bg-emerald-50 text-emerald-800">Số chuyển</th>
-                    <th className="border-r border-slate-200 p-1.5 bg-rose-50 text-rose-700">SP lỗi</th>
-                    <th className="border-r border-slate-200 p-1.5 bg-amber-50 text-amber-700">Số thiếu</th>
-                    <th className="border-r border-slate-200 p-1.5 bg-blue-50 text-blue-800">Số chuyển</th>
-                    <th className="border-r border-slate-200 p-1.5 bg-rose-50 text-rose-700">Phôi lỗi</th>
-                    <th className="border-r border-slate-200 p-1.5 bg-amber-50 text-amber-700">Số thiếu</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {filteredHandovers.length === 0 ? (
-                    <tr>
-                      <td colSpan={14} className="p-12 text-center">
-                        <div className="flex flex-col items-center justify-center space-y-3">
-                          <div className="text-slate-500 font-medium">
-                            Chưa có phiếu chuyển giao công đoạn nào được ghi nhận cho tháng 11.
-                          </div>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={handleOpenCreateHandover}
-                          >
-                            <Plus className="h-4 w-4 mr-1" />
-                            Nhập Số Liệu Chuyển Giao Mới / Bổ Sung Số Liệu Tháng 11
-                          </Button>
-                        </div>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-100 font-bold text-slate-800">
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5 text-center">STT</th>
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5">Ngày Bàn Giao</th>
+                      <th rowSpan={2} className="min-w-[180px] border-r border-slate-200 p-2.5">Tên Sản Phẩm / Lệnh PO</th>
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5">Khách Hàng</th>
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5 text-center">ĐVT</th>
+                      <th colSpan={3} className="border-r border-slate-200 p-2 text-center bg-emerald-50 text-emerald-900 font-extrabold">
+                        Chuyển Giao Sản Phẩm (BTP)
+                      </th>
+                      <th colSpan={3} className="border-r border-slate-200 p-2 text-center bg-blue-50 text-blue-900 font-extrabold">
+                        Chuyển Giao Phôi
+                      </th>
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5">Tuyến Bàn Giao</th>
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5">Người Nhận / Người Giao</th>
+                      <th rowSpan={2} className="border-r border-slate-200 p-2.5">Ghi Chú</th>
+                      <th rowSpan={2} className="p-2.5 text-center whitespace-nowrap min-w-[90px]">Thao Tác</th>
                     </tr>
-                  ) : (
-                    filteredHandovers.map((row, idx) => {
-                      const deptName = (d: HandoverDept) => {
-                        switch (d) {
-                          case 'PX_GIA_CONG': return 'PX Gia Công';
-                          case 'PX_HOAN_THIEN': return 'PX Hoàn Thiện';
-                          case 'PX_NHIET_LUYEN': return 'PX Nhiệt Luyện';
-                          case 'PHONG_KHVT': return 'Phòng KHVT';
-                        }
-                      };
+                    <tr className="border-b border-slate-300 bg-slate-50 text-[11px] font-bold text-slate-700 text-center">
+                      <th className="border-r border-slate-200 p-1.5 bg-emerald-50 text-emerald-800">Số chuyển</th>
+                      <th className="border-r border-slate-200 p-1.5 bg-rose-50 text-rose-700">SP lỗi</th>
+                      <th className="border-r border-slate-200 p-1.5 bg-amber-50 text-amber-700">Số thiếu</th>
+                      <th className="border-r border-slate-200 p-1.5 bg-blue-50 text-blue-800">Số chuyển</th>
+                      <th className="border-r border-slate-200 p-1.5 bg-rose-50 text-rose-700">Phôi lỗi</th>
+                      <th className="border-r border-slate-200 p-1.5 bg-amber-50 text-amber-700">Số thiếu</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 bg-white">
+                    {filteredHandovers.length === 0 ? (
+                      <tr>
+                        <td colSpan={14} className="p-12 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-3">
+                            <div className="text-slate-500 font-medium">
+                              Chưa có phiếu chuyển giao công đoạn nào được ghi nhận cho tháng 11.
+                            </div>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={handleOpenCreateHandover}
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Nhập Số Liệu Chuyển Giao Mới / Bổ Sung Số Liệu Tháng 11
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredHandovers.map((row, idx) => {
+                        const deptName = (d: HandoverDept) => {
+                          switch (d) {
+                            case 'PX_GIA_CONG': return 'PX Gia Công';
+                            case 'PX_HOAN_THIEN': return 'PX Hoàn Thiện';
+                            case 'PX_NHIET_LUYEN': return 'PX Nhiệt Luyện';
+                            case 'PHONG_KHVT': return 'Phòng KHVT';
+                          }
+                        };
 
-                      return (
-                        <tr key={row.id || idx} className="hover:bg-slate-50 transition-colors">
-                          <td className="border-r border-slate-200 p-2.5 text-center font-bold font-mono-num text-slate-700">
-                            {idx + 1}
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5 font-mono-num font-semibold text-slate-900 whitespace-nowrap">
-                            {formatDateVn(row.handoverDate)}
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5">
-                            <div className="font-extrabold text-slate-900">{row.productName}</div>
-                            {row.poId && (
-                              <div className="font-mono-num text-[11px] font-bold text-blue-700">
-                                {row.poId}
+                        return (
+                          <tr key={row.id || idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="border-r border-slate-200 p-2.5 text-center font-bold font-mono-num text-slate-700">
+                              {idx + 1}
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5 font-mono-num font-semibold text-slate-900 whitespace-nowrap">
+                              {formatDateVn(row.handoverDate)}
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5">
+                              <div className="font-extrabold text-slate-900">{row.productName}</div>
+                              {row.poId && (
+                                <div className="font-mono-num text-[11px] font-bold text-blue-700">
+                                  {row.poId}
+                                </div>
+                              )}
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5 text-slate-700 whitespace-nowrap">
+                              {row.customer}
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5 text-center font-semibold text-slate-600">
+                              {row.unit || 'Cái'}
+                            </td>
+                            <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-emerald-700 bg-emerald-50/30 text-sm">
+                              {row.prodQtyTransferred || 0}
+                            </td>
+                            <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-rose-700 bg-rose-50/30">
+                              {row.prodQtyDefect > 0 ? row.prodQtyDefect : '—'}
+                            </td>
+                            <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
+                              {(() => {
+                                const cleanPoId = (row.poId || '').trim().toLowerCase();
+                                const cleanProd = (row.productName || '').trim().toLowerCase();
+                                const po = bootstrap.ordersList.find((p) => (cleanPoId && p.poId.toLowerCase() === cleanPoId) || (cleanProd && p.productName.trim().toLowerCase() === cleanProd));
+                                if (po && po.qtyPo > 0) {
+                                  const samePoHandovers = handovers.filter((h) =>
+                                    (cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
+                                    (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd)
+                                  );
+                                  const sorted = [...samePoHandovers].sort((a, b) =>
+                                    (a.handoverDate || '').localeCompare(b.handoverDate || '') ||
+                                    (a.id || '').localeCompare(b.id || '')
+                                  );
+                                  const rowIdx = sorted.findIndex((h) => h.id === row.id);
+                                  const upToSlips = rowIdx >= 0 ? sorted.slice(0, rowIdx + 1) : [row];
+                                  const cumProd = upToSlips.reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
+                                  const missing = Math.max(0, po.qtyPo - cumProd);
+                                  return missing > 0 ? missing : '—';
+                                }
+                                if (row.prodQtyMissing > 0) return row.prodQtyMissing;
+                                return '—';
+                              })()}
+                            </td>
+                            <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-blue-700 bg-blue-50/30 text-sm">
+                              {row.rawQtyTransferred || 0}
+                            </td>
+                            <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-rose-700 bg-rose-50/30">
+                              {row.rawQtyDefect > 0 ? row.rawQtyDefect : '—'}
+                            </td>
+                            <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
+                              {(() => {
+                                if (row.rawQtyMissing > 0) return row.rawQtyMissing;
+                                const po = bootstrap.ordersList.find((p) => (row.poId && p.poId.toLowerCase() === row.poId.toLowerCase()) || (row.productName && p.productName.trim().toLowerCase() === row.productName.trim().toLowerCase()));
+                                if (po && po.qtyPo > 0) {
+                                  const calc = Math.max(0, po.qtyPo - (row.rawQtyTransferred || 0) - (row.rawQtyDefect || 0));
+                                  if (calc > 0) return calc;
+                                }
+                                return '—';
+                              })()}
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5 text-xs">
+                              <div className="font-bold text-slate-800">
+                                {deptName(row.fromDept)} &rarr; {deptName(row.toDept)}
                               </div>
-                            )}
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5 text-slate-700 whitespace-nowrap">
-                            {row.customer}
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5 text-center font-semibold text-slate-600">
-                            {row.unit || 'Cái'}
-                          </td>
-                          <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-emerald-700 bg-emerald-50/30 text-sm">
-                            {row.prodQtyTransferred || 0}
-                          </td>
-                          <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-rose-700 bg-rose-50/30">
-                            {row.prodQtyDefect > 0 ? row.prodQtyDefect : '—'}
-                          </td>
-                          <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
-                            {(() => {
-                              const cleanPoId = (row.poId || '').trim().toLowerCase();
-                              const cleanProd = (row.productName || '').trim().toLowerCase();
-                              const po = bootstrap.ordersList.find((p) => (cleanPoId && p.poId.toLowerCase() === cleanPoId) || (cleanProd && p.productName.trim().toLowerCase() === cleanProd));
-                              if (po && po.qtyPo > 0) {
-                                const samePoHandovers = handovers.filter((h) =>
-                                  (cleanPoId && (h.poId || '').trim().toLowerCase() === cleanPoId) ||
-                                  (cleanProd && (h.productName || '').trim().toLowerCase() === cleanProd)
-                                );
-                                const sorted = [...samePoHandovers].sort((a, b) =>
-                                  (a.handoverDate || '').localeCompare(b.handoverDate || '') ||
-                                  (a.id || '').localeCompare(b.id || '')
-                                );
-                                const rowIdx = sorted.findIndex((h) => h.id === row.id);
-                                const upToSlips = rowIdx >= 0 ? sorted.slice(0, rowIdx + 1) : [row];
-                                const cumProd = upToSlips.reduce((sum, h) => sum + (Number(h.prodQtyTransferred) || 0), 0);
-                                const missing = Math.max(0, po.qtyPo - cumProd);
-                                return missing > 0 ? missing : '—';
-                              }
-                              if (row.prodQtyMissing > 0) return row.prodQtyMissing;
-                              return '—';
-                            })()}
-                          </td>
-                          <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-blue-700 bg-blue-50/30 text-sm">
-                            {row.rawQtyTransferred || 0}
-                          </td>
-                          <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-rose-700 bg-rose-50/30">
-                            {row.rawQtyDefect > 0 ? row.rawQtyDefect : '—'}
-                          </td>
-                          <td className="border-r border-slate-200 p-2 text-center font-mono-num font-black text-amber-700 bg-amber-50/30">
-                            {(() => {
-                              if (row.rawQtyMissing > 0) return row.rawQtyMissing;
-                              const po = bootstrap.ordersList.find((p) => (row.poId && p.poId.toLowerCase() === row.poId.toLowerCase()) || (row.productName && p.productName.trim().toLowerCase() === row.productName.trim().toLowerCase()));
-                              if (po && po.qtyPo > 0) {
-                                const calc = Math.max(0, po.qtyPo - (row.rawQtyTransferred || 0) - (row.rawQtyDefect || 0));
-                                if (calc > 0) return calc;
-                              }
-                              return '—';
-                            })()}
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5 text-xs">
-                            <div className="font-bold text-slate-800">
-                              {deptName(row.fromDept)} &rarr; {deptName(row.toDept)}
-                            </div>
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5 text-xs">
-                            <div className="text-slate-800">
-                              <strong>Nhận:</strong> {row.receiverName || '—'}
-                            </div>
-                            <div className="text-slate-500">
-                              <strong>Giao:</strong> {row.senderName || '—'}
-                            </div>
-                          </td>
-                          <td className="border-r border-slate-200 p-2.5 text-xs text-slate-600">
-                            {row.note || '—'}
-                          </td>
-                          <td className="p-2 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditHandover(row)}
-                                className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-colors"
-                                title="Chỉnh sửa số liệu phiếu bàn giao đã chuyển trước đó"
-                              >
-                                <Edit3 className="h-3 w-3" /> Sửa
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteHandover(row.id)}
-                                className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
-                                title="Xóa phiếu bàn giao này"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5 text-xs">
+                              <div className="text-slate-800">
+                                <strong>Nhận:</strong> {row.receiverName || '—'}
+                              </div>
+                              <div className="text-slate-500">
+                                <strong>Giao:</strong> {row.senderName || '—'}
+                              </div>
+                            </td>
+                            <td className="border-r border-slate-200 p-2.5 text-xs text-slate-600">
+                              {row.note || '—'}
+                            </td>
+                            <td className="p-2 text-center whitespace-nowrap">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditHandover(row)}
+                                  className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 hover:text-blue-900 border border-blue-200 transition-colors"
+                                  title="Chỉnh sửa số liệu phiếu bàn giao đã chuyển trước đó"
+                                >
+                                  <Edit3 className="h-3 w-3" /> Sửa
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteHandover(row.id)}
+                                  className="p-1 rounded text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition-colors"
+                                  title="Xóa phiếu bàn giao này"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             )}
           </Card>
         </div>
@@ -3482,11 +3467,10 @@ const HANDOVER_RECEIVER_OPTIONS = [
                     key={preset.sec}
                     type="button"
                     onClick={() => setEditStdSeconds(preset.sec)}
-                    className={`rounded border px-1.5 py-0.5 text-[10px] font-bold transition-colors ${
-                      editStdSeconds === preset.sec
+                    className={`rounded border px-1.5 py-0.5 text-[10px] font-bold transition-colors ${editStdSeconds === preset.sec
                         ? 'border-blue-600 bg-blue-600 text-white'
                         : 'border-slate-300 bg-white text-slate-700 hover:bg-blue-50'
-                    }`}
+                      }`}
                   >
                     {preset.label}
                   </button>
@@ -3512,7 +3496,7 @@ const HANDOVER_RECEIVER_OPTIONS = [
                   {Math.round(
                     (((editOkQty + editReworkQty + editScrapQty) * editStdSeconds) /
                       Math.max(1, 28800 - editStopMinutes * 60)) *
-                      10000
+                    10000
                   ) / 100}
                   % ĐM
                 </strong>

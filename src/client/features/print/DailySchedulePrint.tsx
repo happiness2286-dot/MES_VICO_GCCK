@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Printer } from 'lucide-react';
 import type { DailyPlanRow } from '@shared/types';
 import { apiClient } from '../../lib/apiClient';
 import { navigateTo } from '../../lib/navigation';
 import { VicoLogo } from '../../components/VicoLogo';
+import { sortDailyPlanRows } from '../../lib/baselinePlan';
 
 export function DailySchedulePrint() {
   const [workDate, setWorkDate] = useState<string>(() => {
@@ -31,7 +32,7 @@ export function DailySchedulePrint() {
           `/schedules/daily?date=${encodeURIComponent(workDate)}`
         );
         if (mounted) {
-          setRows(res.rows || []);
+          setRows(sortDailyPlanRows(res.rows || []));
         }
       } catch (err) {
         console.error('Failed to load schedule print data', err);
@@ -46,17 +47,47 @@ export function DailySchedulePrint() {
   }, [workDate]);
 
   const [y, m, d] = (workDate || '').split('-');
-  const displayDateStr = d && m && y ? `${d}/${m}/${y}` : workDate;
+  const displayDateStr =
+    d && m && y ? `${Number(d) || d}/${Number(m) || m}/${y}` : workDate;
 
-  // Group by shift
-  const shiftGroups = ['Ca 1', 'Ca 2', 'Ca 3', 'Ca Hành chính', 'Tăng ca'].filter((s) =>
-    rows.some((r) => r.shiftType === s)
-  );
+  const sortedRows = useMemo(() => sortDailyPlanRows(rows), [rows]);
+
+  // Precompute rowSpans for Ca Làm Việc (col 2) and Người Thực Hiện (col 3)
+  const { shiftSpans, workerSpans } = useMemo(() => {
+    const sSpans = new Array<number>(sortedRows.length).fill(0);
+    const wSpans = new Array<number>(sortedRows.length).fill(0);
+
+    let sStart = 0;
+    for (let i = 1; i <= sortedRows.length; i++) {
+      const prevShift = sortedRows[sStart]?.shiftType || 'Ca 1';
+      const curShift = i < sortedRows.length ? sortedRows[i]?.shiftType || 'Ca 1' : null;
+      if (curShift !== prevShift) {
+        sSpans[sStart] = i - sStart;
+        sStart = i;
+      }
+    }
+
+    let wStart = 0;
+    for (let i = 1; i <= sortedRows.length; i++) {
+      const prev = sortedRows[wStart];
+      const cur = i < sortedRows.length ? sortedRows[i] : null;
+      const sameWorkerInShift =
+        cur &&
+        (cur.shiftType || 'Ca 1') === (prev?.shiftType || 'Ca 1') &&
+        (cur.workerName || '').trim() === (prev?.workerName || '').trim();
+      if (!sameWorkerInShift) {
+        wSpans[wStart] = i - wStart;
+        wStart = i;
+      }
+    }
+
+    return { shiftSpans: sSpans, workerSpans: wSpans };
+  }, [sortedRows]);
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 sm:p-6 print:bg-white print:p-0">
       {/* Top action toolbar (hidden on print) */}
-      <div className="no-print mx-auto mb-4 flex max-w-[1200px] flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="no-print mx-auto mb-4 flex max-w-[1250px] flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -81,7 +112,7 @@ export function DailySchedulePrint() {
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#00B050] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700"
           >
             <Printer className="h-4 w-4" />
             In Biểu Mẫu A4 (Ctrl + P)
@@ -90,43 +121,50 @@ export function DailySchedulePrint() {
       </div>
 
       {/* Main A4 Printable Document Container */}
-      <div className="mx-auto max-w-[1200px] bg-white p-6 shadow-md print:max-w-none print:p-2 print:shadow-none">
+      <div className="mx-auto max-w-[1250px] bg-white p-6 shadow-md print:max-w-none print:p-2 print:shadow-none">
         {/* Header Block matching VICO Form GCCK.QT.01.BM01 */}
         <div className="border border-black">
-          <div className="grid grid-cols-12 border-b border-black text-center">
+          <div className="grid grid-cols-12 items-center border-b border-black py-2">
             {/* Logo VICO */}
-            <div className="col-span-2 flex items-center justify-center border-r border-black p-2">
-              <VicoLogo className="h-10 w-auto object-contain" />
+            <div className="col-span-2 flex items-center justify-center px-2">
+              <VicoLogo className="h-11 w-auto object-contain" />
             </div>
 
             {/* Title */}
-            <div className="col-span-8 flex flex-col items-center justify-center p-2">
-              <h1 className="text-2xl font-black uppercase tracking-wider text-slate-900">
-                KẾ HOẠCH SẢN XUẤT
+            <div className="col-span-7 flex flex-col items-center justify-center px-2 text-center">
+              <h1 className="text-2xl font-black uppercase tracking-wide text-black">
+                KẾ HOẠCH SẢN XUẤT NGÀY
               </h1>
             </div>
 
-            {/* Meta Code & Date */}
-            <div className="col-span-2 flex flex-col justify-between border-l border-black p-1.5 text-right font-mono text-[11px] font-bold">
-              <div>GCCK.QT.01.BM01</div>
-              <div className="text-slate-800">NGÀY {displayDateStr}</div>
+            {/* Meta Date & Code matching I2 & J2 boxes */}
+            <div className="col-span-3 flex items-end justify-end pr-2 pt-3">
+              <div className="grid grid-cols-2 border border-black text-center text-[11px] font-bold text-black">
+                <div className="border-r border-black px-2.5 py-1 italic">
+                  NGÀY {displayDateStr}
+                </div>
+                <div className="px-2.5 py-1">GCCK.QT.01.BM01</div>
+              </div>
             </div>
           </div>
 
-          {/* Table Content */}
-          <table className="w-full border-collapse text-left text-[11px] text-slate-900">
+          {/* Table Content matching exact 10 columns of user's Excel form */}
+          <table className="w-full border-collapse text-left text-[11px] text-black">
             <thead>
-              <tr className="border-b border-black bg-slate-100 text-center font-extrabold uppercase">
-                <th className="w-12 border-r border-black py-1.5">Ca</th>
-                <th className="w-8 border-r border-black py-1.5">STT</th>
-                <th className="w-36 border-r border-black px-2 py-1.5">HỌ VÀ TÊN</th>
-                <th className="border-r border-black px-2 py-1.5">SẢN PHẨM / BẢN VẼ</th>
-                <th className="w-32 border-r border-black px-2 py-1.5">KHÁCH HÀNG</th>
-                <th className="border-r border-black px-2 py-1.5">CÔNG ĐOẠN HT</th>
-                <th className="w-16 border-r border-black py-1.5">KẾ HOẠCH</th>
-                <th className="w-40 border-r border-black px-2 py-1.5">MÁY / CA</th>
-                <th className="w-20 border-r border-black py-1.5">MÃ QR</th>
-                <th className="w-28 px-2 py-1.5">Ghi chú</th>
+              <tr
+                className="border-b border-black bg-[#00B050] text-center font-bold text-white"
+                style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}
+              >
+                <th className="w-10 border-r border-black py-2">STT</th>
+                <th className="w-20 border-r border-black py-2">Ca Làm Việc</th>
+                <th className="w-36 border-r border-black px-2 py-2">Người Thực Hiện (Thợ)</th>
+                <th className="w-40 border-r border-black px-2 py-2">Khách Hàng</th>
+                <th className="border-r border-black px-2 py-2">Tên Sản Phẩm / Bản Vẽ</th>
+                <th className="border-r border-black px-2 py-2">Công Đoạn / Nguyên Công</th>
+                <th className="w-24 border-r border-black px-1 py-2">Số Lượng Kế Hoạch</th>
+                <th className="w-36 border-r border-black px-2 py-2">Máy Thực Hiện</th>
+                <th className="w-24 border-r border-black px-1 py-2">Số Lượng Thực Tế</th>
+                <th className="w-36 px-2 py-2">Ghi Chú</th>
               </tr>
             </thead>
             <tbody>
@@ -136,70 +174,90 @@ export function DailySchedulePrint() {
                     Đang tải dữ liệu biểu mẫu kế hoạch...
                   </td>
                 </tr>
-              ) : rows.length === 0 ? (
+              ) : sortedRows.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="p-8 text-center text-slate-500">
                     Chưa có kế hoạch nào được lập cho ngày {displayDateStr}.
                   </td>
                 </tr>
               ) : (
-                shiftGroups.map((shift) => {
-                  const shiftRows = rows.filter((r) => r.shiftType === shift);
-                  return shiftRows.map((row, idx) => {
-                    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=70x70&data=${encodeURIComponent(
-                      `GCCK|${row.customer || 'VICO'}|${row.productName}|${row.workerName}`
-                    )}`;
+                sortedRows.map((row, idx) => {
+                  const noteStr = row.note || 'Máy chính';
+                  const isSecondMachine = /ghép|0\.33|máy phụ/i.test(noteStr);
+                  const rowTintStyle = {
+                    backgroundColor: isSecondMachine ? '#FFFBEB' : '#F0F9FF',
+                    WebkitPrintColorAdjust: 'exact' as const,
+                    printColorAdjust: 'exact' as const,
+                  };
+                  const machineTintStyle = {
+                    backgroundColor: isSecondMachine ? '#FEF3C7' : '#DFF2FE',
+                    color: isSecondMachine ? '#92400E' : '#075985',
+                    WebkitPrintColorAdjust: 'exact' as const,
+                    printColorAdjust: 'exact' as const,
+                  };
 
-                    return (
-                      <tr
-                        key={row.id || `${shift}-${idx}`}
-                        className="border-b border-black hover:bg-slate-50"
-                      >
-                        {idx === 0 && (
-                          <td
-                            rowSpan={shiftRows.length}
-                            className="border-r border-black text-center font-extrabold italic text-slate-900"
-                          >
-                            {shift}
-                          </td>
-                        )}
-                        <td className="border-r border-black text-center font-mono font-bold">
-                          {row.stt || idx + 1}
+                  return (
+                    <tr key={row.id || `row-${idx}`} className="border-b border-black">
+                      <td className="border-r border-black py-1.5 text-center font-medium">
+                        {idx + 1}
+                      </td>
+                      {shiftSpans[idx] > 0 && (
+                        <td
+                          rowSpan={shiftSpans[idx]}
+                          className="border-r border-black bg-white px-1 py-1.5 text-center align-middle font-medium text-black"
+                        >
+                          {row.shiftType || 'Ca 1'}
                         </td>
-                        <td className="border-r border-black px-2 py-1 font-bold">
+                      )}
+                      {workerSpans[idx] > 0 && (
+                        <td
+                          rowSpan={workerSpans[idx]}
+                          className="border-r border-black bg-white px-2 py-1.5 text-center align-middle font-medium text-black"
+                        >
                           {row.workerName}
                         </td>
-                        <td className="border-r border-black px-2 py-1 font-semibold">
-                          {row.productName}
-                        </td>
-                        <td className="border-r border-black px-2 py-1">{row.customer}</td>
-                        <td className="border-r border-black px-2 py-1">{row.opName}</td>
-                        <td className="border-r border-black text-center font-mono font-bold">
-                          {row.plannedQty}
-                        </td>
-                        <td className="border-r border-black px-2 py-1 font-semibold text-slate-800">
-                          {row.machineName}
-                        </td>
-                        <td className="border-r border-black p-0.5 text-center">
-                          <img
-                            src={qrUrl}
-                            alt="QR Scan"
-                            className="mx-auto h-11 w-11 object-contain"
-                            loading="lazy"
-                          />
-                        </td>
-                        <td className="px-2 py-1 text-[10px] font-semibold text-amber-900">
-                          {row.note}
-                        </td>
-                      </tr>
-                    );
-                  });
+                      )}
+                      <td className="border-r border-black px-2 py-1.5" style={rowTintStyle}>
+                        {row.customer}
+                      </td>
+                      <td className="border-r border-black px-2 py-1.5" style={rowTintStyle}>
+                        {row.productName}
+                      </td>
+                      <td className="border-r border-black px-2 py-1.5" style={rowTintStyle}>
+                        {row.opName}
+                      </td>
+                      <td
+                        className="border-r border-black px-2 py-1.5 text-right font-medium"
+                        style={rowTintStyle}
+                      >
+                        {String(Number(row.plannedQty || 0)).replace('.', ',')}
+                      </td>
+                      <td
+                        className="border-r border-black px-2 py-1.5 font-medium"
+                        style={machineTintStyle}
+                      >
+                        {row.machineName}
+                      </td>
+                      <td
+                        className="border-r border-black px-2 py-1.5 text-right font-medium"
+                        style={rowTintStyle}
+                      >
+                        {Number(row.actualQty || 0)}
+                      </td>
+                      <td
+                        className="px-2 py-1.5 font-semibold"
+                        style={machineTintStyle}
+                      >
+                        {noteStr}
+                      </td>
+                    </tr>
+                  );
                 })
               )}
             </tbody>
           </table>
 
-          {/* Footer Safety Regulations in Red (Matching the user's Excel) */}
+          {/* Footer Safety Regulations in Red */}
           <div className="border-t border-black bg-white p-3 font-semibold text-red-600">
             <div className="text-xs font-bold leading-relaxed">
               <div>Note: 1. Tuân thủ theo kế hoạch đề ra</div>

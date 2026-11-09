@@ -45,9 +45,9 @@ import { buildConsolidatedQcList } from './qcLogHelper';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase, pushDailyPlanToSupabase } from './supabaseClient';
-import { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from './baselinePlan';
+import { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows } from './baselinePlan';
 
-export { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty } from './baselinePlan';
+export { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows } from './baselinePlan';
 
 export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';
@@ -2445,13 +2445,14 @@ export function getFallbackDailyDates(): Array<{ workDate: string; rowCount: num
 }
 
 export function saveFallbackDailyPlan(workDate: string, rows: DailyPlanRow[]): void {
+  const sortedRows = sortDailyPlanRows(rows);
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(LOCAL_DAILY_PLAN_PREFIX + workDate, JSON.stringify(rows));
+      localStorage.setItem(LOCAL_DAILY_PLAN_PREFIX + workDate, JSON.stringify(sortedRows));
       const dates = getFallbackDailyDates();
       const existingIdx = dates.findIndex((d) => d.workDate === workDate);
-      const workerSet = new Set(rows.map((r) => r.workerName).filter(Boolean));
-      const entry = { workDate, rowCount: rows.length, workerCount: workerSet.size };
+      const workerSet = new Set(sortedRows.map((r) => r.workerName).filter(Boolean));
+      const entry = { workDate, rowCount: sortedRows.length, workerCount: workerSet.size };
       if (existingIdx >= 0) dates[existingIdx] = entry;
       else dates.unshift(entry);
       dates.sort((a, b) => b.workDate.localeCompare(a.workDate));
@@ -2505,7 +2506,7 @@ export function copyFallbackDailyPlan(
  * - Hoàng Ngọc Hà (Quản đốc) chỉ đạo 3 ca (không đứng máy)
  */
 export function rotateDailyPlanWeek(rows: DailyPlanRow[]): DailyPlanRow[] {
-  return rows.map((r) => {
+  const rotated = rows.map((r) => {
     // Đặng Ngọc Long cố định Ca 2 theo yêu cầu nhà máy
     if ((r.workerName || '').includes('Long')) {
       return { ...r, shiftType: 'Ca 2' };
@@ -2520,6 +2521,7 @@ export function rotateDailyPlanWeek(rows: DailyPlanRow[]): DailyPlanRow[] {
     else if (r.shiftType === 'Ca 3') newShift = 'Ca 2';
     return { ...r, shiftType: newShift };
   });
+  return sortDailyPlanRows(rotated);
 }
 
 export function getFallbackDailyPlan(workDate: string, shiftType?: string): DailyPlanRow[] {
