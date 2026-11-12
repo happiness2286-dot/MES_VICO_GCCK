@@ -1495,7 +1495,7 @@ function addLimeSection(ws: ExcelJS.Worksheet, title: string): ExcelJS.Row {
 
 function addLimeGridRow(
   ws: ExcelJS.Worksheet,
-  values: Array<string | number>,
+  values: Array<string | number | ExcelJS.CellFormulaValue>,
   isEven = false,
   alignments?: Array<'center' | 'left' | 'right'>
 ): ExcelJS.Row {
@@ -1508,10 +1508,16 @@ function addLimeGridRow(
       pattern: 'solid',
       fgColor: { argb: isEven ? LIME_THEME.zebraBg : 'FFFFFFFF' },
     };
-    const align = alignments?.[colNumber - 1] || (typeof cell.value === 'number' ? 'right' : 'left');
+    const isNum =
+      typeof cell.value === 'number' ||
+      (typeof cell.value === 'object' &&
+        cell.value !== null &&
+        'formula' in cell.value &&
+        typeof (cell.value as any).result === 'number');
+    const align = alignments?.[colNumber - 1] || (isNum ? 'right' : 'left');
     cell.alignment = { vertical: 'middle', horizontal: align };
     cell.border = THIN_GRID_BORDER;
-    if (typeof cell.value === 'number') {
+    if (isNum) {
       cell.numFmt = '#,##0';
     }
   });
@@ -1520,7 +1526,7 @@ function addLimeGridRow(
 
 function addLimeSummaryTotal(
   ws: ExcelJS.Worksheet,
-  values: Array<string | number>,
+  values: Array<string | number | ExcelJS.CellFormulaValue>,
   alignments?: Array<'center' | 'left' | 'right'>
 ): ExcelJS.Row {
   const row = ws.addRow(values);
@@ -1532,7 +1538,13 @@ function addLimeSummaryTotal(
       pattern: 'solid',
       fgColor: { argb: LIME_THEME.totalBg },
     };
-    const align = alignments?.[colNumber - 1] || (typeof cell.value === 'number' ? 'right' : 'center');
+    const isNum =
+      typeof cell.value === 'number' ||
+      (typeof cell.value === 'object' &&
+        cell.value !== null &&
+        'formula' in cell.value &&
+        typeof (cell.value as any).result === 'number');
+    const align = alignments?.[colNumber - 1] || (isNum ? 'right' : 'center');
     cell.alignment = { vertical: 'middle', horizontal: align };
     cell.border = {
       top: { style: 'thin', color: { argb: LIME_THEME.borderLime } },
@@ -1540,7 +1552,7 @@ function addLimeSummaryTotal(
       left: { style: 'thin', color: { argb: LIME_THEME.borderCell } },
       right: { style: 'thin', color: { argb: LIME_THEME.borderCell } },
     };
-    if (typeof cell.value === 'number') {
+    if (isNum) {
       cell.numFmt = '#,##0';
     }
   });
@@ -1646,7 +1658,7 @@ export async function buildWeeklyReportWorkbook(
     '',
     report.summary.totalPlannedQty,
     report.summary.totalActualQty,
-    `${report.summary.completionPct}%`,
+    report.summary.completionPct / 100,
     report.summary.completedPoCount,
     report.summary.delayedPoCount,
   ]);
@@ -1663,6 +1675,7 @@ export async function buildWeeklyReportWorkbook(
       cell.numFmt = '#,##0';
     } else if (colNumber === 5) {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.numFmt = '0%';
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -1691,11 +1704,19 @@ export async function buildWeeklyReportWorkbook(
   let sumKhProduct = 0;
   let sumKhPlanned = 0;
   let sumKhActual = 0;
+  const firstKh1Row = ws.rowCount + 1;
 
   (report.customerStats || []).forEach((c, idx) => {
     sumKhProduct += c.productCount || 0;
     sumKhPlanned += c.plannedQty || 0;
     sumKhActual += c.actualQty || 0;
+
+    const rIdx = ws.rowCount + 1;
+    const ratioResult = c.plannedQty > 0 ? c.actualQty / c.plannedQty : 1;
+    const statusResult =
+      c.actualQty >= c.plannedQty
+        ? '✅ Đạt chuẩn KH'
+        : `⚠️ Chậm ${Math.max(0, c.plannedQty - c.actualQty)} SP`;
 
     const row = addLimeGridRow(
       ws,
@@ -1705,38 +1726,77 @@ export async function buildWeeklyReportWorkbook(
         c.productCount,
         c.plannedQty,
         c.actualQty,
-        `${c.completionPct}%`,
-        c.completionPct >= 90 ? '✅ Đạt chuẩn KH' : `⚠️ Chậm ${Math.max(0, c.plannedQty - c.actualQty)} SP`,
+        { formula: `IF(D${rIdx}>0,E${rIdx}/D${rIdx},1)`, result: ratioResult },
+        {
+          formula: `IF(E${rIdx}>=D${rIdx},"✅ Đạt chuẩn KH","⚠️ Chậm "&(D${rIdx}-E${rIdx})&" SP")`,
+          result: statusResult,
+        },
       ],
       idx % 2 === 1,
       ['center', 'left', 'center', 'right', 'right', 'center', 'center']
     );
+    row.getCell(6).numFmt = '0%';
 
     // Tô nhẹ trạng thái
     const statusCell = row.getCell(7);
-    if (c.completionPct < 90) {
+    if (c.actualQty < c.plannedQty) {
       statusCell.font = { bold: true, color: { argb: 'FFB91C1C' }, size: 9.5 };
     } else {
       statusCell.font = { bold: true, color: { argb: 'FF15803D' }, size: 9.5 };
     }
   });
 
-  // Dòng tổng cộng Khối 1
-  const kh1TotalPct = sumKhPlanned > 0 ? Math.round((sumKhActual / sumKhPlanned) * 100) : 100;
+  const lastKh1Row = Math.max(firstKh1Row, ws.rowCount);
+  const kh1TotalRowIdx = ws.rowCount + 1;
+
+  // Dòng tổng cộng Khối 1 (Gắn công thức SUM & IF trực tiếp)
+  const kh1TotalRatio = sumKhPlanned > 0 ? sumKhActual / sumKhPlanned : 1;
   const kh1TotalRow = addLimeSummaryTotal(
     ws,
     [
       'TỔNG CỘNG KHÁCH HÀNG',
       '',
-      sumKhProduct,
-      sumKhPlanned,
-      sumKhActual,
-      `${kh1TotalPct}%`,
-      kh1TotalPct >= 90 ? '✅ Đạt mục tiêu tuần' : '⚠️ Cần xử lý bù',
+      { formula: `SUM(C${firstKh1Row}:C${lastKh1Row})`, result: sumKhProduct },
+      { formula: `SUM(D${firstKh1Row}:D${lastKh1Row})`, result: sumKhPlanned },
+      { formula: `SUM(E${firstKh1Row}:E${lastKh1Row})`, result: sumKhActual },
+      {
+        formula: `IF(D${kh1TotalRowIdx}>0,E${kh1TotalRowIdx}/D${kh1TotalRowIdx},1)`,
+        result: kh1TotalRatio,
+      },
+      {
+        formula: `IF(F${kh1TotalRowIdx}>=0.9,"✅ Đạt mục tiêu tuần","⚠️ Cần xử lý bù")`,
+        result: kh1TotalRatio >= 0.9 ? '✅ Đạt mục tiêu tuần' : '⚠️ Cần xử lý bù',
+      },
     ],
     ['center', 'center', 'center', 'right', 'right', 'center', 'center']
   );
+  kh1TotalRow.getCell(6).numFmt = '0%';
   ws.mergeCells(`A${kh1TotalRow.number}:B${kh1TotalRow.number}`);
+
+  // Gắn công thức động cho dòng BẢNG CHỈ SỐ SẢN XUẤT CHÍNH (KPI TUẦN) tham chiếu trực tiếp tới Tổng Khối 1 & Sheet 2
+  const poCount = (report.poStatuses || []).length;
+  const lastPoSheetRow = Math.max(3, 2 + poCount);
+  kpiDataRow.getCell(3).value = {
+    formula: `D${kh1TotalRowIdx}`,
+    result: report.summary.totalPlannedQty,
+  };
+  kpiDataRow.getCell(4).value = {
+    formula: `E${kh1TotalRowIdx}`,
+    result: report.summary.totalActualQty,
+  };
+  kpiDataRow.getCell(5).value = {
+    formula: `IF(C${kpiDataIdx}>0,D${kpiDataIdx}/C${kpiDataIdx},1)`,
+    result: report.summary.completionPct / 100,
+  };
+  kpiDataRow.getCell(5).numFmt = '0%';
+  kpiDataRow.getCell(6).value = {
+    formula: `COUNTIF(CHI_TIET_DON_HANG_PO!J3:J${lastPoSheetRow},"*Đạt*")`,
+    result: report.summary.completedPoCount,
+  };
+  kpiDataRow.getCell(7).value = {
+    formula: `COUNTIF(CHI_TIET_DON_HANG_PO!J3:J${lastPoSheetRow},"*Chậm*")`,
+    result: report.summary.delayedPoCount,
+  };
 
   const rBlank3 = ws.addRow(['', '', '', '', '', '', '']);
   rBlank3.height = 8;
@@ -1745,16 +1805,33 @@ export async function buildWeeklyReportWorkbook(
   addLimeSection(ws, 'KHỐI 2: TỔNG HỢP GIỜ CÔNG & LAO ĐỘNG (THEO PHÂN HỆ CHẤM CÔNG 7 NGÀY)');
 
   const totalWorkers = (report.workerLaborStats || []).length;
-  const totalStandardShifts = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.standardShifts || 0), 0);
-  const totalOtHours = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.otHours || 0), 0);
-  const totalSundayHours = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.sundayHours || 0), 0);
-  const totalConvertedShifts = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.totalConvertedShifts || 0), 0);
-  const totalCompletedPieces = (report.workerLaborStats || []).reduce((acc, w) => acc + (w.actualCompletedPieces || 0), 0);
+  const totalStandardShifts =
+    Math.round(
+      (report.workerLaborStats || []).reduce((acc, w) => acc + (w.standardShifts || 0), 0) * 10
+    ) / 10;
+  const totalOtHours =
+    Math.round(
+      (report.workerLaborStats || []).reduce((acc, w) => acc + (w.otHours || 0), 0) * 10
+    ) / 10;
+  const totalSundayHours =
+    Math.round(
+      (report.workerLaborStats || []).reduce((acc, w) => acc + (w.sundayHours || 0), 0) * 10
+    ) / 10;
+  const totalConvertedShifts =
+    Math.round((totalStandardShifts + (totalOtHours + totalSundayHours) / 8) * 100) / 100;
+  const totalCompletedPieces = (report.workerLaborStats || []).reduce(
+    (acc, w) => acc + (w.actualCompletedPieces || 0),
+    0
+  );
 
-  // 3 dòng tóm tắt xúc tích chuẩn chỉnh như ảnh thực tế của người dùng
-  const addSummaryBullet = (stt: number, text: string, isEvenBg: boolean) => {
+  // 3 dòng tóm tắt xúc tích chuẩn chỉnh (sẽ được gắn công thức tham chiếu trực tiếp tới dòng Tổng Cộng Lao Động)
+  const addSummaryBullet = (
+    stt: number,
+    valOrFormula: string | ExcelJS.CellFormulaValue,
+    isEvenBg: boolean
+  ) => {
     const rowIdx = ws.rowCount + 1;
-    const row = ws.addRow([stt, text, '', '', '', '', '']);
+    const row = ws.addRow([stt, valOrFormula, '', '', '', '', '']);
     ws.mergeCells(`B${rowIdx}:G${rowIdx}`);
     row.height = 22;
     for (let c = 1; c <= 7; c++) {
@@ -1776,23 +1853,36 @@ export async function buildWeeklyReportWorkbook(
     return row;
   };
 
+  // Tính trước vị trí dòng Tổng Cộng Lao Động của Khối 2:
+  // 3 dòng bullet + 1 dòng header + totalWorkers dòng thợ + 1
+  const kh2TotalRowPreCalc = ws.rowCount + 3 + 1 + totalWorkers + 1;
+
   addSummaryBullet(
     1,
-    `Tổng công lao động chính ${totalStandardShifts}/${totalWorkers * 7} công lao động chính (${totalWorkers} thợ)`,
+    {
+      formula: `"Tổng công lao động chính "&C${kh2TotalRowPreCalc}&"/${totalWorkers * 6} công chuẩn 6 ngày T2-T7 (${totalWorkers} thợ)"`,
+      result: `Tổng công lao động chính ${totalStandardShifts}/${totalWorkers * 6} công chuẩn 6 ngày T2-T7 (${totalWorkers} thợ)`,
+    },
     false
   );
   addSummaryBullet(
     2,
-    `Tăng ca ngày thường ${totalOtHours} giờ  --->  ${(totalOtHours / 8).toFixed(1)} công quy đổi`,
+    {
+      formula: `"Tăng ca ngày thường "&D${kh2TotalRowPreCalc}&" giờ  --->  "&TEXT(D${kh2TotalRowPreCalc}/8,"0.0")&" công quy đổi"`,
+      result: `Tăng ca ngày thường ${totalOtHours} giờ  --->  ${(totalOtHours / 8).toFixed(1)} công quy đổi`,
+    },
     true
   );
   addSummaryBullet(
     3,
-    `Tăng ca ngày chủ nhật ${totalSundayHours} giờ  --->  ${(totalSundayHours / 8).toFixed(1)} công quy đổi`,
+    {
+      formula: `"Tăng ca ngày chủ nhật "&E${kh2TotalRowPreCalc}&" giờ  --->  "&TEXT(E${kh2TotalRowPreCalc}/8,"0.0")&" công quy đổi"`,
+      result: `Tăng ca ngày chủ nhật ${totalSundayHours} giờ  --->  ${(totalSundayHours / 8).toFixed(1)} công quy đổi`,
+    },
     false
   );
 
-  // Bảng phân bổ chi tiết theo từng thợ (chuẩn 7 cột, không bị bè sang cột I)
+  // Bảng phân bổ chi tiết theo từng thợ (tham chiếu bằng công thức trực tiếp sang Sheet CHAM_CONG_7_NGAY)
   addLimeHeader(ws, [
     'STT',
     'Họ Và Tên Thợ (Mã NV)',
@@ -1803,36 +1893,59 @@ export async function buildWeeklyReportWorkbook(
     'Sản Lượng SP Làm Ra',
   ]);
 
+  const firstKh2Row = ws.rowCount + 1;
+
   (report.workerLaborStats || []).forEach((w, idx) => {
-    addLimeGridRow(
+    const rIdx = ws.rowCount + 1;
+    const attSheetRow = 4 + idx; // Dòng tương ứng của thợ trên Sheet 3 (CHAM_CONG_7_NGAY)
+    const row = addLimeGridRow(
       ws,
       [
         idx + 1,
         `${w.workerName} (${w.workerId})`,
-        w.standardShifts,
-        w.otHours,
-        w.sundayHours,
-        w.totalConvertedShifts,
-        w.actualCompletedPieces,
+        { formula: `CHAM_CONG_7_NGAY!L${attSheetRow}`, result: w.standardShifts },
+        { formula: `CHAM_CONG_7_NGAY!M${attSheetRow}`, result: w.otHours },
+        { formula: `CHAM_CONG_7_NGAY!N${attSheetRow}`, result: w.sundayHours },
+        {
+          formula: `ROUND(C${rIdx}+(D${rIdx}+E${rIdx})/8,2)`,
+          result: w.totalConvertedShifts,
+        },
+        { formula: `CHAM_CONG_7_NGAY!Q${attSheetRow}`, result: w.actualCompletedPieces },
       ],
       idx % 2 === 1,
       ['center', 'left', 'center', 'center', 'center', 'center', 'right']
     );
+    row.getCell(3).numFmt = '0.##';
+    row.getCell(4).numFmt = '0.##';
+    row.getCell(5).numFmt = '0.##';
+    row.getCell(6).numFmt = '0.00';
+    row.getCell(7).numFmt = '#,##0';
   });
+
+  const lastKh2Row = Math.max(firstKh2Row, ws.rowCount);
+  const kh2TotalRowIdx = ws.rowCount + 1;
 
   const kh2TotalRow = addLimeSummaryTotal(
     ws,
     [
       'TỔNG CỘNG LAO ĐỘNG',
       '',
-      totalStandardShifts,
-      totalOtHours,
-      totalSundayHours,
-      Number(totalConvertedShifts.toFixed(1)),
-      totalCompletedPieces,
+      { formula: `SUM(C${firstKh2Row}:C${lastKh2Row})`, result: totalStandardShifts },
+      { formula: `SUM(D${firstKh2Row}:D${lastKh2Row})`, result: totalOtHours },
+      { formula: `SUM(E${firstKh2Row}:E${lastKh2Row})`, result: totalSundayHours },
+      {
+        formula: `ROUND(C${kh2TotalRowIdx}+(D${kh2TotalRowIdx}+E${kh2TotalRowIdx})/8,2)`,
+        result: Number(totalConvertedShifts.toFixed(2)),
+      },
+      { formula: `SUM(G${firstKh2Row}:G${lastKh2Row})`, result: totalCompletedPieces },
     ],
     ['center', 'center', 'center', 'center', 'center', 'center', 'right']
   );
+  kh2TotalRow.getCell(3).numFmt = '0.##';
+  kh2TotalRow.getCell(4).numFmt = '0.##';
+  kh2TotalRow.getCell(5).numFmt = '0.##';
+  kh2TotalRow.getCell(6).numFmt = '0.00';
+  kh2TotalRow.getCell(7).numFmt = '#,##0';
   ws.mergeCells(`A${kh2TotalRow.number}:B${kh2TotalRow.number}`);
 
   const rBlank4 = ws.addRow(['', '', '', '', '', '', '']);
@@ -1862,7 +1975,10 @@ export async function buildWeeklyReportWorkbook(
       cell.alignment = { vertical: 'middle', horizontal: c <= 2 ? 'center' : c === 4 ? 'right' : 'left' };
     });
   } else {
+    const firstDtRow = ws.rowCount + 1;
+    let sumStopMin = 0;
     report.downtimeIncidents.forEach((inc, idx) => {
+      sumStopMin += Number(inc.stopMinutes) || 0;
       const rowIdx = ws.rowCount + 1;
       const row = ws.addRow([
         idx + 1,
@@ -1895,6 +2011,25 @@ export async function buildWeeklyReportWorkbook(
         }
       });
     });
+    const lastDtRow = ws.rowCount;
+    const dtTotRow = addLimeSummaryTotal(
+      ws,
+      [
+        'TỔNG THỜI GIAN DỪNG MÁY',
+        '',
+        '',
+        { formula: `SUM(D${firstDtRow}:D${lastDtRow})`, result: sumStopMin },
+        {
+          formula: `"Tương đương "&TEXT(D${lastDtRow + 1}/60,"0.0")&" giờ dừng máy"`,
+          result: `Tương đương ${(sumStopMin / 60).toFixed(1)} giờ dừng máy`,
+        },
+        '',
+        '',
+      ],
+      ['center', 'center', 'center', 'right', 'left', 'left', 'left']
+    );
+    ws.mergeCells(`A${dtTotRow.number}:C${dtTotRow.number}`);
+    ws.mergeCells(`E${dtTotRow.number}:G${dtTotRow.number}`);
   }
 
   const rBlank5 = ws.addRow(['', '', '', '', '', '', '']);
@@ -1981,7 +2116,13 @@ export async function buildWeeklyReportWorkbook(
     ]);
     ws.mergeCells(`F${outHeader.number}:G${outHeader.number}`);
 
+    const firstOutRow = ws.rowCount + 1;
+    let sumOutQty = 0;
+    let sumOutCost = 0;
+
     report.nextWeekForecast.outsourceRecommendations.forEach((rec, idx) => {
+      sumOutQty += Number(rec.suggestedOutsourceQty) || 0;
+      sumOutCost += Number(rec.estimatedOutsourceCost) || 0;
       const rowIdx = ws.rowCount + 1;
       const row = ws.addRow([
         idx + 1,
@@ -2015,6 +2156,24 @@ export async function buildWeeklyReportWorkbook(
         }
       });
     });
+
+    const lastOutRow = ws.rowCount;
+    const outTotRow = addLimeSummaryTotal(
+      ws,
+      [
+        'TỔNG CỘNG ĐỀ XUẤT OUTSOURCE',
+        '',
+        '',
+        { formula: `SUM(D${firstOutRow}:D${lastOutRow})`, result: sumOutQty },
+        { formula: `SUM(E${firstOutRow}:E${lastOutRow})`, result: sumOutCost },
+        '',
+        '',
+      ],
+      ['center', 'center', 'center', 'right', 'right', 'left', 'left']
+    );
+    outTotRow.getCell(5).numFmt = '#,##0" đ"';
+    ws.mergeCells(`A${outTotRow.number}:C${outTotRow.number}`);
+    ws.mergeCells(`F${outTotRow.number}:G${outTotRow.number}`);
   } else {
     // Không cần outsource
     const noOutIdx = ws.rowCount + 1;
@@ -2091,13 +2250,24 @@ export async function buildWeeklyReportWorkbook(
     'Tên Sản Phẩm / Chi Tiết',
     'Số Lượng Đặt (SP)',
     'Đã Xong CK (End)',
-    'Đang SX (WIP)',
+    'Đang SX / Còn Thiếu',
     'Hạn Giao Hàng',
     'Trạng Thái Tiến Độ',
     'Đánh Giá Tuần',
   ]);
 
+  let sumPoQty = 0;
+  let sumPoDone = 0;
+  let sumPoWip = 0;
+
   (report.poStatuses || []).forEach((po, idx) => {
+    const rIdx = ws2.rowCount + 1;
+    const wipVal = Math.max(0, (Number(po.qtyPo) || 0) - (Number(po.finishedQty) || 0));
+    sumPoQty += Number(po.qtyPo) || 0;
+    sumPoDone += Number(po.finishedQty) || 0;
+    sumPoWip += wipVal;
+
+    const evalResult = po.isDelayed ? '⚠️ Chậm Hạn / Cần Xử Lý Bù' : '✅ Đạt Kế Hoạch';
     const r = addLimeGridRow(
       ws2,
       [
@@ -2107,10 +2277,13 @@ export async function buildWeeklyReportWorkbook(
         po.productName,
         po.qtyPo,
         po.finishedQty,
-        po.wipQty,
+        { formula: `MAX(0,E${rIdx}-F${rIdx})`, result: wipVal },
         po.dueDate,
         po.status,
-        po.isDelayed ? '⚠️ Chậm Hạn / Cần Xử Lý Bù' : '✅ Đạt Kế Hoạch',
+        {
+          formula: `IF(F${rIdx}>=E${rIdx},"✅ Đạt Kế Hoạch","⚠️ Chậm Hạn / Cần Xử Lý Bù")`,
+          result: evalResult,
+        },
       ],
       idx % 2 === 1,
       ['center', 'left', 'left', 'left', 'right', 'right', 'right', 'center', 'center', 'center']
@@ -2129,7 +2302,268 @@ export async function buildWeeklyReportWorkbook(
     }
   });
 
+  if ((report.poStatuses || []).length > 0) {
+    const lastPoIdx = ws2.rowCount;
+    const totPoIdx = lastPoIdx + 1;
+    const ws2TotalRow = addLimeSummaryTotal(
+      ws2,
+      [
+        'TỔNG CỘNG ĐƠN HÀNG PO',
+        '',
+        '',
+        '',
+        { formula: `SUM(E3:E${lastPoIdx})`, result: sumPoQty },
+        { formula: `SUM(F3:F${lastPoIdx})`, result: sumPoDone },
+        { formula: `SUM(G3:G${lastPoIdx})`, result: sumPoWip },
+        '',
+        {
+          formula: `IF(E${totPoIdx}>0,F${totPoIdx}/E${totPoIdx},1)`,
+          result: sumPoQty > 0 ? sumPoDone / sumPoQty : 1,
+        },
+        {
+          formula: `"Đạt "&COUNTIF(J3:J${lastPoIdx},"*Đạt*")&"/"&COUNTA(B3:B${lastPoIdx})&" PO"`,
+          result: `Đạt ${report.summary.completedPoCount}/${(report.poStatuses || []).length} PO`,
+        },
+      ],
+      ['center', 'center', 'center', 'center', 'right', 'right', 'right', 'center', 'center', 'center']
+    );
+    ws2TotalRow.getCell(9).numFmt = '0%';
+    ws2.mergeCells(`A${ws2TotalRow.number}:D${ws2TotalRow.number}`);
+  }
+
   autoFitColumns(ws2, 10, 38);
+
+  // ==================== SHEET 3: BẢNG CHẤM CÔNG 7 NGÀY TRONG TUẦN (NGUỒN CỦA KHỐI 2) ====================
+  const ws3 = wb.addWorksheet('CHAM_CONG_7_NGAY', {
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+    },
+    views: [{ state: 'frozen', ySplit: 3 }],
+  });
+
+  ws3.addImage(logoId, {
+    tl: { col: 0.05, row: 0.05 },
+    ext: { width: 85, height: 26 },
+  });
+
+  const ws3Title = ws3.addRow([
+    '',
+    `BẢNG CHẤM CÔNG CHI TIẾT 7 NGÀY TRONG TUẦN (${report.weekStart} -> ${report.weekEnd}) — DỮ LIỆU GỐC KHỐI 2`,
+  ]);
+  ws3.mergeCells('B1:Q1');
+  ws3Title.height = 26;
+  ws3Title.getCell(2).font = { bold: true, size: 12, color: { argb: LIME_THEME.bannerFg } };
+  ws3Title.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+
+  const ws3Sub = ws3.addRow([
+    '',
+    'Ghi chú ký hiệu: C1, C2, C3, X = 1 công chuẩn (8h) | C1+2 = 1 công chuẩn + 2h tăng ca ngày thường | 8 (Chủ Nhật) = 8h tăng ca CN | P = Nghỉ phép | 0, O, KP = Nghỉ',
+  ]);
+  ws3.mergeCells('B2:Q2');
+  ws3Sub.height = 18;
+  ws3Sub.getCell(2).font = { italic: true, size: 9.5, color: { argb: 'FF475569' } };
+  ws3Sub.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+
+  const dayMeta: Array<{ colLetter: string; label: string; isSun: boolean }> = [];
+  const colLetters = ['E', 'F', 'G', 'H', 'I', 'J', 'K'];
+  const dowLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+  const [wsY, wsM, wsD] = report.weekStart.split('-').map(Number);
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(Date.UTC(wsY || 2026, (wsM || 11) - 1, (wsD || 5) + i, 12, 0, 0));
+    const dStr = dt.toISOString().slice(0, 10);
+    const ddMm = `${dStr.slice(8, 10)}/${dStr.slice(5, 7)}`;
+    const isSun = dt.getUTCDay() === 0;
+    dayMeta.push({
+      colLetter: colLetters[i],
+      label: `${dowLabels[dt.getUTCDay()]} ${ddMm}`,
+      isSun,
+    });
+  }
+
+  addLimeHeader(ws3, [
+    'STT',
+    'Mã NV',
+    'Họ Và Tên Thợ',
+    'Ca Mặc Định',
+    ...dayMeta.map((d) => d.label),
+    'Công Chuẩn (Ca)',
+    'Thêm Giờ OT (h)',
+    'Tăng Ca CN (h)',
+    'Nghỉ / Phép',
+    'Tổng Công QĐ',
+    'Sản Lượng SP',
+  ]);
+
+  const firstAttRow = 4;
+  (report.workerLaborStats || []).forEach((w, idx) => {
+    const rIdx = firstAttRow + idx;
+    const days7 = Array.isArray(w.weekAttDays) && w.weekAttDays.length === 7
+      ? w.weekAttDays
+      : ['', '', '', '', '', '', ''];
+
+    // Xây dựng công thức Excel động trên 7 cột ngày E..K
+    const regShiftParts: string[] = [];
+    const weekdayOtParts: string[] = [];
+    const sunOtParts: string[] = [];
+    const offDayParts: string[] = [];
+
+    dayMeta.forEach((dm) => {
+      const cellRef = `${dm.colLetter}${rIdx}`;
+      if (dm.isSun) {
+        sunOtParts.push(
+          `IF(${cellRef}="",0,IF(ISNUMBER(${cellRef}),${cellRef},IF(ISNUMBER(VALUE(${cellRef})),VALUE(${cellRef}),IF(OR(${cellRef}="0",${cellRef}="O",${cellRef}="KP"),0,8+IF(ISNUMBER(FIND("+",${cellRef})),VALUE(MID(${cellRef},FIND("+",${cellRef})+1,10)),0)))))`
+        );
+      } else {
+        regShiftParts.push(
+          `IF(OR(${cellRef}="",${cellRef}="0",${cellRef}="O",${cellRef}="KP"),0,IF(ISNUMBER(SEARCH("/2",${cellRef})),0.5,1))`
+        );
+        weekdayOtParts.push(
+          `IF(ISNUMBER(FIND("+",${cellRef})),VALUE(MID(${cellRef},FIND("+",${cellRef})+1,10)),0)`
+        );
+        offDayParts.push(
+          `IF(OR(${cellRef}="",${cellRef}="0",${cellRef}="O",${cellRef}="P",${cellRef}="KP"),1,IF(ISNUMBER(SEARCH("/2",${cellRef})),0.5,0))`
+        );
+      }
+    });
+
+    const regFormula = regShiftParts.join('+');
+    const otFormula = weekdayOtParts.join('+');
+    const sunFormula = sunOtParts.length > 0 ? sunOtParts.join('+') : '0';
+    const offFormula = offDayParts.join('+');
+
+    // Nếu ô chấm công CN là số nguyên (vd "8"), ghi dạng number để Excel hiểu trực tiếp hoặc chuỗi
+    const dayCellValues = days7.map((val, dIdx) => {
+      const trimmed = String(val || '').trim();
+      if (dayMeta[dIdx]?.isSun && /^\d+(\.\d+)?$/.test(trimmed)) {
+        return Number(trimmed);
+      }
+      return trimmed;
+    });
+
+    const row = addLimeGridRow(
+      ws3,
+      [
+        idx + 1,
+        w.workerId,
+        w.workerName,
+        w.defaultShift || 'Ca 1',
+        ...dayCellValues,
+        { formula: regFormula, result: w.standardShifts },
+        { formula: otFormula, result: w.otHours },
+        { formula: sunFormula, result: w.sundayHours },
+        { formula: offFormula, result: (w.offDays || 0) + (w.pDays || 0) },
+        { formula: `ROUND(L${rIdx}+(M${rIdx}+N${rIdx})/8,2)`, result: w.totalConvertedShifts },
+        w.actualCompletedPieces,
+      ],
+      idx % 2 === 1,
+      [
+        'center',
+        'center',
+        'left',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'center',
+        'right',
+      ]
+    );
+
+    // Tô nền vàng nhạt cho cột Chủ Nhật trên bảng chấm công 7 ngày
+    dayMeta.forEach((dm, dIdx) => {
+      if (dm.isSun) {
+        const sunCell = row.getCell(5 + dIdx);
+        sunCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFEF9C3' },
+        };
+        sunCell.font = { bold: true, size: 10, color: { argb: 'FF7C2D12' } };
+      }
+    });
+
+    row.getCell(12).numFmt = '0.##';
+    row.getCell(13).numFmt = '0.##';
+    row.getCell(14).numFmt = '0.##';
+    row.getCell(15).numFmt = '0.##';
+    row.getCell(16).numFmt = '0.00';
+    row.getCell(17).numFmt = '#,##0';
+  });
+
+  const lastAttRow = Math.max(firstAttRow, ws3.rowCount);
+  const attTotRowIdx = lastAttRow + 1;
+  const totalOffAndP =
+    Math.round(
+      (report.workerLaborStats || []).reduce((acc, w) => acc + (w.offDays || 0) + (w.pDays || 0), 0) * 10
+    ) / 10;
+
+  const dayCountFormulas = dayMeta.map((dm) => ({
+    formula: `COUNTA(${dm.colLetter}${firstAttRow}:${dm.colLetter}${lastAttRow})`,
+    result: (report.workerLaborStats || []).filter((w, _) =>
+      Boolean(String(w.weekAttDays?.[dayMeta.indexOf(dm)] || '').trim())
+    ).length,
+  }));
+
+  const ws3TotalRow = addLimeSummaryTotal(
+    ws3,
+    [
+      'TỔNG CỘNG TUẦN',
+      '',
+      '',
+      '',
+      ...dayCountFormulas,
+      { formula: `SUM(L${firstAttRow}:L${lastAttRow})`, result: totalStandardShifts },
+      { formula: `SUM(M${firstAttRow}:M${lastAttRow})`, result: totalOtHours },
+      { formula: `SUM(N${firstAttRow}:N${lastAttRow})`, result: totalSundayHours },
+      { formula: `SUM(O${firstAttRow}:O${lastAttRow})`, result: totalOffAndP },
+      {
+        formula: `ROUND(L${attTotRowIdx}+(M${attTotRowIdx}+N${attTotRowIdx})/8,2)`,
+        result: Number(totalConvertedShifts.toFixed(2)),
+      },
+      { formula: `SUM(Q${firstAttRow}:Q${lastAttRow})`, result: totalCompletedPieces },
+    ],
+    [
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'center',
+      'right',
+    ]
+  );
+  ws3TotalRow.getCell(12).numFmt = '0.##';
+  ws3TotalRow.getCell(13).numFmt = '0.##';
+  ws3TotalRow.getCell(14).numFmt = '0.##';
+  ws3TotalRow.getCell(15).numFmt = '0.##';
+  ws3TotalRow.getCell(16).numFmt = '0.00';
+  ws3TotalRow.getCell(17).numFmt = '#,##0';
+  ws3.mergeCells(`A${ws3TotalRow.number}:D${ws3TotalRow.number}`);
+
+  autoFitColumns(ws3, 9, 28);
 
   return workbookToBytes(wb);
 }

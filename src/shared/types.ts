@@ -480,6 +480,8 @@ export interface WeeklyReportData {
   workerLaborStats: Array<{
     workerId: string;
     workerName: string;
+    defaultShift?: string;
+    weekAttDays?: string[];
     standardShifts: number;
     otHours: number;
     sundayHours: number;

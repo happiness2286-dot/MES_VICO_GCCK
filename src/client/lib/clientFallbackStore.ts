@@ -35,6 +35,7 @@ import {
   computeEmployeeMonthlyStats,
   computeMonthly3PPayroll,
   DEFAULT_MEAL_CONFIG,
+  getDaysInMonth,
   getDefShiftCode,
   parseAttendanceCell,
 } from '@shared/attendanceParser';
@@ -2743,7 +2744,7 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
   const completedPoCount = poStatuses.filter((po) => po.finishedQty >= po.qtyPo && po.qtyPo > 0).length;
   const delayedPoCount = poStatuses.filter((po) => po.isDelayed).length;
 
-  // Khối 2: Bảng Tổng Hợp Ngày Công, Giờ Tăng Ca & Năng Suất Thợ Trong Tuần
+  // Khối 2: Bảng Tổng Hợp Ngày Công, Giờ Tăng Ca & Năng Suất Thợ Trong Tuần (Lấy chuẩn 100% từ Bảng Chấm Công 7 ngày)
   const monthAttCache = new Map<string, ReturnType<typeof getFallbackAttendance>>();
   for (const dStr of weekDates) {
     const ym = dStr.slice(0, 7);
@@ -2770,11 +2771,12 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
       let sundayHours = 0;
       let offDays = 0;
       let pDays = 0;
+      let defaultShift = String(w.salaryMode || '').includes('Hành chính') ? 'Hành chính' : 'Ca 1';
+      const weekAttDays: string[] = [];
 
       for (const dStr of weekDates) {
         const dt = new Date(`${dStr}T12:00:00Z`);
         const isSun = dt.getUTCDay() === 0;
-        const dayLogs = wLogs.filter((l) => getLogEffectiveWorkDate(l) === dStr);
 
         const ym = dStr.slice(0, 7);
         const dayIdx = Number(dStr.slice(8, 10)) - 1;
@@ -2784,41 +2786,18 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
             e.empId.toLowerCase() === w.id.toLowerCase() ||
             removeVietnameseTones(e.name).toLowerCase().trim() === normWName
         );
-        const rawCell = String(empAtt?.days?.[dayIdx] || '').trim();
-
-        if (dayLogs.length > 0) {
-          if (isSun || dayLogs.some((l) => Boolean(l.isSunday))) {
-            sundayHours += 8;
-          } else {
-            standardShifts += 1;
-          }
-          const logOtMin = dayLogs.reduce((maxOt, l) => Math.max(maxOt, Number(l.overtimeMinutes) || 0), 0);
-          if (logOtMin > 0) {
-            otHours += Math.round((logOtMin / 60) * 10) / 10;
-          } else if (rawCell) {
-            const parsed = parseAttendanceCell(rawCell, empAtt?.defaultShift || 'Ca 1', DEFAULT_MEAL_CONFIG, isSun);
-            otHours += parsed.ot15;
-          }
-        } else if (rawCell) {
-          const parsed = parseAttendanceCell(rawCell, empAtt?.defaultShift || 'Ca 1', DEFAULT_MEAL_CONFIG, isSun);
-          standardShifts += parsed.regDays + parsed.s3Days;
-          otHours += parsed.ot15;
-          sundayHours += parsed.ot20 + parsed.ot30;
-          offDays += parsed.offDays;
-          pDays += parsed.pDays;
-        } else {
-          const hasPlanOnDay = savedWeekPlanRows.some((r) => {
-            if (r.workDate !== dStr) return false;
-            const rWName = removeVietnameseTones(String(r.workerName || '')).toLowerCase().trim();
-            return Boolean(rWName && (rWName === normWName || rWName.includes(normWName)));
-          });
-          if (hasPlanOnDay) {
-            if (isSun) sundayHours += 8;
-            else standardShifts += 1;
-          } else if (!isSun) {
-            offDays += 1;
-          }
+        if (empAtt?.defaultShift) {
+          defaultShift = empAtt.defaultShift;
         }
+        const rawCell = String(empAtt?.days?.[dayIdx] || '').trim();
+        weekAttDays.push(rawCell);
+
+        const parsed = parseAttendanceCell(rawCell, defaultShift, DEFAULT_MEAL_CONFIG, isSun);
+        standardShifts += parsed.regDays;
+        otHours += parsed.ot15;
+        sundayHours += parsed.ot20 + parsed.ot30;
+        offDays += parsed.offDays;
+        pDays += parsed.pDays;
       }
 
       const actualCompletedPieces = wLogs.reduce(
@@ -2831,6 +2810,8 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
       return {
         workerId: w.id,
         workerName: w.name,
+        defaultShift,
+        weekAttDays,
         standardShifts: Math.round(standardShifts * 10) / 10,
         otHours: Math.round(otHours * 10) / 10,
         sundayHours: Math.round(sundayHours * 10) / 10,
@@ -3609,13 +3590,19 @@ export function getFallbackAttendance(ym: string) {
   const year = Number(yStr) || 2026;
   const month = Number(mStr) || 10;
   const key = `GCCK_ATTENDANCE_V2_${ym}`;
+  const manualKey = `GCCK_ATT_MANUAL_${ym}`;
 
   let rawList: AttendanceRow[] = [];
+  let manualSet = new Set<string>();
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem(key);
       if (stored) {
         rawList = JSON.parse(stored);
+      }
+      const storedManual = localStorage.getItem(manualKey);
+      if (storedManual) {
+        manualSet = new Set(JSON.parse(storedManual));
       }
     } catch { }
   }
@@ -3631,23 +3618,122 @@ export function getFallbackAttendance(ym: string) {
         days: Array.isArray(e.days) ? [...e.days] : new Array(31).fill(''),
       }));
     } else {
-      rawList = FALLBACK_WORKERS.filter((w) => w.isActive !== 0).map((w) => {
-        const defShift = String(w.salaryMode || '').includes('Hành chính') ? 'Hành chính' : 'Ca 1';
+      const seedAttList = (seedData.attendanceList || []) as any[];
+      rawList = FALLBACK_WORKERS.filter((w) => w.isActive !== 0 && w.id !== 'NV00053').map((w) => {
+        const seedEmp = seedAttList.find(
+          (e) =>
+            String(e.empId).toLowerCase() === w.id.toLowerCase() ||
+            removeVietnameseTones(String(e.name || '')).toLowerCase().trim() ===
+              removeVietnameseTones(w.name).toLowerCase().trim()
+        );
+        const defShift =
+          seedEmp?.defaultShift ||
+          (String(w.salaryMode || '').includes('Hành chính') ? 'Hành chính' : 'Ca 1');
         return {
           empId: w.id,
           name: w.name,
-          workType: 'Công',
-          defaultShift: defShift,
-          yearDaysHist: new Array(12).fill(0),
+          workType: String(seedEmp?.workType || 'Công'),
+          defaultShift: String(defShift),
+          yearDaysHist: Array.isArray(seedEmp?.yearDaysHist)
+            ? [...seedEmp.yearDaysHist]
+            : new Array(12).fill(0),
           days: new Array(31).fill(''),
         };
       });
     }
-    if (typeof window !== 'undefined') {
+  }
+
+  // Tự động đồng bộ chấm công từ Nhật ký sản xuất & Kế hoạch ngày cho các tháng mới (VD: 2026-11)
+  // đối với những ô chưa được người dùng chỉnh sửa thủ công
+  if (ym !== '2026-10') {
+    const daysInM = getDaysInMonth(year, month);
+    const monthLogs = getAllFallbackLogs().filter(
+      (l) => !l.isVoided && getLogEffectiveWorkDate(l).startsWith(`${ym}-`)
+    );
+    const dailyPlanCache = new Map<string, DailyPlanRow[]>();
+    for (let d = 1; d <= daysInM; d++) {
+      const dStr = `${ym}-${String(d).padStart(2, '0')}`;
+      let planRows: DailyPlanRow[] = [];
+      if (typeof window !== 'undefined') {
+        try {
+          const rawPlan = localStorage.getItem(`GCCK_DAILY_PLAN_${dStr}`);
+          if (rawPlan) {
+            const parsed = JSON.parse(rawPlan);
+            if (Array.isArray(parsed) && parsed.length > 0) planRows = parsed;
+          }
+        } catch { }
+      }
+      if (planRows.length === 0 && (seedData as any).dailyPlans?.[dStr]) {
+        planRows = (seedData as any).dailyPlans[dStr];
+      }
+      dailyPlanCache.set(dStr, planRows);
+    }
+
+    let didUpdate = false;
+    for (const emp of rawList) {
+      if (!Array.isArray(emp.days)) emp.days = new Array(31).fill('');
+      while (emp.days.length < 31) emp.days.push('');
+      const normEmpName = removeVietnameseTones(emp.name).toLowerCase().trim();
+
+      for (let d = 1; d <= daysInM; d++) {
+        const dayIdx = d - 1;
+        if (manualSet.has(`${emp.empId}_${dayIdx}`)) continue;
+        if (String(emp.days[dayIdx] || '').trim() !== '') continue;
+
+        const dStr = `${ym}-${String(d).padStart(2, '0')}`;
+        const dt = new Date(Date.UTC(year, month - 1, d, 12, 0, 0));
+        const isSun = dt.getUTCDay() === 0;
+
+        const dayLogs = monthLogs.filter((l) => {
+          if (getLogEffectiveWorkDate(l) !== dStr) return false;
+          if (l.workerId && l.workerId.toLowerCase() === emp.empId.toLowerCase()) return true;
+          const lName = removeVietnameseTones(String(l.workerName || '')).toLowerCase().trim();
+          return Boolean(lName && (lName === normEmpName || lName.includes(normEmpName) || normEmpName.includes(lName)));
+        });
+
+        if (dayLogs.length > 0) {
+          let shiftCode = getDefShiftCode(emp.defaultShift);
+          if (dayLogs.some((l) => String(l.shiftType || '').includes('Ca 3'))) shiftCode = 'C3';
+          else if (dayLogs.some((l) => String(l.shiftType || '').includes('Ca 2'))) shiftCode = 'C2';
+          else if (dayLogs.some((l) => String(l.shiftType || '').includes('Ca 1'))) shiftCode = 'C1';
+
+          const maxOtMin = dayLogs.reduce((m, l) => Math.max(m, Number(l.overtimeMinutes) || 0), 0);
+          const otH = maxOtMin >= 30 ? Math.round((maxOtMin / 60) * 10) / 10 : 0;
+
+          if (isSun) {
+            emp.days[dayIdx] = String(8 + otH);
+          } else {
+            emp.days[dayIdx] = otH > 0 ? `${shiftCode}+${otH}` : shiftCode;
+          }
+          didUpdate = true;
+        } else if (!isSun) {
+          const planRows = dailyPlanCache.get(dStr) || [];
+          const wPlan = planRows.filter((r) => {
+            const rName = removeVietnameseTones(String(r.workerName || '')).toLowerCase().trim();
+            return Boolean(rName && (rName === normEmpName || rName.includes(normEmpName) || normEmpName.includes(rName)));
+          });
+          if (wPlan.length > 0) {
+            let shiftCode = getDefShiftCode(emp.defaultShift);
+            if (wPlan.some((r) => String(r.shiftType || '').includes('Ca 3'))) shiftCode = 'C3';
+            else if (wPlan.some((r) => String(r.shiftType || '').includes('Ca 2'))) shiftCode = 'C2';
+            else if (wPlan.some((r) => String(r.shiftType || '').includes('Ca 1'))) shiftCode = 'C1';
+            const planOt = wPlan.reduce((m, r) => Math.max(m, Number(r.overtimeHours) || 0), 0);
+            emp.days[dayIdx] = planOt > 0 ? `${shiftCode}+${planOt}` : shiftCode;
+            didUpdate = true;
+          }
+        }
+      }
+    }
+
+    if (didUpdate && typeof window !== 'undefined') {
       try {
         localStorage.setItem(key, JSON.stringify(rawList));
       } catch { }
     }
+  } else if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(key, JSON.stringify(rawList));
+    } catch { }
   }
 
   const dows = computeMonthDows(year, month);
@@ -3676,13 +3762,24 @@ export function saveFallbackAttendanceCell(
   const year = Number(yStr) || 2026;
   const month = Number(mStr) || 10;
   const key = `GCCK_ATTENDANCE_V2_${ym}`;
+  const manualKey = `GCCK_ATT_MANUAL_${ym}`;
 
   getFallbackAttendance(ym); // Ensure populated
   let rawList: AttendanceRow[] = [];
+  let manualList: string[] = [];
   try {
     const stored = localStorage.getItem(key);
     if (stored) rawList = JSON.parse(stored);
+    const storedManual = localStorage.getItem(manualKey);
+    if (storedManual) manualList = JSON.parse(storedManual);
   } catch { }
+
+  if (dayIndex >= 0 && dayIndex < 31) {
+    const mToken = `${empId}_${dayIndex}`;
+    if (!manualList.includes(mToken)) {
+      manualList.push(mToken);
+    }
+  }
 
   const targetIdx = rawList.findIndex((r) => r.empId === empId);
   let updatedRow: AttendanceRow;
@@ -3715,6 +3812,7 @@ export function saveFallbackAttendanceCell(
 
   try {
     localStorage.setItem(key, JSON.stringify(rawList));
+    localStorage.setItem(manualKey, JSON.stringify(manualList));
   } catch { }
 
   const summary = computeEmployeeMonthlyStats(updatedRow, year, month, DEFAULT_MEAL_CONFIG);

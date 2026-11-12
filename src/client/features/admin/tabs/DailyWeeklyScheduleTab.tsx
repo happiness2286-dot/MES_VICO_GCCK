@@ -3044,56 +3044,175 @@ export function DailyWeeklyScheduleTab({
 
               {/* KHỐI 2: TỔNG HỢP GIỜ CÔNG & LAO ĐỘNG (DỰA THEO PHÂN HỆ CHẤM CÔNG) */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-slate-900">
                     <Users className="h-4 w-4 text-emerald-600" />
-                    Khối 2: Tổng Hợp Giờ Công &amp; Lao Động (Dựa Theo Phân Hệ Chấm Công)
+                    Khối 2: Tổng Hợp Giờ Công &amp; Lao Động (Theo Phân Hệ Chấm Công 7 Ngày)
                   </h3>
                   <span className="text-xs text-slate-600 font-semibold">
-                    * Dữ liệu trích xuất trực tiếp từ bảng phân hệ chấm công tuần ({formatDateVn(weeklyReport.weekStart)} &rarr; {formatDateVn(weeklyReport.weekEnd)})
+                    * Dữ liệu trích xuất trực tiếp từ Bảng Chấm Công từ ngày {formatDateVn(weeklyReport.weekStart)} đến {formatDateVn(weeklyReport.weekEnd)}
                   </span>
                 </div>
 
-                <Card className="overflow-hidden border-slate-200 bg-white p-0">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-100/60 font-bold uppercase text-slate-600">
-                        <th className="px-4 py-2.5">Họ Và Tên</th>
-                        <th className="px-3 py-2.5 text-center">Công Chuẩn (Ca)</th>
-                        <th className="px-3 py-2.5 text-center">Thêm Giờ (OT h)</th>
-                        <th className="px-3 py-2.5 text-center">Tăng Ca CN (h)</th>
-                        <th className="px-3 py-2.5 text-center">Nghỉ / Phép</th>
-                        <th className="px-3 py-2.5 text-center">Tổng Công Quy Đổi</th>
-                        <th className="px-4 py-2.5 text-center">Sản Lượng SP Làm Ra</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-900">
-                      {weeklyReport.workerLaborStats.map((w) => (
-                        <tr key={w.workerId} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 font-extrabold text-slate-900">{w.workerName}</td>
-                          <td className="font-mono-num px-3 py-2 text-center text-slate-700">
-                            {w.standardShifts} ca
-                          </td>
-                          <td className="font-mono-num px-3 py-2 text-center text-amber-700">
-                            {w.otHours > 0 ? `+${w.otHours}h` : '—'}
-                          </td>
-                          <td className="font-mono-num px-3 py-2 text-center text-violet-700">
-                            {w.sundayHours > 0 ? `${w.sundayHours}h` : '—'}
-                          </td>
-                          <td className="font-mono-num px-3 py-2 text-center text-slate-600">
-                            {w.offDays > 0 || w.pDays > 0 ? `${w.offDays + w.pDays}d` : '0'}
-                          </td>
-                          <td className="font-mono-num px-3 py-2 text-center font-extrabold text-emerald-800">
-                            {w.totalConvertedShifts} công
-                          </td>
-                          <td className="font-mono-num px-4 py-2 text-center font-bold text-blue-700">
-                            {w.actualCompletedPieces} SP
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </Card>
+                {(() => {
+                  const totalWorkers = weeklyReport.workerLaborStats.length;
+                  const totalStandardShifts = Math.round(
+                    weeklyReport.workerLaborStats.reduce((s, w) => s + (w.standardShifts || 0), 0) * 10
+                  ) / 10;
+                  const totalOtHours = Math.round(
+                    weeklyReport.workerLaborStats.reduce((s, w) => s + (w.otHours || 0), 0) * 10
+                  ) / 10;
+                  const totalSundayHours = Math.round(
+                    weeklyReport.workerLaborStats.reduce((s, w) => s + (w.sundayHours || 0), 0) * 10
+                  ) / 10;
+                  const totalOffDays = Math.round(
+                    weeklyReport.workerLaborStats.reduce((s, w) => s + (w.offDays || 0) + (w.pDays || 0), 0) * 10
+                  ) / 10;
+                  const totalConvertedShifts = Math.round(
+                    (totalStandardShifts + (totalOtHours + totalSundayHours) / 8) * 100
+                  ) / 100;
+                  const totalCompletedPieces = weeklyReport.workerLaborStats.reduce(
+                    (s, w) => s + (w.actualCompletedPieces || 0),
+                    0
+                  );
+
+                  const dayHeaders: Array<{ label: string; dStr: string; isSun: boolean }> = [];
+                  const [sy, sm, sd] = weeklyReport.weekStart.split('-').map(Number);
+                  const dowNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+                  for (let i = 0; i < 7; i++) {
+                    const dt = new Date(Date.UTC(sy || 2026, (sm || 11) - 1, (sd || 5) + i, 12, 0, 0));
+                    const dStr = dt.toISOString().slice(0, 10);
+                    const ddMm = `${dStr.slice(8, 10)}/${dStr.slice(5, 7)}`;
+                    const isSun = dt.getUTCDay() === 0;
+                    dayHeaders.push({
+                      label: `${dowNames[dt.getUTCDay()]} ${ddMm}`,
+                      dStr,
+                      isSun,
+                    });
+                  }
+
+                  return (
+                    <Card className="overflow-hidden border-slate-200 bg-white p-0">
+                      <div className="divide-y divide-slate-200 border-b border-slate-200 text-xs font-bold text-slate-800">
+                        <div className="flex items-center gap-3 bg-white px-4 py-2">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-lime-100 text-[11px] font-black text-lime-900">1</span>
+                          <span>
+                            Tổng công lao động chính <strong className="text-emerald-700">{totalStandardShifts}/{totalWorkers * 6}</strong> công chuẩn 6 ngày T2-T7 ({totalWorkers} thợ)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 bg-lime-50/40 px-4 py-2">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-lime-100 text-[11px] font-black text-lime-900">2</span>
+                          <span>
+                            Tăng ca ngày thường <strong className="text-amber-700">{totalOtHours} giờ</strong> &nbsp;&rarr;&nbsp; <strong className="text-amber-800">{(totalOtHours / 8).toFixed(1)} công quy đổi</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 bg-white px-4 py-2">
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-lime-100 text-[11px] font-black text-lime-900">3</span>
+                          <span>
+                            Tăng ca ngày chủ nhật <strong className="text-violet-700">{totalSundayHours} giờ</strong> &nbsp;&rarr;&nbsp; <strong className="text-violet-800">{(totalSundayHours / 8).toFixed(1)} công quy đổi</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-100/80 font-bold uppercase text-slate-600">
+                              <th className="px-3 py-2.5">Họ Và Tên</th>
+                              {dayHeaders.map((dh) => (
+                                <th
+                                  key={dh.dStr}
+                                  className={`px-2 py-2.5 text-center text-[11px] ${
+                                    dh.isSun ? 'bg-amber-50 text-amber-900' : ''
+                                  }`}
+                                >
+                                  {dh.label}
+                                </th>
+                              ))}
+                              <th className="px-2.5 py-2.5 text-center">Công Chuẩn</th>
+                              <th className="px-2.5 py-2.5 text-center">OT Thường</th>
+                              <th className="px-2.5 py-2.5 text-center">Tăng Ca CN</th>
+                              <th className="px-2.5 py-2.5 text-center">Nghỉ/Phép</th>
+                              <th className="px-2.5 py-2.5 text-center">Tổng Công QĐ</th>
+                              <th className="px-3 py-2.5 text-right">Sản Lượng SP</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-semibold text-slate-900">
+                            {weeklyReport.workerLaborStats.map((w) => (
+                              <tr key={w.workerId} className="hover:bg-slate-50">
+                                <td className="px-3 py-2 font-extrabold text-slate-900 whitespace-nowrap">
+                                  {w.workerName}
+                                </td>
+                                {dayHeaders.map((dh, dIdx) => {
+                                  const cellVal = w.weekAttDays?.[dIdx] || '';
+                                  return (
+                                    <td
+                                      key={dh.dStr}
+                                      className={`font-mono-num px-2 py-2 text-center text-[11px] font-bold ${
+                                        dh.isSun
+                                          ? cellVal
+                                            ? 'bg-amber-50/70 text-violet-700 font-black'
+                                            : 'bg-amber-50/30 text-slate-300'
+                                          : cellVal
+                                          ? 'text-emerald-700'
+                                          : 'text-slate-300'
+                                      }`}
+                                    >
+                                      {cellVal || '—'}
+                                    </td>
+                                  );
+                                })}
+                                <td className="font-mono-num px-2.5 py-2 text-center text-slate-700">
+                                  {w.standardShifts} ca
+                                </td>
+                                <td className="font-mono-num px-2.5 py-2 text-center text-amber-700">
+                                  {w.otHours > 0 ? `+${w.otHours}h` : '0h'}
+                                </td>
+                                <td className="font-mono-num px-2.5 py-2 text-center text-violet-700">
+                                  {w.sundayHours > 0 ? `${w.sundayHours}h` : '0h'}
+                                </td>
+                                <td className="font-mono-num px-2.5 py-2 text-center text-slate-600">
+                                  {w.offDays > 0 || w.pDays > 0 ? `${w.offDays + w.pDays}d` : '0'}
+                                </td>
+                                <td className="font-mono-num px-2.5 py-2 text-center font-extrabold text-emerald-800">
+                                  {w.totalConvertedShifts} công
+                                </td>
+                                <td className="font-mono-num px-3 py-2 text-right font-bold text-blue-700">
+                                  {w.actualCompletedPieces} SP
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-lime-400 bg-lime-100/70 font-black text-slate-900">
+                              <td colSpan={8} className="px-3 py-2.5 text-center uppercase text-lime-950">
+                                TỔNG CỘNG LAO ĐỘNG ({totalWorkers} THỢ)
+                              </td>
+                              <td className="font-mono-num px-2.5 py-2.5 text-center text-slate-900">
+                                {totalStandardShifts} ca
+                              </td>
+                              <td className="font-mono-num px-2.5 py-2.5 text-center text-amber-800">
+                                {totalOtHours}h
+                              </td>
+                              <td className="font-mono-num px-2.5 py-2.5 text-center text-violet-800">
+                                {totalSundayHours}h
+                              </td>
+                              <td className="font-mono-num px-2.5 py-2.5 text-center text-slate-700">
+                                {totalOffDays}d
+                              </td>
+                              <td className="font-mono-num px-2.5 py-2.5 text-center text-emerald-900">
+                                {totalConvertedShifts} công
+                              </td>
+                              <td className="font-mono-num px-3 py-2.5 text-right text-blue-800">
+                                {totalCompletedPieces} SP
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </Card>
+                  );
+                })()}
               </div>
 
               {/* KHỐI 3: SỰ CỐ THIẾT BỊ & THỜI GIAN DỪNG MÁY (DOWNTIME) */}

@@ -183,12 +183,21 @@ export function AttendancePayrollTab({ deepLink }: AdminTabCommonProps) {
     user?.appRole === 'SHIFT_LEADER';
   const canAccessPayroll3P = user?.appRole === 'ADMIN' || user?.appRole === 'DIRECTOR';
 
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(10);
+  const [year, setYear] = useState(() => {
+    const vnDate = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    return Number(vnDate.slice(0, 4)) || 2026;
+  });
+  const [month, setMonth] = useState(() => {
+    const vnDate = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    return Number(vnDate.slice(5, 7)) || 11;
+  });
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = useMemo(() => getDaysInMonth(year, month), [year, month]);
 
-  const [dows, setDows] = useState<string[]>(() => computeMonthDows(2026, 10));
+  const [dows, setDows] = useState<string[]>(() => {
+    const vnDate = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+    return computeMonthDows(Number(vnDate.slice(0, 4)) || 2026, Number(vnDate.slice(5, 7)) || 11);
+  });
   const [mealConfig, setMealConfig] = useState<MealConfig>(DEFAULT_MEAL_CONFIG);
   const [employees, setEmployees] = useState<EmployeeAttSummary[]>([]);
   const [histMap, setHistMap] = useState<Record<string, number[]>>({});
