@@ -63,6 +63,8 @@ import {
   sortDailyPlanRows,
   toThursdayWeekStart,
   getLatestActiveWeekStart,
+  syncClientStoredLogsWithCloud,
+  getAllFallbackLogs,
 } from '@client/lib/clientFallbackStore';
 import {
   isSupabaseConnected,
@@ -70,6 +72,7 @@ import {
   fetchDailyPlanFromSupabase,
   fetchDailyDatesFromSupabase,
   deleteDailyPlanFromSupabase,
+  fetchLogsFromSupabase,
 } from '@client/lib/supabaseClient';
 import { DEFAULT_DRIVE_FOLDER_URL } from '@shared/driveHelper';
 import { DailyQualityReportSection } from './DailyQualityReportSection';
@@ -1304,8 +1307,28 @@ export function DailyWeeklyScheduleTab({
   const loadWeeklyReport = async (wStart: string) => {
     setLoadingWeekly(true);
     try {
+      if (bootstrap.recentLogs && bootstrap.recentLogs.length > 0) {
+        syncClientStoredLogsWithCloud(bootstrap.recentLogs);
+      } else if (isSupabaseConnected() && getAllFallbackLogs().length === 0) {
+        try {
+          const sbLogs = await fetchLogsFromSupabase();
+          if (sbLogs && sbLogs.length > 0) {
+            syncClientStoredLogsWithCloud(sbLogs);
+          }
+        } catch {
+          // ignore
+        }
+      }
+      let targetStart = wStart;
+      if (!userPickedWeek) {
+        const latest = getLatestActiveWeekStart();
+        if (latest && latest !== wStart) {
+          targetStart = latest;
+          setWeeklyStart(latest);
+        }
+      }
       const res = await apiClient.get<WeeklyReportData>(
-        `/reports/weekly?weekStart=${encodeURIComponent(wStart)}`
+        `/reports/weekly?weekStart=${encodeURIComponent(targetStart)}`
       );
       setWeeklyReport(res);
     } catch (err: any) {
@@ -2425,10 +2448,13 @@ export function DailyWeeklyScheduleTab({
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      1. Tổng Kế Hoạch
+                      1. Tổng Kế Hoạch (ĐM Tuần)
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-slate-900">
-                      {weeklyReport.summary.totalPlannedQty} SP
+                      {formatNumber(weeklyReport.summary.totalPlannedQty)} SP
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      Định mức ca máy ({weeklyReport.poStatuses.length} mã/đơn trong tuần)
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
                       {weeklyMetricFilter === 'ALL' ? (
@@ -2471,10 +2497,13 @@ export function DailyWeeklyScheduleTab({
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      2. Thực Tế Đã Làm
+                      2. Thực Tế Đã Làm (OK + Sửa)
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-emerald-700">
-                      {weeklyReport.summary.totalActualQty} SP
+                      {formatNumber(weeklyReport.summary.totalActualQty)} SP
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-emerald-700">
+                      Đạt {weeklyReport.summary.completionPct}% tổng định mức tuần
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
                       {weeklyMetricFilter === 'ACTUAL' ? (
@@ -2517,10 +2546,13 @@ export function DailyWeeklyScheduleTab({
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      3. Đơn Đạt Kế Hoạch
+                      3. Đơn Đạt Kế Hoạch (≥100% ĐM)
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-blue-700">
-                      {weeklyReport.summary.completedPoCount} PO
+                      {formatNumber(weeklyReport.summary.completedPoCount)} PO
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-blue-700">
+                      SL thực tế (OK+Sửa) ≥ SL định mức tuần
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
                       {weeklyMetricFilter === 'COMPLETED' ? (
@@ -2563,10 +2595,13 @@ export function DailyWeeklyScheduleTab({
                     }`}
                   >
                     <div className="text-[11px] font-bold uppercase text-slate-500">
-                      4. Đơn Trượt Kế Hoạch
+                      4. Đơn Trượt Kế Hoạch (&lt;100% ĐM)
                     </div>
                     <div className="font-mono-num mt-1 text-xl font-black text-rose-700">
-                      {weeklyReport.summary.delayedPoCount} PO
+                      {formatNumber(weeklyReport.summary.delayedPoCount)} PO
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-rose-700">
+                      SL thực tế &lt; ĐM tuần (Còn thiếu {formatNumber(weeklyReport.poStatuses.reduce((s, p) => s + Math.max(0, p.wipQty), 0))} SP)
                     </div>
                     <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-bold">
                       {weeklyMetricFilter === 'DELAYED' ? (
