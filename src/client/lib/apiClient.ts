@@ -17,6 +17,11 @@ import {
   getFallbackDeliveries,
   getFallbackUser,
   getFallbackWeeklyReport,
+  getLatestActiveWeekStart,
+  addFallbackWeeklyIncident,
+  addFallbackWeeklyProposal,
+  toggleFallbackWeeklyProposalStatus,
+  deleteFallbackWeeklyProposal,
   saveFallbackHandover,
   updateFallbackHandover,
   deleteFallbackHandover,
@@ -111,8 +116,8 @@ export async function apiFetch<T = any>(
   path: string,
   options: ApiFetchOptions = {}
 ): Promise<T> {
-  // If running on static host (GitHub Pages), resolve directly with client fallback without network latency or 405 errors
-  if (isStaticHost()) {
+  // If running on static host (GitHub Pages) or requesting client-synced weekly report, resolve directly with client fallback
+  if (isStaticHost() || path.toLowerCase().includes('/reports/weekly')) {
     const fallback = handleClientFallback<T>(path, options);
     if (fallback !== null) return fallback;
   }
@@ -496,11 +501,28 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     return getFallbackTraveler(poId) as unknown as T;
   }
   if (norm.includes('/reports/weekly')) {
-    if (options.method === 'POST' || options.method === 'DELETE' || options.method === 'PATCH') {
+    if (norm.includes('/incidents') && options.method === 'POST') {
+      addFallbackWeeklyIncident((options.json || {}) as any);
       return { success: true } as unknown as T;
     }
+    if (norm.includes('/proposals')) {
+      const parts = path.split('?')[0].split('/').filter(Boolean);
+      const propId = parts[parts.length - 1] || '';
+      if (options.method === 'POST') {
+        const item = addFallbackWeeklyProposal((options.json || {}) as any);
+        return { success: true, item } as unknown as T;
+      }
+      if (options.method === 'PATCH') {
+        toggleFallbackWeeklyProposalStatus(propId, String((options.json as any)?.status || 'APPROVED'));
+        return { success: true } as unknown as T;
+      }
+      if (options.method === 'DELETE') {
+        deleteFallbackWeeklyProposal(propId);
+        return { success: true } as unknown as T;
+      }
+    }
     const urlParams = new URLSearchParams(path.split('?')[1] || '');
-    const wStart = urlParams.get('weekStart') || '2026-10-15';
+    const wStart = urlParams.get('weekStart') || getLatestActiveWeekStart();
     return getFallbackWeeklyReport(wStart) as unknown as T;
   }
   if (norm.includes('/reports/preview')) {

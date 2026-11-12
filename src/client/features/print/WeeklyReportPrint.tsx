@@ -1,20 +1,34 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Printer, Download } from 'lucide-react';
+import { ArrowLeft, Printer, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { WeeklyReportData } from '@shared/types';
 import { apiClient } from '../../lib/apiClient';
 import { formatDateVn, formatNumber, formatVnd } from '../../lib/formatters';
 import { navigateTo } from '../../lib/navigation';
 import { VicoLogo } from '../../components/VicoLogo';
 import { downloadWeeklyReportExcel } from '../../lib/excelService';
+import { getLatestActiveWeekStart, toThursdayWeekStart } from '../../lib/clientFallbackStore';
 
 export function WeeklyReportPrint() {
   const [weekStart, setWeekStart] = useState<string>(() => {
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      return url.searchParams.get('weekStart') || '2026-10-15';
+      const fromQuery = url.searchParams.get('weekStart');
+      if (fromQuery) return fromQuery;
+      if (window.location.hash.includes('?')) {
+        const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+        const fromHash = hashParams.get('weekStart');
+        if (fromHash) return fromHash;
+      }
     }
-    return '2026-10-15';
+    return getLatestActiveWeekStart();
   });
+
+  const shiftWeek = (deltaDays: number) => {
+    const dt = new Date(`${weekStart}T12:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return;
+    const nextDt = new Date(dt.getTime() + deltaDays * 24 * 3600 * 1000);
+    setWeekStart(toThursdayWeekStart(nextDt.toISOString().slice(0, 10)));
+  };
 
   const [report, setReport] = useState<WeeklyReportData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,12 +71,28 @@ export function WeeklyReportPrint() {
           </button>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-700">Tuần bắt đầu (Thứ 5):</span>
+            <button
+              type="button"
+              onClick={() => shiftWeek(-7)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Tuần trước
+            </button>
             <input
               type="date"
               value={weekStart}
-              onChange={(e) => setWeekStart(e.target.value)}
+              onChange={(e) => e.target.value && setWeekStart(toThursdayWeekStart(e.target.value))}
               className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-bold text-slate-900"
             />
+            <button
+              type="button"
+              onClick={() => shiftWeek(7)}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"
+            >
+              Tuần sau
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 

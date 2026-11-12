@@ -36,6 +36,7 @@ import {
   computeMonthly3PPayroll,
   DEFAULT_MEAL_CONFIG,
   getDefShiftCode,
+  parseAttendanceCell,
 } from '@shared/attendanceParser';
 import { computeProductCosting } from '@shared/costingEngine';
 import { calculateTurnPayroll, DEFAULT_PAYROLL_CONFIG } from '@shared/payrollEngine';
@@ -1098,7 +1099,7 @@ export function saveClientStoredLog(log: any): void {
     } else {
       existing.unshift(log);
     }
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 200)));
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 1000)));
   } catch {
     // ignore
   }
@@ -1131,7 +1132,7 @@ export function syncClientStoredLogsWithCloud(cloudLogs: any[]): void {
       const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
       return tB - tA;
     });
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(merged.slice(0, 250)));
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(merged.slice(0, 1000)));
   } catch {
     // ignore
   }
@@ -1144,7 +1145,7 @@ export function updateFallbackLog(id: string | number, patch: any): void {
     const idx = existing.findIndex((e) => String(e.id) === key || String(e.recordUid) === key);
     if (idx >= 0) {
       existing[idx] = { ...existing[idx], ...patch };
-      localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 200)));
+      localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 1000)));
     }
   } catch {
     // ignore
@@ -1156,7 +1157,7 @@ export function deleteFallbackLog(id: string | number): void {
     const existing = getClientStoredLogs();
     const key = String(id);
     const filtered = existing.filter((e) => String(e.id) !== key && String(e.recordUid) !== key && e.isVoided !== 1);
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(filtered.slice(0, 200)));
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(filtered.slice(0, 1000)));
   } catch {
     // ignore
   }
@@ -2307,117 +2308,752 @@ export function saveFallbackOrdersBatch(orders: Array<Partial<PurchaseOrderInfo>
 }
 
 
+const LOCAL_WEEKLY_INCIDENTS_KEY = 'GCCK_WEEKLY_INCIDENTS_V1';
+const LOCAL_WEEKLY_PROPOSALS_KEY = 'GCCK_WEEKLY_PROPOSALS_V1';
+
+export function toThursdayWeekStart(dateStr?: string): string {
+  const clean = (dateStr || '').trim().slice(0, 10);
+  let dt =
+    clean && /^\d{4}-\d{2}-\d{2}$/.test(clean)
+      ? new Date(`${clean}T12:00:00Z`)
+      : new Date();
+  if (Number.isNaN(dt.getTime())) {
+    dt = new Date();
+  }
+  const dow = dt.getUTCDay(); // 0=CN, 1=T2, 2=T3, 3=T4, 4=T5, 5=T6, 6=T7
+  const daysSinceThursday = (dow + 7 - 4) % 7;
+  const thursdayDt = new Date(dt.getTime() - daysSinceThursday * 24 * 3600 * 1000);
+  return thursdayDt.toISOString().slice(0, 10);
+}
+
+export function getLatestActiveWeekStart(): string {
+  const allLogs = getAllFallbackLogs().filter((l) => !l.isVoided);
+  if (allLogs.length > 0) {
+    let maxDate = '';
+    for (const l of allLogs) {
+      const d = getLogEffectiveWorkDate(l);
+      if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d > maxDate) {
+        maxDate = d;
+      }
+    }
+    if (maxDate) {
+      return toThursdayWeekStart(maxDate);
+    }
+  }
+  const nowVn = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
+  return toThursdayWeekStart(nowVn);
+}
+
+export function addFallbackWeeklyIncident(payload: {
+  weekStart?: string;
+  machineName?: string;
+  stopMinutes?: number;
+  reason?: string;
+  note?: string;
+  workerName?: string;
+}): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_WEEKLY_INCIDENTS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    const arr = Array.isArray(list) ? list : [];
+    const wStart = payload.weekStart ? payload.weekStart.slice(0, 10) : getLatestActiveWeekStart();
+    arr.unshift({
+      id: `INC-${Date.now()}`,
+      weekStart: wStart,
+      machineName: payload.machineName || 'Tổng hợp Xưởng',
+      stopMinutes: Math.max(0, Number(payload.stopMinutes) || 0),
+      reason: String(payload.reason || '').trim(),
+      note: String(payload.note || '').trim(),
+      date: new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }),
+      workerName: payload.workerName || 'Quản đốc / Kỹ thuật',
+    });
+    localStorage.setItem(LOCAL_WEEKLY_INCIDENTS_KEY, JSON.stringify(arr.slice(0, 200)));
+  } catch {
+    // ignore
+  }
+}
+
+export function addFallbackWeeklyProposal(payload: {
+  weekStart?: string;
+  category?: string;
+  proposer?: string;
+  content?: string;
+  priority?: string;
+}): WeeklyProposalItem {
+  const wStart = payload.weekStart ? payload.weekStart.slice(0, 10) : getLatestActiveWeekStart();
+  const item: WeeklyProposalItem = {
+    id: Date.now(),
+    weekStart: wStart,
+    category: String(payload.category || 'Vật tư & Dụng cụ cắt'),
+    proposer: String(payload.proposer || 'Phân xưởng'),
+    content: String(payload.content || '').trim(),
+    priority: String(payload.priority || 'Bình thường'),
+    status: 'PENDING',
+    createdAt: new Date().toISOString(),
+  };
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_WEEKLY_PROPOSALS_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      const arr = Array.isArray(list) ? list : [];
+      arr.unshift(item);
+      localStorage.setItem(LOCAL_WEEKLY_PROPOSALS_KEY, JSON.stringify(arr.slice(0, 200)));
+    } catch {
+      // ignore
+    }
+  }
+  return item;
+}
+
+export function toggleFallbackWeeklyProposalStatus(id: number | string, status: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_WEEKLY_PROPOSALS_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    const next = arr.map((p: any) =>
+      String(p.id) === String(id) ? { ...p, status: status || 'APPROVED' } : p
+    );
+    localStorage.setItem(LOCAL_WEEKLY_PROPOSALS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+export function deleteFallbackWeeklyProposal(id: number | string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_WEEKLY_PROPOSALS_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    const next = arr.filter((p: any) => String(p.id) !== String(id));
+    localStorage.setItem(LOCAL_WEEKLY_PROPOSALS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
 export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
-  const wStart = weekStart || '2026-10-15';
-  const startDt = new Date(wStart);
+  syncOrdersWithHandovers();
+
+  const rawStart = (weekStart || '').trim().slice(0, 10);
+  const wStart =
+    rawStart && /^\d{4}-\d{2}-\d{2}$/.test(rawStart)
+      ? rawStart
+      : getLatestActiveWeekStart();
+
+  const startDt = new Date(`${wStart}T12:00:00Z`);
   const endDt = new Date(startDt.getTime() + 6 * 24 * 3600 * 1000);
   const weekEnd = endDt.toISOString().slice(0, 10);
   const weekLabel = `Tuần làm việc (${wStart.slice(8, 10)}/${wStart.slice(5, 7)} - ${weekEnd.slice(8, 10)}/${weekEnd.slice(5, 7)}/${weekEnd.slice(0, 4)})`;
+
+  const weekDates: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startDt.getTime() + i * 24 * 3600 * 1000);
+    weekDates.push(d.toISOString().slice(0, 10));
+  }
+
+  const allLogs = getAllFallbackLogs().filter((l) => !l.isVoided);
+  const weekLogs = allLogs.filter((l) => {
+    const d = getLogEffectiveWorkDate(l);
+    return d >= wStart && d <= weekEnd;
+  });
+
+  // Collect saved daily schedule rows across the 7 days of this week
+  const savedWeekPlanRows: DailyPlanRow[] = [];
+  if (typeof window !== 'undefined') {
+    for (const dStr of weekDates) {
+      try {
+        const raw =
+          localStorage.getItem(LOCAL_DAILY_PLAN_PREFIX + dStr) ||
+          localStorage.getItem('GCCK_DAILY_SCHEDULE_' + dStr);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            for (const r of parsed) {
+              if (r && (r.productName || r.customer)) {
+                savedWeekPlanRows.push({ ...r, workDate: dStr });
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Compute shift-shared planned quantity for each log in weekLogs
+  // When a worker runs multiple items on the same machine in the same shift,
+  // the shift norm is shared proportionally across those items so total shift norm = 100%
+  const shiftMachGroups = new Map<string, any[]>();
+  for (const l of weekLogs) {
+    const effDate = getLogEffectiveWorkDate(l);
+    const sRaw = String(l.shiftType || 'Ca 1').toLowerCase();
+    const sKey = sRaw.includes('ca 3') || sRaw.includes('đêm')
+      ? 'CA3'
+      : sRaw.includes('ca 2') || sRaw.includes('chiều')
+        ? 'CA2'
+        : 'CA1';
+    const wKey = removeVietnameseTones(String(l.workerId || l.workerName || '')).toLowerCase().trim();
+    const mKey = removeVietnameseTones(String(l.machineName || 'MAY')).toLowerCase().trim();
+    const gKey = `${effDate}__${sKey}__${wKey}__${mKey}`;
+    const arr = shiftMachGroups.get(gKey) || [];
+    arr.push(l);
+    shiftMachGroups.set(gKey, arr);
+  }
+
+  const logPlannedQtyMap = new Map<string, number>();
+  for (const group of shiftMachGroups.values()) {
+    const totalGroupEarnedSec = group.reduce((sum, l) => {
+      const qty = (Number(l.okQty) || 0) + (Number(l.reworkQty) || 0) + (Number(l.scrapQty) || 0);
+      const sec = Number(l.stdSeconds) || 1800;
+      return sum + qty * sec;
+    }, 0);
+
+    for (const l of group) {
+      const uid = String(l.recordUid || l.id);
+      const fullShiftNorm = calculateOpStandardPlanQty({
+        stdSeconds: Number(l.stdSeconds) || 1800,
+      });
+      if (group.length === 1) {
+        logPlannedQtyMap.set(uid, fullShiftNorm);
+      } else {
+        const qty = (Number(l.okQty) || 0) + (Number(l.reworkQty) || 0) + (Number(l.scrapQty) || 0);
+        const sec = Number(l.stdSeconds) || 1800;
+        const frac = totalGroupEarnedSec > 0 ? (qty * sec) / totalGroupEarnedSec : 1 / group.length;
+        logPlannedQtyMap.set(uid, fullShiftNorm * frac);
+      }
+    }
+  }
+
+  // Build weekly PO / work order status rows
+  const poStatuses: WeeklyReportData['poStatuses'] = [];
+
+  if (weekLogs.length > 0 || savedWeekPlanRows.length > 0) {
+    type PoWeekAgg = {
+      poId: string;
+      customer: string;
+      productName: string;
+      plannedRaw: number;
+      actualQty: number;
+      dueDate: string;
+    };
+    const poAggMap = new Map<string, PoWeekAgg>();
+    const loggedDateProdSet = new Set<string>();
+
+    for (const l of weekLogs) {
+      const rawPoId = String(l.poId || 'PO-THEO-KH').trim();
+      const rawProd = String(l.productName || 'Chi tiết cơ khí').trim();
+      const canonical = canonicalizeCustomerName(String(l.customer || ''));
+      const custName = canonical.customer;
+      const effDate = getLogEffectiveWorkDate(l);
+
+      const normProd = normalizeVn(rawProd).replace(/[^a-z0-9]/g, '');
+      const normPo = normalizePoKey(rawPoId);
+      loggedDateProdSet.add(`${effDate}__${normProd}`);
+
+      // Distinguish generic PO-THEO-KH by product name so each product is tracked clearly
+      const displayPoId =
+        normPo === 'POTHEOKH' || !rawPoId
+          ? `PO-KH (${rawProd.slice(0, 18)})`
+          : rawPoId;
+      const mapKey = `${normalizePoKey(displayPoId)}__${normProd}`;
+
+      const matchedOrder =
+        FALLBACK_ORDERS.find((o) => normalizePoKey(o.poId) === normPo && normPo !== 'POTHEOKH') ||
+        FALLBACK_ORDERS.find(
+          (o) => normalizeVn(o.productName).replace(/[^a-z0-9]/g, '') === normProd
+        );
+
+      const uid = String(l.recordUid || l.id);
+      const turnPlan = logPlannedQtyMap.get(uid) ?? 1;
+      const goodQty = (Number(l.okQty) || 0) + (Number(l.reworkQty) || 0);
+
+      let entry = poAggMap.get(mapKey);
+      if (!entry) {
+        entry = {
+          poId: displayPoId,
+          customer: custName,
+          productName: rawProd,
+          plannedRaw: 0,
+          actualQty: 0,
+          dueDate: matchedOrder?.dueDate || effDate || weekEnd,
+        };
+        poAggMap.set(mapKey, entry);
+      }
+      entry.plannedRaw += turnPlan;
+      entry.actualQty += goodQty;
+      if (effDate > entry.dueDate && !matchedOrder?.dueDate) {
+        entry.dueDate = effDate;
+      }
+    }
+
+    // Include saved daily schedule rows for days/products not already logged in weekLogs
+    for (const r of savedWeekPlanRows) {
+      const rawProd = String(r.productName || '').trim();
+      if (!rawProd) continue;
+      const normProd = normalizeVn(rawProd).replace(/[^a-z0-9]/g, '');
+      const dStr = String(r.workDate || wStart);
+      if (loggedDateProdSet.has(`${dStr}__${normProd}`)) continue;
+
+      const canonical = canonicalizeCustomerName(String(r.customer || ''));
+      const matchedOrder = FALLBACK_ORDERS.find(
+        (o) => normalizeVn(o.productName).replace(/[^a-z0-9]/g, '') === normProd
+      );
+      const displayPoId = matchedOrder?.poId || `KH-${rawProd.slice(0, 16)}`;
+      const mapKey = `${normalizePoKey(displayPoId)}__${normProd}`;
+
+      let entry = poAggMap.get(mapKey);
+      if (!entry) {
+        entry = {
+          poId: displayPoId,
+          customer: canonical.customer,
+          productName: rawProd,
+          plannedRaw: 0,
+          actualQty: 0,
+          dueDate: matchedOrder?.dueDate || dStr || weekEnd,
+        };
+        poAggMap.set(mapKey, entry);
+      }
+      entry.plannedRaw += Number(r.plannedQty) || 0;
+      entry.actualQty += Number(r.actualQty) || 0;
+    }
+
+    for (const entry of poAggMap.values()) {
+      const qtyPo = Math.max(1, Math.round(entry.plannedRaw));
+      const finishedQty = Math.max(0, Math.round(entry.actualQty));
+      const wipQty = Math.max(0, qtyPo - finishedQty);
+      const isCompleted = finishedQty >= qtyPo && qtyPo > 0;
+      const isDelayed = !isCompleted;
+      const status = isCompleted
+        ? '✅ Đạt kế hoạch tuần'
+        : finishedQty > 0
+          ? '⚙️ Đang gia công (Chưa đủ ĐM)'
+          : '⏳ Chưa thực hiện';
+
+      poStatuses.push({
+        poId: entry.poId,
+        customer: entry.customer,
+        productName: entry.productName,
+        qtyPo,
+        finishedQty,
+        wipQty,
+        dueDate: entry.dueDate,
+        status,
+        isDelayed,
+      });
+    }
+  } else {
+    // Fallback for weeks without logs or saved plans: scope to POs due in this week (or month)
+    const weekMonth = wStart.slice(0, 7);
+    let scopedOrders = FALLBACK_ORDERS.filter(
+      (o) => o.dueDate && o.dueDate >= wStart && o.dueDate <= weekEnd
+    );
+    if (scopedOrders.length === 0) {
+      scopedOrders = FALLBACK_ORDERS.filter((o) => (o.dueDate || '').startsWith(weekMonth));
+    }
+    if (scopedOrders.length === 0) {
+      scopedOrders = FALLBACK_ORDERS.slice(0, 15);
+    }
+
+    for (const po of scopedOrders) {
+      const canonical = canonicalizeCustomerName(po.customer);
+      const qtyPo = Math.max(1, Number(po.qtyPo) || 1);
+      const finishedQty = Math.max(0, Number(po.finishedQty) || 0);
+      const wipQty = Math.max(0, qtyPo - finishedQty);
+      const isCompleted = finishedQty >= qtyPo;
+      const isDelayed = !isCompleted;
+      const status = isCompleted
+        ? '✅ Đã hoàn thành'
+        : finishedQty > 0
+          ? '⚙️ Đang gia công'
+          : '⏳ Đang chờ SX';
+
+      poStatuses.push({
+        poId: po.poId,
+        customer: canonical.customer,
+        productName: po.productName,
+        qtyPo,
+        finishedQty,
+        wipQty,
+        dueDate: po.dueDate || weekEnd,
+        status,
+        isDelayed,
+      });
+    }
+  }
+
+  // Sort poStatuses: unfinished/delayed first, then by actual output descending
+  poStatuses.sort((a, b) => {
+    if (a.isDelayed !== b.isDelayed) return a.isDelayed ? -1 : 1;
+    return b.finishedQty - a.finishedQty || b.qtyPo - a.qtyPo;
+  });
+
+  // Aggregate customerStats directly from poStatuses for 100% consistency across UI cards & tables
+  const custMap = new Map<
+    string,
+    {
+      customer: string;
+      products: Set<string>;
+      plannedQty: number;
+      actualQty: number;
+      poCount: number;
+    }
+  >();
+
+  for (const po of poStatuses) {
+    const custName = canonicalizeCustomerName(po.customer).customer;
+    po.customer = custName;
+    let c = custMap.get(custName);
+    if (!c) {
+      c = {
+        customer: custName,
+        products: new Set<string>(),
+        plannedQty: 0,
+        actualQty: 0,
+        poCount: 0,
+      };
+      custMap.set(custName, c);
+    }
+    c.products.add(po.productName);
+    c.plannedQty += Number(po.qtyPo) || 0;
+    c.actualQty += Number(po.finishedQty) || 0;
+    c.poCount += 1;
+  }
+
+  const customerStats = Array.from(custMap.values())
+    .map((c) => ({
+      customer: c.customer,
+      productCount: c.products.size || 1,
+      plannedQty: c.plannedQty,
+      actualQty: c.actualQty,
+      completionPct: c.plannedQty > 0 ? Math.round((c.actualQty / c.plannedQty) * 100) : 0,
+      poCount: c.poCount,
+    }))
+    .sort((a, b) => b.actualQty - a.actualQty || b.plannedQty - a.plannedQty);
+
+  const totalPlannedQty = customerStats.reduce((s, c) => s + c.plannedQty, 0);
+  const totalActualQty = customerStats.reduce((s, c) => s + c.actualQty, 0);
+  const completionPct =
+    totalPlannedQty > 0 ? Math.round((totalActualQty / totalPlannedQty) * 100) : 0;
+  const completedPoCount = poStatuses.filter((po) => po.finishedQty >= po.qtyPo && po.qtyPo > 0).length;
+  const delayedPoCount = poStatuses.filter((po) => po.isDelayed).length;
+
+  // Khối 2: Bảng Tổng Hợp Ngày Công, Giờ Tăng Ca & Năng Suất Thợ Trong Tuần
+  const monthAttCache = new Map<string, ReturnType<typeof getFallbackAttendance>>();
+  for (const dStr of weekDates) {
+    const ym = dStr.slice(0, 7);
+    if (!monthAttCache.has(ym)) {
+      monthAttCache.set(ym, getFallbackAttendance(ym));
+    }
+  }
+
+  const activeWorkers = FALLBACK_WORKERS.filter(
+    (w) => w.isActive !== 0 && w.id !== 'NV00053'
+  );
+
+  const workerLaborStats = activeWorkers
+    .map((w) => {
+      const normWName = removeVietnameseTones(w.name).toLowerCase().trim();
+      const wLogs = weekLogs.filter((l) => {
+        if (l.workerId && l.workerId.toLowerCase() === w.id.toLowerCase()) return true;
+        const lName = removeVietnameseTones(String(l.workerName || '')).toLowerCase().trim();
+        return Boolean(lName && (lName === normWName || lName.includes(normWName) || normWName.includes(lName)));
+      });
+
+      let standardShifts = 0;
+      let otHours = 0;
+      let sundayHours = 0;
+      let offDays = 0;
+      let pDays = 0;
+
+      for (const dStr of weekDates) {
+        const dt = new Date(`${dStr}T12:00:00Z`);
+        const isSun = dt.getUTCDay() === 0;
+        const dayLogs = wLogs.filter((l) => getLogEffectiveWorkDate(l) === dStr);
+
+        const ym = dStr.slice(0, 7);
+        const dayIdx = Number(dStr.slice(8, 10)) - 1;
+        const attMonth = monthAttCache.get(ym);
+        const empAtt = attMonth?.employees.find(
+          (e) =>
+            e.empId.toLowerCase() === w.id.toLowerCase() ||
+            removeVietnameseTones(e.name).toLowerCase().trim() === normWName
+        );
+        const rawCell = String(empAtt?.days?.[dayIdx] || '').trim();
+
+        if (dayLogs.length > 0) {
+          if (isSun || dayLogs.some((l) => Boolean(l.isSunday))) {
+            sundayHours += 8;
+          } else {
+            standardShifts += 1;
+          }
+          const logOtMin = dayLogs.reduce((maxOt, l) => Math.max(maxOt, Number(l.overtimeMinutes) || 0), 0);
+          if (logOtMin > 0) {
+            otHours += Math.round((logOtMin / 60) * 10) / 10;
+          } else if (rawCell) {
+            const parsed = parseAttendanceCell(rawCell, empAtt?.defaultShift || 'Ca 1', DEFAULT_MEAL_CONFIG, isSun);
+            otHours += parsed.ot15;
+          }
+        } else if (rawCell) {
+          const parsed = parseAttendanceCell(rawCell, empAtt?.defaultShift || 'Ca 1', DEFAULT_MEAL_CONFIG, isSun);
+          standardShifts += parsed.regDays + parsed.s3Days;
+          otHours += parsed.ot15;
+          sundayHours += parsed.ot20 + parsed.ot30;
+          offDays += parsed.offDays;
+          pDays += parsed.pDays;
+        } else {
+          const hasPlanOnDay = savedWeekPlanRows.some((r) => {
+            if (r.workDate !== dStr) return false;
+            const rWName = removeVietnameseTones(String(r.workerName || '')).toLowerCase().trim();
+            return Boolean(rWName && (rWName === normWName || rWName.includes(normWName)));
+          });
+          if (hasPlanOnDay) {
+            if (isSun) sundayHours += 8;
+            else standardShifts += 1;
+          } else if (!isSun) {
+            offDays += 1;
+          }
+        }
+      }
+
+      const actualCompletedPieces = wLogs.reduce(
+        (sum, l) => sum + (Number(l.okQty) || 0) + (Number(l.reworkQty) || 0),
+        0
+      );
+      const totalConvertedShifts =
+        Math.round((standardShifts + (otHours + sundayHours) / 8) * 100) / 100;
+
+      return {
+        workerId: w.id,
+        workerName: w.name,
+        standardShifts: Math.round(standardShifts * 10) / 10,
+        otHours: Math.round(otHours * 10) / 10,
+        sundayHours: Math.round(sundayHours * 10) / 10,
+        offDays: Math.round(offDays * 10) / 10,
+        pDays: Math.round(pDays * 10) / 10,
+        totalConvertedShifts,
+        actualCompletedPieces: Math.round(actualCompletedPieces),
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.actualCompletedPieces - a.actualCompletedPieces ||
+        b.totalConvertedShifts - a.totalConvertedShifts
+    );
+
+  // Khối 3: Báo Cáo Sự Cố Máy Móc & Thời Gian Dừng Máy
+  const logIncidents: WeeklyReportData['downtimeIncidents'] = weekLogs
+    .filter((l) => Number(l.stopMinutes) > 0)
+    .map((l) => ({
+      id: String(l.recordUid || l.id),
+      machineName: String(l.machineName || 'Máy gia công'),
+      stopMinutes: Number(l.stopMinutes) || 0,
+      reason: String(l.stopReason || 'Dừng máy kỹ thuật'),
+      date: getLogEffectiveWorkDate(l),
+      workerName: String(l.workerName || ''),
+    }));
+
+  const storedIncidents: Array<any> = [];
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_WEEKLY_INCIDENTS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const inc of parsed) {
+            if (inc && inc.weekStart === wStart) {
+              storedIncidents.push(inc);
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const downtimeIncidents: WeeklyReportData['downtimeIncidents'] = [
+    ...storedIncidents.map((inc) => ({
+      id: String(inc.id),
+      machineName: String(inc.machineName || 'Tổng hợp Xưởng'),
+      stopMinutes: Number(inc.stopMinutes) || 0,
+      reason: String(inc.reason || ''),
+      date: String(inc.date || wStart),
+      workerName: String(inc.workerName || 'Quản đốc'),
+    })),
+    ...logIncidents,
+  ];
+
+  const customIncidentNotes: string[] = [];
+  for (const inc of storedIncidents) {
+    if (inc.note && String(inc.note).trim()) {
+      customIncidentNotes.push(`${inc.machineName}: ${String(inc.note).trim()}`);
+    }
+  }
+  for (const l of weekLogs) {
+    const hNote = String(l.handoverNote || l.note || '').trim();
+    if (hNote && hNote.length > 3) {
+      const entry = `[${l.machineName} - ${l.workerName}]: ${hNote}`;
+      if (!customIncidentNotes.includes(entry)) {
+        customIncidentNotes.push(entry);
+      }
+    }
+  }
+
+  // Khối 5: Đề Xuất & Kiến Nghị Khác
+  const proposals: WeeklyProposalItem[] = [];
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LOCAL_WEEKLY_PROPOSALS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const p of parsed) {
+            if (p && p.weekStart === wStart) {
+              proposals.push(p);
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Khối 4: Dự Báo Sản Lượng Tuần Tới & Cân Bằng Tải Máy
+  const nextStartDt = new Date(endDt.getTime() + 24 * 3600 * 1000);
+  const nextEndDt = new Date(nextStartDt.getTime() + 6 * 24 * 3600 * 1000);
+  const nextWeekEnd = nextEndDt.toISOString().slice(0, 10);
+
+  const unfinishedInWeek = poStatuses.filter((po) => po.wipQty > 0);
+  const carryoverBacklogQty = unfinishedInWeek.reduce((s, po) => s + po.wipQty, 0);
+
+  const findOpMeta = (productName: string) => {
+    const normP = normalizeVn(productName).replace(/[^a-z0-9]/g, '');
+    return (
+      FALLBACK_OPERATIONS.find(
+        (o) => normalizeVn(o.productName).replace(/[^a-z0-9]/g, '') === normP
+      ) ||
+      FALLBACK_OPERATIONS.find((o) => {
+        const n = normalizeVn(o.productName).replace(/[^a-z0-9]/g, '');
+        return Boolean(n && normP && (n.includes(normP) || normP.includes(n)));
+      })
+    );
+  };
+
+  let carryoverSeconds = 0;
+  for (const po of unfinishedInWeek) {
+    const op = findOpMeta(po.productName);
+    const stdSec = Number(op?.stdSeconds) || 1800;
+    carryoverSeconds += po.wipQty * stdSec;
+  }
+  const carryoverHours = Math.round((carryoverSeconds / 3600) * 10) / 10;
+
+  // Build duePos for next week from unfinished weekly orders + open POs due through nextWeekEnd
+  const duePos: WeeklyReportData['nextWeekForecast']['duePos'] = [];
+  const seenForecastKeys = new Set<string>();
+
+  for (const po of unfinishedInWeek) {
+    const op = findOpMeta(po.productName);
+    const stdSec = Number(op?.stdSeconds) || 1800;
+    const reqHours = Math.max(0.5, Math.round(((po.wipQty * stdSec) / 3600) * 10) / 10);
+    const key = `${po.poId}__${po.productName}`;
+    seenForecastKeys.add(key);
+    duePos.push({
+      poId: po.poId,
+      customer: po.customer,
+      productName: po.productName,
+      remainQty: po.wipQty,
+      dueDate: po.dueDate,
+      requiredHours: reqHours,
+      defaultMachine: op?.defaultMachine || 'Máy Tiện CNC 1',
+    });
+  }
+
+  const upcomingOrders = FALLBACK_ORDERS.filter(
+    (o) =>
+      o.remainQty > 0 &&
+      o.dueDate &&
+      o.dueDate >= wStart &&
+      o.dueDate <= nextWeekEnd
+  ).slice(0, 10);
+
+  for (const o of upcomingOrders) {
+    const key = `${o.poId}__${o.productName}`;
+    if (seenForecastKeys.has(key)) continue;
+    seenForecastKeys.add(key);
+    const canonical = canonicalizeCustomerName(o.customer);
+    const op = findOpMeta(o.productName);
+    const stdSec = Number(op?.stdSeconds) || 1800;
+    const reqHours = Math.max(0.5, Math.round(((o.remainQty * stdSec) / 3600) * 10) / 10);
+    duePos.push({
+      poId: o.poId,
+      customer: canonical.customer,
+      productName: o.productName,
+      remainQty: o.remainQty,
+      dueDate: o.dueDate,
+      requiredHours: reqHours,
+      defaultMachine: op?.defaultMachine || 'Máy Tiện CNC 1',
+    });
+  }
+
+  const activeMachineCount =
+    FALLBACK_MACHINES.filter((m) => m.status !== 'MAINTENANCE').length || 14;
+  const machineCapacityHours = activeMachineCount * 48;
+  const totalRequiredHours =
+    Math.round(duePos.reduce((s, p) => s + p.requiredHours, 0) * 10) / 10;
+  const overloadCapacityHours = Math.max(
+    0,
+    Math.round((totalRequiredHours - machineCapacityHours) * 10) / 10
+  );
+  const isOverloaded = totalRequiredHours > machineCapacityHours;
+
+  const outsourceRecommendations = isOverloaded
+    ? [...duePos]
+        .sort((a, b) => b.requiredHours - a.requiredHours)
+        .slice(0, 3)
+        .map((p) => ({
+          poId: p.poId,
+          customer: p.customer,
+          productName: p.productName,
+          suggestedOutsourceQty: Math.max(1, Math.ceil(p.remainQty * 0.5)),
+          reason: `Quá tải công suất máy tuần tới (+${overloadCapacityHours}h). Đề xuất tăng ca Ca 3 hoặc thuê gia công ngoài thô.`,
+          estimatedOutsourceCost: Math.max(1, Math.ceil(p.remainQty * 0.5)) * 120000,
+        }))
+    : [];
 
   return {
     weekStart: wStart,
     weekEnd,
     weekLabel,
     summary: {
-      totalPlannedQty: 240,
-      totalActualQty: 228,
-      completionPct: 95,
-      totalPoActive: FALLBACK_ORDERS.length,
-      completedPoCount: 8,
-      delayedPoCount: 1,
+      totalPlannedQty,
+      totalActualQty,
+      completionPct,
+      totalPoActive: poStatuses.length,
+      completedPoCount,
+      delayedPoCount,
     },
-    customerStats: [
-      {
-        customer: 'Taniguchi',
-        productCount: 12,
-        plannedQty: 120,
-        actualQty: 118,
-        completionPct: 98,
-        poCount: 6,
-      },
-      {
-        customer: 'Hạ Long',
-        productCount: 8,
-        plannedQty: 80,
-        actualQty: 74,
-        completionPct: 92,
-        poCount: 4,
-      },
-      {
-        customer: 'Vico - Nội bộ / Khách lẻ',
-        productCount: 14,
-        plannedQty: 40,
-        actualQty: 36,
-        completionPct: 90,
-        poCount: 5,
-      },
-    ],
-    poStatuses: FALLBACK_ORDERS.map((po) => {
-      const isCompleted = Number(po.finishedQty || 0) >= Number(po.qtyPo || 0);
-      const isDelayed = !isCompleted && Boolean(po.dueDate && new Date(po.dueDate) < new Date());
-      return {
-        poId: po.poId,
-        customer: po.customer,
-        productName: po.productName,
-        qtyPo: po.qtyPo,
-        finishedQty: po.finishedQty,
-        wipQty: po.remainQty,
-        dueDate: po.dueDate,
-        status: po.status,
-        isDelayed,
-      };
-    }),
-    workerLaborStats: FALLBACK_WORKERS.slice(0, 10).map((w, idx) => ({
-      workerId: w.id,
-      workerName: w.name,
-      standardShifts: 6,
-      otHours: idx % 2 === 0 ? 4 : 0,
-      sundayHours: 0,
-      offDays: 0,
-      pDays: 0,
-      totalConvertedShifts: 6 + (idx % 2 === 0 ? 0.5 : 0),
-      actualCompletedPieces: 25 + idx * 3,
-    })),
-    downtimeIncidents: [
-      {
-        id: 'INC-01',
-        machineName: 'Máy tiện FUJI',
-        stopMinutes: 45,
-        reason: 'Thay mảnh hợp kim CNC do mòn đầu dao',
-        date: wStart,
-        workerName: 'Trần Văn Quỳnh',
-      },
-    ],
-    customIncidentNotes: ['Bảo dưỡng định kỳ trục chính máy phay Moriseiki hoàn tất trong ca sáng'],
-    proposals: [
-      {
-        id: 1,
-        weekStart: wStart,
-        category: 'Dao cụ & Thiết bị',
-        proposer: 'Hoàng Ngọc Hà (Quản đốc)',
-        content: 'Bổ sung thêm 20 mảnh chíp tiện WNMG080408 cho máy Tiện CNC 1 để chạy đơn hàng Taniguchi',
-        priority: 'CAO',
-        status: 'PENDING',
-        createdAt: new Date().toISOString(),
-      },
-    ],
+    customerStats,
+    poStatuses,
+    workerLaborStats,
+    downtimeIncidents,
+    customIncidentNotes,
+    proposals,
     nextWeekForecast: {
-      duePos: FALLBACK_ORDERS.slice(0, 4).map((po) => ({
-        poId: po.poId,
-        customer: po.customer,
-        productName: po.productName,
-        remainQty: po.remainQty,
-        dueDate: po.dueDate,
-        requiredHours: Math.round((po.remainQty * 1800) / 3600),
-        defaultMachine: 'Máy Tiện CNC 1',
-      })),
-      carryoverBacklogQty: 12,
-      carryoverHours: 6,
-      totalRequiredHours: 42,
-      machineCapacityHours: 120,
-      overloadCapacityHours: 0,
-      isOverloaded: false,
-      outsourceRecommendations: [],
+      duePos,
+      carryoverBacklogQty,
+      carryoverHours,
+      totalRequiredHours,
+      machineCapacityHours,
+      overloadCapacityHours,
+      isOverloaded,
+      outsourceRecommendations,
     },
   };
 }

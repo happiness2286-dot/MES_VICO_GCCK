@@ -53,7 +53,17 @@ import {
   Modal,
   useToast,
 } from '@client/components/ui/IndustrialPrimitives';
-import { getFallbackBootstrap, rotateDailyPlanWeek, getFallbackDailyPlan, saveFallbackDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows } from '@client/lib/clientFallbackStore';
+import {
+  getFallbackBootstrap,
+  rotateDailyPlanWeek,
+  getFallbackDailyPlan,
+  saveFallbackDailyPlan,
+  mergePlanWithBaseline,
+  calculateOpStandardPlanQty,
+  sortDailyPlanRows,
+  toThursdayWeekStart,
+  getLatestActiveWeekStart,
+} from '@client/lib/clientFallbackStore';
 import {
   isSupabaseConnected,
   pushDailyPlanToSupabase,
@@ -1155,7 +1165,8 @@ export function DailyWeeklyScheduleTab({
   }, [dailyRows]);
 
   // ==================== TAB 2: WEEKLY REPORT STATE ====================
-  const [weeklyStart, setWeeklyStart] = useState<string>('2026-10-15');
+  const [weeklyStart, setWeeklyStart] = useState<string>(() => getLatestActiveWeekStart());
+  const [userPickedWeek, setUserPickedWeek] = useState<boolean>(false);
   const [weeklyReport, setWeeklyReport] = useState<WeeklyReportData | null>(null);
   const [loadingWeekly, setLoadingWeekly] = useState<boolean>(false);
   const [newIncidentMachine, setNewIncidentMachine] = useState<string>('');
@@ -1195,42 +1206,80 @@ export function DailyWeeklyScheduleTab({
     });
   };
 
+  const metricMatchedPoStatuses = useMemo(() => {
+    if (!weeklyReport?.poStatuses) return [];
+    let list = weeklyReport.poStatuses;
+    if (weeklyMetricFilter === 'DELAYED') {
+      list = list.filter((po) => po.isDelayed || po.finishedQty < po.qtyPo);
+    } else if (weeklyMetricFilter === 'COMPLETED') {
+      list = list.filter((po) => po.finishedQty >= po.qtyPo && po.qtyPo > 0);
+    } else if (weeklyMetricFilter === 'ACTUAL') {
+      list = list.filter((po) => po.finishedQty > 0);
+    }
+    return list;
+  }, [weeklyReport, weeklyMetricFilter]);
+
   const filteredCustomerStats = useMemo(() => {
     if (!weeklyReport?.customerStats) return [];
-    let list = weeklyReport.customerStats;
-    if (weeklyMetricFilter === 'DELAYED') {
-      list = list.filter((c) => c.completionPct < 100);
-    } else if (weeklyMetricFilter === 'COMPLETED') {
-      list = list.filter((c) => c.completionPct >= 100);
-    } else if (weeklyMetricFilter === 'ACTUAL') {
-      list = list.filter((c) => c.actualQty > 0);
+    if (weeklyMetricFilter === 'ALL') {
+      return selectedWeeklyCustomer
+        ? weeklyReport.customerStats.filter((c) => c.customer === selectedWeeklyCustomer)
+        : weeklyReport.customerStats;
     }
+
+    // Aggregate customer stats directly from metricMatchedPoStatuses so Customer Table & PO List always match 100%
+    const custMap = new Map<
+      string,
+      {
+        customer: string;
+        products: Set<string>;
+        plannedQty: number;
+        actualQty: number;
+        poCount: number;
+      }
+    >();
+
+    for (const po of metricMatchedPoStatuses) {
+      let entry = custMap.get(po.customer);
+      if (!entry) {
+        entry = {
+          customer: po.customer,
+          products: new Set<string>(),
+          plannedQty: 0,
+          actualQty: 0,
+          poCount: 0,
+        };
+        custMap.set(po.customer, entry);
+      }
+      entry.products.add(po.productName);
+      entry.plannedQty += Number(po.qtyPo) || 0;
+      entry.actualQty += Number(po.finishedQty) || 0;
+      entry.poCount += 1;
+    }
+
+    let list = Array.from(custMap.values())
+      .map((c) => ({
+        customer: c.customer,
+        productCount: c.products.size || 1,
+        plannedQty: c.plannedQty,
+        actualQty: c.actualQty,
+        completionPct: c.plannedQty > 0 ? Math.round((c.actualQty / c.plannedQty) * 100) : 100,
+        poCount: c.poCount,
+      }))
+      .sort((a, b) => b.actualQty - a.actualQty || b.plannedQty - a.plannedQty);
+
     if (selectedWeeklyCustomer) {
       list = list.filter((c) => c.customer === selectedWeeklyCustomer);
     }
     return list;
-  }, [weeklyReport, weeklyMetricFilter, selectedWeeklyCustomer]);
+  }, [weeklyReport, weeklyMetricFilter, metricMatchedPoStatuses, selectedWeeklyCustomer]);
 
   const filteredPoStatuses = useMemo(() => {
-    if (!weeklyReport?.poStatuses) return [];
-    let list = weeklyReport.poStatuses;
-    if (weeklyMetricFilter === 'DELAYED') {
-      list = list.filter(
-        (po) =>
-          po.isDelayed ||
-          (po.qtyPo > po.finishedQty &&
-            Boolean(po.dueDate && new Date(po.dueDate) <= new Date(weeklyReport.weekEnd)))
-      );
-    } else if (weeklyMetricFilter === 'COMPLETED') {
-      list = list.filter((po) => po.finishedQty >= po.qtyPo);
-    } else if (weeklyMetricFilter === 'ACTUAL') {
-      list = list.filter((po) => po.finishedQty > 0 || po.wipQty > 0);
-    }
     if (selectedWeeklyCustomer) {
-      list = list.filter((po) => po.customer === selectedWeeklyCustomer);
+      return metricMatchedPoStatuses.filter((po) => po.customer === selectedWeeklyCustomer);
     }
-    return list;
-  }, [weeklyReport, weeklyMetricFilter, selectedWeeklyCustomer]);
+    return metricMatchedPoStatuses;
+  }, [metricMatchedPoStatuses, selectedWeeklyCustomer]);
 
   const handleWeeklyPoToDailySchedule = (productOrPo: string) => {
     try {
@@ -1266,11 +1315,26 @@ export function DailyWeeklyScheduleTab({
     }
   };
 
+  const shiftWeekStart = (deltaDays: number) => {
+    setUserPickedWeek(true);
+    const dt = new Date(`${weeklyStart}T12:00:00Z`);
+    if (Number.isNaN(dt.getTime())) return;
+    const nextDt = new Date(dt.getTime() + deltaDays * 24 * 3600 * 1000);
+    setWeeklyStart(toThursdayWeekStart(nextDt.toISOString().slice(0, 10)));
+  };
+
   useEffect(() => {
+    if (!userPickedWeek) {
+      const latest = getLatestActiveWeekStart();
+      if (latest && latest !== weeklyStart) {
+        setWeeklyStart(latest);
+        return;
+      }
+    }
     if (subTab === 'weekly') {
       void loadWeeklyReport(weeklyStart);
     }
-  }, [subTab, weeklyStart]);
+  }, [subTab, weeklyStart, bootstrap.recentLogs, userPickedWeek]);
 
   const handleAddIncidentNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2243,16 +2307,49 @@ export function DailyWeeklyScheduleTab({
           {/* Week Selector Bar */}
           <Card className="border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-slate-700">
                   Chu kỳ Tuần (Thứ 5 &rarr; Thứ 4):
                 </span>
+                <button
+                  type="button"
+                  onClick={() => shiftWeekStart(-7)}
+                  title="Lùi về tuần trước (-7 ngày)"
+                  className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Tuần trước
+                </button>
                 <input
                   type="date"
                   value={weeklyStart}
-                  onChange={(e) => setWeeklyStart(e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setUserPickedWeek(true);
+                      setWeeklyStart(toThursdayWeekStart(e.target.value));
+                    }
+                  }}
                   className="h-9 rounded-lg border border-slate-300 px-3 text-xs font-bold text-slate-900 focus:border-blue-600 focus:outline-none"
                 />
+                <button
+                  type="button"
+                  onClick={() => shiftWeekStart(7)}
+                  title="Tiến sang tuần sau (+7 ngày)"
+                  className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-300 bg-slate-50 px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  Tuần sau
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserPickedWeek(true);
+                    setWeeklyStart(getLatestActiveWeekStart());
+                  }}
+                  className="inline-flex h-9 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  Tuần SX gần nhất
+                </button>
                 {weeklyReport && (
                   <Badge variant="info" className="font-bold">
                     {weeklyReport.weekLabel}
