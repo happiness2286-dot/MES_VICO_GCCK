@@ -30,6 +30,7 @@ import type {
   TraceabilityDto,
 } from '@shared/types';
 import { matchesSearch, normalizeVn } from '@shared/vnSearch';
+import { toRenderableDriveImageUrl, toViewableDriveUrl } from '@shared/driveHelper';
 import { apiClient } from '@client/lib/apiClient';
 import { clearAllClientStoredLogs, deleteFallbackHandover, getAllFallbackLogs, getFallbackBootstrap, getFallbackHandovers, saveFallbackHandover, getFallbackTraceability, saveClientStoredLog, syncClientStoredLogsWithCloud, updateFallbackLog, deleteFallbackLog } from '@client/lib/clientFallbackStore';
 import { buildConsolidatedQcList } from '@client/lib/qcLogHelper';
@@ -3874,11 +3875,23 @@ export function LogsQcTraceTab({
           <div className="space-y-3 text-xs">
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
               <img
-                src={previewPhotoLog.photoUrl}
+                src={toRenderableDriveImageUrl(previewPhotoLog.photoUrl)}
                 alt={previewPhotoLog.productName}
                 className="max-h-[420px] w-full object-contain"
               />
             </div>
+            {previewPhotoLog.photoUrl && !previewPhotoLog.photoUrl.startsWith('data:') && (
+              <div className="flex justify-end">
+                <a
+                  href={toViewableDriveUrl(previewPhotoLog.photoUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 font-bold text-blue-700 hover:bg-blue-100"
+                >
+                  📂 Mở ảnh trên Google Drive
+                </a>
+              </div>
+            )}
             {previewPhotoLog.handoverNote && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 font-medium text-amber-900">
                 📝 Ghi chú bàn giao: {previewPhotoLog.handoverNote}

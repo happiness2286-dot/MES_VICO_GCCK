@@ -152,10 +152,15 @@ function convertGasRecentLogs(gasLogs: any[]): ProductionLogDto[] {
     const mCa = rawNote.match(/\[Ca:\s*(\d{2}:\d{2})-(\d{2}:\d{2})\]/i);
     const startTime = mCa ? mCa[1] : '06:00';
     const endTime = mCa ? mCa[2] : '14:00';
+    const mImg = rawNote.match(/\[Ảnh:\s*([^\]]+)\]/i);
+    const extractedPhotoUrl = mImg
+      ? mImg[1].trim()
+      : String(r.photoUrl || '').trim();
     const cleanNote = rawNote
       .replace(/\[PO:[^\]]*\]/gi, '')
       .replace(/\[Ca:[^\]]*\]/gi, '')
       .replace(/\[Rework:[^\]]*\]/gi, '')
+      .replace(/\[Ảnh:[^\]]*\]/gi, '')
       .trim();
 
     const op = opsMap.get(ncId.toUpperCase());
@@ -247,7 +252,7 @@ function convertGasRecentLogs(gasLogs: any[]): ProductionLogDto[] {
       batchCost: calcPayroll.batchCost,
       kpiPct: calcPayroll.kpiPct,
       kpiStatus: calcPayroll.kpiStatus,
-      photoUrl: '',
+      photoUrl: extractedPhotoUrl,
       handoverNote: cleanNote,
       materialLot: '',
       note: cleanNote,

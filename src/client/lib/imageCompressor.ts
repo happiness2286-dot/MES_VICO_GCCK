@@ -1,11 +1,11 @@
 /**
- * Compresses shopfloor camera photos client-side (<= 1280px, JPEG)
- * for instant submission over weak workshop Wi-Fi.
+ * Compresses shopfloor camera photos client-side to ultra-lightweight JPEG (target ~20–35 KB, max 800px)
+ * for instant upload to Google Drive over workshop Wi-Fi/4G while keeping part details sharp.
  */
 export async function compressImageToDataUrl(
   file: File,
-  maxWidth: number = 1280,
-  quality: number = 0.78
+  maxWidth: number = 800,
+  quality: number = 0.65
 ): Promise<string> {
   const rawDataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -22,35 +22,50 @@ export async function compressImageToDataUrl(
     const img = new Image();
     img.onload = () => {
       try {
-        let width = img.naturalWidth || img.width;
-        let height = img.naturalHeight || img.height;
+        const origW = img.naturalWidth || img.width;
+        const origH = img.naturalHeight || img.height;
 
-        if (width <= 0 || height <= 0) {
+        if (origW <= 0 || origH <= 0) {
           resolve(rawDataUrl);
           return;
         }
 
-        if (width > maxWidth || height > maxWidth) {
-          if (width >= height) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          } else {
-            width = Math.round((width * maxWidth) / height);
-            height = maxWidth;
+        const encodeAtScale = (targetMaxDim: number, q: number): string => {
+          let w = origW;
+          let h = origH;
+          if (w > targetMaxDim || h > targetMaxDim) {
+            if (w >= h) {
+              h = Math.round((h * targetMaxDim) / w);
+              w = targetMaxDim;
+            } else {
+              w = Math.round((w * targetMaxDim) / h);
+              h = targetMaxDim;
+            }
           }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return rawDataUrl;
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, w, h);
+          return canvas.toDataURL('image/jpeg', q);
+        };
+
+        // Pass 1: 800px @ 0.65 quality (~25-40 KB for typical shopfloor photo)
+        let compressed = encodeAtScale(maxWidth, quality);
+
+        // Pass 2: If base64 length > 55,000 chars (~40 KB), step down quality to 0.52
+        if (compressed.length > 55000) {
+          compressed = encodeAtScale(maxWidth, 0.52);
         }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(rawDataUrl);
-          return;
+        // Pass 3: If still > 50,000 chars (~37 KB), step down dimension to 680px @ 0.48
+        if (compressed.length > 50000) {
+          compressed = encodeAtScale(680, 0.48);
         }
 
-        ctx.drawImage(img, 0, 0, width, height);
-        const compressed = canvas.toDataURL('image/jpeg', quality);
         resolve(compressed || rawDataUrl);
       } catch {
         resolve(rawDataUrl);

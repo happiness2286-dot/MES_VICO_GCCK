@@ -93,3 +93,31 @@ export function getEffectiveDrawingUrl(specificUrl?: string | null): string {
   const clean = (specificUrl || '').trim();
   return clean || DEFAULT_DRIVE_FOLDER_URL;
 }
+
+/**
+ * Converts a Google Drive file view URL (e.g. https://drive.google.com/file/d/<ID>/view?usp=drivesdk)
+ * into a direct image stream URL that can be rendered directly inside an <img src="..." /> tag.
+ */
+export function toRenderableDriveImageUrl(rawUrl?: string | null): string {
+  const clean = (rawUrl || '').trim();
+  if (!clean) return '';
+  if (clean.startsWith('data:image/')) return clean;
+  const parsed = parseGoogleDriveUrl(clean);
+  if (parsed.isDrive && parsed.isFile && parsed.id) {
+    return `https://drive.google.com/thumbnail?id=${parsed.id}&sz=w1200`;
+  }
+  return clean;
+}
+
+/**
+ * Returns the clickable Google Drive file view URL for opening in a new tab.
+ */
+export function toViewableDriveUrl(rawUrl?: string | null): string {
+  const clean = (rawUrl || '').trim();
+  if (!clean) return DEFAULT_DRIVE_FOLDER_URL;
+  const parsed = parseGoogleDriveUrl(clean);
+  if (parsed.isDrive && parsed.isFile && parsed.id) {
+    return `https://drive.google.com/file/d/${parsed.id}/view?usp=sharing`;
+  }
+  return clean;
+}

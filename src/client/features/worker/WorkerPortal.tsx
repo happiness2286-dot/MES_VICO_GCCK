@@ -1692,9 +1692,10 @@ export function WorkerPortal() {
     if (!file) return;
     setCompressingPhoto(true);
     try {
-      const dataUrl = await compressImageToDataUrl(file, 1280, 0.78);
+      const dataUrl = await compressImageToDataUrl(file, 800, 0.65);
       setPhotoBase64(dataUrl);
-      toast.success('Đã nén ảnh minh chứng nhẹ chuẩn HD sẵn sàng gửi!');
+      const sizeKb = Math.max(1, Math.round((dataUrl.length * 0.75) / 1024));
+      toast.success(`Đã nén ảnh siêu nhẹ (${sizeKb} KB) chuẩn lưu Google Drive!`);
     } catch (err: any) {
       toast.error(err?.message || 'Không thể xử lý ảnh chụp.');
     } finally {

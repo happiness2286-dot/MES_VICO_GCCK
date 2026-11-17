@@ -1763,15 +1763,33 @@ export async function submitDirectToGoogleAppsScript(
     shift: payload.shiftType || 'Ca 1',
   };
 
+  let drivePhotoUrl = '';
   try {
-    await fetch(GAS_WEBHOOK_URL, {
+    const gasResp = await fetch(GAS_WEBHOOK_URL, {
       method: 'POST',
-      mode: 'no-cors',
+      redirect: 'follow',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(gasBody),
     });
+    if (gasResp.ok) {
+      try {
+        const gasJson = await gasResp.json();
+        if (gasJson && typeof gasJson.photoUrl === 'string' && gasJson.photoUrl.trim()) {
+          drivePhotoUrl = gasJson.photoUrl.trim();
+        }
+      } catch { }
+    }
   } catch (gasErr) {
-    console.warn('Direct GAS sync warning (stored offline):', gasErr);
+    try {
+      await fetch(GAS_WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(gasBody),
+      });
+    } catch {
+      console.warn('Direct GAS sync warning (stored offline):', gasErr);
+    }
   }
 
   const hours = String(now.getHours()).padStart(2, '0');
@@ -1867,7 +1885,8 @@ export async function submitDirectToGoogleAppsScript(
     batchCost: calcPayroll.batchCost,
     kpiPct: calcPayroll.kpiPct,
     kpiStatus: calcPayroll.kpiStatus,
-    photoUrl: payload.photoBase64 || '',
+    // Ưu tiên lưu đường link Google Drive gọn nhẹ (~75 bytes) thay vì chuỗi Base64 nặng
+    photoUrl: drivePhotoUrl || payload.photoBase64 || '',
     handoverNote: (payload as any).handoverNote || '',
     materialLot: payload.materialLot || '',
     note: (payload as any).note || payload.handoverNote || '',
