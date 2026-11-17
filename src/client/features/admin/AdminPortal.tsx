@@ -24,7 +24,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import type { BootstrapPayload } from '@shared/types';
+import type { BootstrapPayload, ProductionLogDto } from '@shared/types';
 import { matchesSearch } from '@shared/vnSearch';
 import { apiClient } from '@client/lib/apiClient';
 import { getFallbackBootstrap, saveClientStoredLog, syncClientStoredLogsWithCloud, getAllFallbackLogs } from '@client/lib/clientFallbackStore';
@@ -131,17 +131,34 @@ export function AdminPortal() {
       }
       setLoadError('');
       try {
-        if (isSupabaseConnected()) {
-          try {
-            const sbLogs = await fetchLogsFromSupabase();
-            if (sbLogs && sbLogs.length > 0) {
-              syncClientStoredLogsWithCloud(sbLogs);
-            }
-          } catch (sbErr) {
-            console.warn('Supabase fetch logs error in AdminPortal:', sbErr);
+        let cloudLogs: ProductionLogDto[] = [];
+        try {
+          const sbLogs = await fetchLogsFromSupabase(!silent);
+          if (sbLogs && sbLogs.length > 0) {
+            cloudLogs = sbLogs;
+            syncClientStoredLogsWithCloud(sbLogs);
           }
+        } catch (sbErr) {
+          console.warn('Cloud fetch logs error in AdminPortal:', sbErr);
         }
         const data = await apiClient.get<BootstrapPayload>('/bootstrap');
+        if (cloudLogs.length > 0) {
+          const combinedMap = new Map<string, ProductionLogDto>();
+          for (const l of [...cloudLogs, ...(data.recentLogs || [])]) {
+            if (!l || (!l.workerName && !l.workerId) || l.isVoided === 1) continue;
+            const k = String(l.recordUid || l.id);
+            if (!combinedMap.has(k)) combinedMap.set(k, l);
+          }
+          data.recentLogs = Array.from(combinedMap.values()).sort((a, b) => {
+            const dA = String(a.workDate || '').slice(0, 10);
+            const dB = String(b.workDate || '').slice(0, 10);
+            if (dA !== dB) return dB.localeCompare(dA);
+            const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+            const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+            if (tA !== tB) return tB - tA;
+            return (Number(b.id) || 0) - (Number(a.id) || 0);
+          });
+        }
         setBootstrap(data);
       } catch (err: any) {
         // Transparent fallback so user never gets stuck with server offline error

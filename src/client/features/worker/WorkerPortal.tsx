@@ -57,7 +57,7 @@ import {
   isVietnamSunday,
 } from '@shared/payrollEngine';
 import { getShiftProductionWorkDate, getLogEffectiveWorkDate } from '@shared/shiftDateHelper';
-import { matchesSearch } from '@shared/vnSearch';
+import { matchesSearch, removeVietnameseTones } from '@shared/vnSearch';
 import { getWinWinPreferredMachines } from '@shared/winWinMachineRouting';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../lib/apiClient';
@@ -83,6 +83,7 @@ import {
   saveClientStoredLog,
   syncClientStoredLogsWithCloud,
   getAllFallbackLogs,
+  getFallbackBootstrap,
   getFallbackDailyPlan,
   saveFallbackDailyPlan,
   deleteFallbackLog,
@@ -203,8 +204,8 @@ export function WorkerPortal() {
   const [deletingLogId, setDeletingLogId] = useState<number | null>(null);
 
   // Bootstrap & Network State
-  const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
-  const [loadingBootstrap, setLoadingBootstrap] = useState(true);
+  const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(() => getFallbackBootstrap());
+  const [loadingBootstrap, setLoadingBootstrap] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine !== false : true
   );
@@ -663,20 +664,35 @@ export function WorkerPortal() {
     async (silent = false) => {
       if (!silent) setLoadingBootstrap(true);
       try {
-        // Fetch Cloud logs first so getFallbackBootstrap includes all synced 13/11 -> 17/11+ reports
-        if (isSupabaseConnected()) {
-          try {
-            const sbLogs = await fetchLogsFromSupabase();
-            if (sbLogs && sbLogs.length > 0) {
-              syncClientStoredLogsWithCloud(sbLogs);
-            }
-          } catch (sbErr) {
-            console.warn('Supabase fetch logs error in WorkerPortal:', sbErr);
+        // Always fetch Cloud logs (Supabase + Google Apps Script Cloud)
+        let cloudLogs: ProductionLogDto[] = [];
+        try {
+          const sbLogs = await fetchLogsFromSupabase(!silent);
+          if (sbLogs && sbLogs.length > 0) {
+            cloudLogs = sbLogs;
+            syncClientStoredLogsWithCloud(sbLogs);
           }
+        } catch (sbErr) {
+          console.warn('Cloud fetch logs error in WorkerPortal:', sbErr);
         }
 
         const data = await apiClient.get<BootstrapPayload>('/bootstrap');
-        const mergedList = getAllFallbackLogs();
+        const localFallback = getAllFallbackLogs();
+        const combinedMap = new Map<string, ProductionLogDto>();
+        for (const l of [...cloudLogs, ...localFallback, ...(data.recentLogs || [])]) {
+          if (!l || (!l.workerName && !l.workerId) || l.isVoided === 1) continue;
+          const k = String(l.recordUid || l.id);
+          if (!combinedMap.has(k)) combinedMap.set(k, l);
+        }
+        const mergedList = Array.from(combinedMap.values()).sort((a, b) => {
+          const dA = String(a.workDate || '').slice(0, 10);
+          const dB = String(b.workDate || '').slice(0, 10);
+          if (dA !== dB) return dB.localeCompare(dA);
+          const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
+          const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
+          if (tA !== tB) return tB - tA;
+          return (Number(b.id) || 0) - (Number(a.id) || 0);
+        });
         data.recentLogs = mergedList;
 
         // Recalculate todayAccumulated for active user from mergedList so edits/voids are immediately reflected
@@ -687,7 +703,7 @@ export function WorkerPortal() {
             if (l.workerId === user.workerId && !l.isVoided) {
               const eff = getLogEffectiveWorkDate(l);
               if (eff === targetDate) {
-                userTodaySum += Number(l.income ?? l.batchCost ?? l.turnTotalIncome ?? 0);
+                userTodaySum += Number(l.income ?? l.batchCost ?? (l as any).turnTotalIncome ?? 0);
               }
             }
           }
@@ -1996,24 +2012,37 @@ export function WorkerPortal() {
     user?.workerId === 'NV00266';
   const [logViewMode, setLogViewMode] = useState<'MY' | 'ALL'>('MY');
 
-  const myRecentLogs = useMemo(() => {
-    const all = (bootstrap?.recentLogs ?? []).filter((l) => l.isVoided !== 1);
+  const allFactoryLogs = useMemo(() => {
+    const raw = bootstrap?.recentLogs && bootstrap.recentLogs.length > 0
+      ? bootstrap.recentLogs
+      : getAllFallbackLogs();
+    return raw.filter((l) => l && l.isVoided !== 1);
+  }, [bootstrap?.recentLogs]);
+
+  const personalLogs = useMemo(() => {
     if (!user) return [];
-    if (logViewMode === 'ALL') {
-      return all;
-    }
     const cleanId = (user.workerId || '').trim().toLowerCase();
-    const cleanName = (user.name || '').trim().toLowerCase();
-    const myLogs = all.filter((l) => {
+    const cleanName = removeVietnameseTones(user.name || '').toLowerCase().trim();
+    return allFactoryLogs.filter((l) => {
       const lId = (l.workerId || '').trim().toLowerCase();
-      const lName = (l.workerName || '').trim().toLowerCase();
-      return (cleanId && lId === cleanId) || (cleanName && lName === cleanName);
+      const lName = removeVietnameseTones(l.workerName || '').toLowerCase().trim();
+      if (cleanId && lId === cleanId) return true;
+      if (cleanName && lName && (lName === cleanName || lName.includes(cleanName) || cleanName.includes(lName))) {
+        return true;
+      }
+      return false;
     });
-    if (myLogs.length === 0 && isManagerOrLeader) {
-      return all;
-    }
-    return myLogs;
-  }, [bootstrap?.recentLogs, user, logViewMode, isManagerOrLeader]);
+  }, [allFactoryLogs, user]);
+
+  const effectiveLogViewMode: 'MY' | 'ALL' =
+    logViewMode === 'ALL' || (personalLogs.length === 0 && isManagerOrLeader)
+      ? 'ALL'
+      : 'MY';
+
+  const myRecentLogs = useMemo(() => {
+    if (!user) return allFactoryLogs;
+    return effectiveLogViewMode === 'ALL' ? allFactoryLogs : personalLogs;
+  }, [allFactoryLogs, personalLogs, effectiveLogViewMode, user]);
 
   // Group logs by worker + workDate + shift + machine to calculate total mixed KPI for each machine and whole shift
   const { machineAggregatedKpiMap, shiftAggregatedKpiMap } = useMemo(() => {
@@ -4109,39 +4138,37 @@ export function WorkerPortal() {
                 <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">
                   <History className="h-4 w-4 text-blue-600" />
                   <span>
-                    {logViewMode === 'ALL' || (isManagerOrLeader && (bootstrap?.recentLogs ?? []).filter((l) => l.workerId === user?.workerId).length === 0)
+                    {effectiveLogViewMode === 'ALL'
                       ? 'Lịch Sử Báo Cáo Toàn Xưởng'
                       : 'Lịch Sử Báo Cáo Của Tôi'}
                   </span>
                 </h3>
                 <div className="flex items-center gap-2">
-                  {isManagerOrLeader && (
-                    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px] font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setLogViewMode('MY')}
-                        className={`rounded-md px-2 py-0.5 transition-colors ${logViewMode === 'MY' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        Của tôi
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLogViewMode('ALL')}
-                        className={`rounded-md px-2 py-0.5 transition-colors ${logViewMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        Toàn xưởng
-                      </button>
-                    </div>
-                  )}
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setLogViewMode('MY')}
+                      className={`rounded-md px-2 py-0.5 transition-colors ${effectiveLogViewMode === 'MY' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                      Của tôi ({personalLogs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLogViewMode('ALL')}
+                      className={`rounded-md px-2 py-0.5 transition-colors ${effectiveLogViewMode === 'ALL' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                    >
+                      Toàn xưởng ({allFactoryLogs.length})
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => void loadBootstrapData(false)}
                     className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-                    title="Tải lại báo cáo mới nhất từ Supabase Cloud"
+                    title="Tải lại báo cáo mới nhất từ Cloud"
                   >
-                    <RefreshCw className="h-3 w-3" />
+                    <RefreshCw className={`h-3 w-3 ${loadingBootstrap ? 'animate-spin text-blue-600' : ''}`} />
                     <span>Tải lại</span>
                   </button>
                   <span className="text-xs font-bold text-slate-600">
@@ -4152,16 +4179,30 @@ export function WorkerPortal() {
 
               {myRecentLogs.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 py-8 text-center text-xs text-slate-500 space-y-2">
-                  <p>Chưa có phiếu báo cáo nào trong phiên của {user?.name || 'bạn'}.</p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void loadBootstrapData(false)}
-                    className="mx-auto"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Đồng bộ từ Cloud ngay
-                  </Button>
+                  <p>
+                    {loadingBootstrap
+                      ? 'Đang đồng bộ dữ liệu báo cáo từ Cloud...'
+                      : `Chưa có phiếu báo cáo nào trong mục đang chọn của ${user?.name || 'bạn'}.`}
+                  </p>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    {effectiveLogViewMode === 'MY' && allFactoryLogs.length > 0 && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setLogViewMode('ALL')}
+                      >
+                        Xem lịch sử Toàn xưởng ({allFactoryLogs.length} phiếu)
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void loadBootstrapData(false)}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${loadingBootstrap ? 'animate-spin' : ''}`} />
+                      Đồng bộ từ Cloud ngay
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">

@@ -78,13 +78,25 @@ function getLocalOperationsLookup(): Map<string, any> {
   return map;
 }
 
-function getLocalWorkersLookup(): Map<string, any> {
-  const map = new Map<string, any>();
+function normalizeLookupName(val: string): string {
+  return String(val || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'd')
+    .toLowerCase()
+    .trim();
+}
+
+function getLocalWorkersLookup(): { byId: Map<string, any>; byName: Map<string, any>; all: any[] } {
+  const byId = new Map<string, any>();
+  const byName = new Map<string, any>();
   const seedWorkers = (seedData as any).workers || [];
   for (const w of seedWorkers) {
-    if (w && w.id) map.set(String(w.id).toUpperCase(), w);
+    if (w && w.id) byId.set(String(w.id).toUpperCase(), w);
+    if (w && w.name) byName.set(normalizeLookupName(w.name), w);
   }
-  return map;
+  return { byId, byName, all: seedWorkers };
 }
 
 function getLocalDeletedLogKeys(): Set<string> {
@@ -164,7 +176,18 @@ function convertGasRecentLogs(gasLogs: any[]): ProductionLogDto[] {
       .trim();
 
     const op = opsMap.get(ncId.toUpperCase());
-    const worker = workersMap.get(wId.toUpperCase());
+    const normWName = normalizeLookupName(wName);
+    const worker =
+      workersMap.byId.get(wId.toUpperCase()) ||
+      (normWName ? workersMap.byName.get(normWName) : undefined) ||
+      (normWName
+        ? workersMap.all.find((w: any) => {
+            const nw = normalizeLookupName(w.name || '');
+            return nw && (nw.includes(normWName) || normWName.includes(nw));
+          })
+        : undefined);
+    const resolvedWorkerId = String(worker?.id || wId || 'NV_GCCK');
+    const resolvedWorkerName = String(worker?.name || wName || 'Công nhân GCCK');
     const stdSeconds = Number(op?.stdSeconds || 1800);
     const costPerSec = Number(worker?.costPerSec || 13.37);
     const isSecond = /ghép|\+33%|0\.33|máy phụ|cắt dây/i.test(
@@ -176,7 +199,7 @@ function convertGasRecentLogs(gasLogs: any[]): ProductionLogDto[] {
 
     const calcPayroll = calculateTurnPayroll(
       {
-        workerId: wId || 'NV_GCCK',
+        workerId: resolvedWorkerId,
         salaryMode: worker?.salaryMode || 'Khoán 1 + 0.33 máy',
         costPerSec,
         workDate,
@@ -216,8 +239,8 @@ function convertGasRecentLogs(gasLogs: any[]): ProductionLogDto[] {
       overtimeMinutes: 0,
       isSunday: isSunday ? 1 : 0,
       isLightsOut: shiftType.includes('Ca 3') ? 1 : 0,
-      workerId: wId,
-      workerName: wName || worker?.name || 'Công nhân GCCK',
+      workerId: resolvedWorkerId,
+      workerName: resolvedWorkerName,
       machineId: 'M01',
       machineName,
       machineMode,
@@ -457,7 +480,7 @@ export async function pushLogToSupabase(log: Partial<ProductionLogDto>): Promise
 /**
  * Fetches recent logs from Supabase cloud database AND Google Apps Script Cloud.
  */
-export async function fetchLogsFromSupabase(): Promise<ProductionLogDto[] | null> {
+export async function fetchLogsFromSupabase(forceRefresh = false): Promise<ProductionLogDto[] | null> {
   const sb = getSupabase();
   let sbLogs: ProductionLogDto[] = [];
 
@@ -542,9 +565,22 @@ export async function fetchLogsFromSupabase(): Promise<ProductionLogDto[] | null
   // Always fetch and merge recentLogs from Google Apps Script Cloud (which holds all 13/11 -> 17/11+ reports)
   let gasLogs: ProductionLogDto[] = [];
   try {
-    const gasData = await fetchGasInitData();
+    const gasData = await fetchGasInitData(forceRefresh);
     if (gasData && Array.isArray(gasData.recentLogs)) {
       gasLogs = convertGasRecentLogs(gasData.recentLogs);
+    }
+    if (gasLogs.length === 0) {
+      const resp2 = await fetch(`${GAS_CLOUD_SYNC_URL}?action=getRecentLogs&_t=${Date.now()}`, {
+        method: 'GET',
+        redirect: 'follow',
+      });
+      if (resp2.ok) {
+        const json2 = await resp2.json();
+        const rawList = Array.isArray(json2?.logs) ? json2.logs : Array.isArray(json2) ? json2 : [];
+        if (rawList.length > 0) {
+          gasLogs = convertGasRecentLogs(rawList);
+        }
+      }
     }
   } catch (err) {
     console.warn('GAS recentLogs fetch error:', err);

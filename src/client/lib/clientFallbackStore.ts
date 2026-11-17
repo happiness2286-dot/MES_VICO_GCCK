@@ -1019,59 +1019,126 @@ export function getFallbackUser(workerIdOrUsername?: string): AuthSessionUser {
   };
 }
 
+let memoryClientLogs: any[] | null = null;
+let didPurgeLegacyStorage = false;
+
+function purgeObsoleteStorageKeys(): void {
+  if (typeof window === 'undefined' || didPurgeLegacyStorage) return;
+  didPurgeLegacyStorage = true;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (
+        k === 'GCCK_LOCAL_CLIENT_LOGS_V1' ||
+        k === 'GCCK_OUTBOX_V1' ||
+        k === 'GCCK_HANDOVERS_V1' ||
+        k === 'GCCK_LOCAL_HANDOVERS_V1' ||
+        k.startsWith('GCCK_LOCAL_DAILY_SCHEDULES_V') ||
+        k.startsWith('GCCK_DAILY_SCHEDULE_202') ||
+        k.startsWith('GCCK_DAILY_PLAN_202') ||
+        k.startsWith('GCCK_ATTENDANCE_V1_')
+      ) {
+        keysToRemove.push(k);
+      }
+    }
+    for (const k of keysToRemove) {
+      localStorage.removeItem(k);
+    }
+  } catch { }
+}
+
+function normalizeStoredLogKpi(l: any): any {
+  const ok = Number(l.okQty || 0);
+  const rework = Number(l.reworkQty || 0);
+  const scrap = Number(l.scrapQty || 0);
+  const totalMachined = ok + rework + scrap;
+  const stopMin = Number(l.stopMinutes || 0);
+  const stdSec = Number(l.stdSeconds || 1800);
+  const earnedSec = totalMachined * stdSec;
+  const netSec = Math.max(1, 28800 - stopMin * 60);
+  const computedPct = Math.round((earnedSec / netSec) * 100);
+
+  if (totalMachined === 0 && stopMin === 0 && l.kpiStatus === 'Đạt 100% ĐM') {
+    return {
+      ...l,
+      kpiPct: 0,
+      kpiStatus: '🚨 0% ĐM',
+    };
+  }
+
+  if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 100 && stopMin === 0) {
+    return {
+      ...l,
+      kpiPct: computedPct,
+      kpiStatus:
+        computedPct < 50
+          ? `🚨 RẤT THẤP (${computedPct}% ĐM)`
+          : `⚠️ Chưa đạt ĐM (${computedPct}%)`,
+    };
+  }
+  return l;
+}
+
+function safeWriteLogsToLocalStorage(logs: any[]): void {
+  const normalized = logs
+    .filter((l) => l && typeof l === 'object' && (Boolean(l.workerName) || Boolean(l.workerId)))
+    .map(normalizeStoredLogKpi);
+  memoryClientLogs = normalized;
+  if (typeof window === 'undefined') return;
+
+  purgeObsoleteStorageKeys();
+
+  // Strip any accidental heavy base64 strings before saving to localStorage
+  const compactForStorage = normalized.slice(0, 600).map((l) => {
+    const pUrl = String(l.photoUrl || '');
+    if (pUrl.startsWith('data:')) {
+      return { ...l, photoUrl: '', photoBase64: undefined };
+    }
+    if (l.photoBase64) {
+      return { ...l, photoBase64: undefined };
+    }
+    return l;
+  });
+
+  try {
+    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(compactForStorage));
+  } catch {
+    try {
+      // Free space by removing cached static seed copies and retrying with 300 newest logs
+      localStorage.removeItem(LOCAL_OPERATIONS_KEY);
+      localStorage.removeItem(LOCAL_PRODUCTS_KEY);
+      localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(compactForStorage.slice(0, 300)));
+    } catch { }
+  }
+}
+
 export function getClientStoredLogs(): any[] {
+  if (memoryClientLogs && memoryClientLogs.length > 0) {
+    return memoryClientLogs;
+  }
+  if (typeof window === 'undefined') return [];
+  purgeObsoleteStorageKeys();
   try {
     const raw = localStorage.getItem(LOCAL_LOGS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
 
     // Filter out any corrupted orphan entries missing workerName & workerId
-    const validLogs = parsed.filter(
-      (l) => l && typeof l === 'object' && (Boolean(l.workerName) || Boolean(l.workerId))
-    );
-    if (validLogs.length !== parsed.length) {
-      try {
-        localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(validLogs));
-      } catch { }
-    }
+    const validLogs = parsed
+      .filter((l) => l && typeof l === 'object' && (Boolean(l.workerName) || Boolean(l.workerId)))
+      .map(normalizeStoredLogKpi);
 
-    return validLogs.map((l) => {
-      const ok = Number(l.okQty || 0);
-      const rework = Number(l.reworkQty || 0);
-      const scrap = Number(l.scrapQty || 0);
-      const totalMachined = ok + rework + scrap;
-      const stopMin = Number(l.stopMinutes || 0);
-      const stdSec = Number(l.stdSeconds || 1800);
-      const earnedSec = totalMachined * stdSec;
-      const netSec = Math.max(1, 28800 - stopMin * 60);
-      const computedPct = Math.round((earnedSec / netSec) * 100);
-
-      if (totalMachined === 0 && stopMin === 0 && l.kpiStatus === 'Đạt 100% ĐM') {
-        return {
-          ...l,
-          kpiPct: 0,
-          kpiStatus: '🚨 0% ĐM',
-        };
-      }
-
-      if (l.kpiStatus === 'Đạt 100% ĐM' && computedPct < 100 && stopMin === 0) {
-        return {
-          ...l,
-          kpiPct: computedPct,
-          kpiStatus:
-            computedPct < 50
-              ? `🚨 RẤT THẤP (${computedPct}% ĐM)`
-              : `⚠️ Chưa đạt ĐM (${computedPct}%)`,
-        };
-      }
-      return l;
-    });
+    memoryClientLogs = validLogs;
+    return validLogs;
   } catch {
-    return [];
+    return memoryClientLogs || [];
   }
 }
 
 export function clearAllClientStoredLogs(): void {
+  memoryClientLogs = [];
   try {
     if (typeof window !== 'undefined') {
       localStorage.removeItem(LOCAL_LOGS_KEY);
@@ -1087,7 +1154,7 @@ export function clearAllClientStoredLogs(): void {
 export function saveClientStoredLog(log: any): void {
   try {
     if (!log || (!log.workerName && !log.workerId)) return;
-    const existing = getClientStoredLogs();
+    const existing = [...getClientStoredLogs()];
     const uidKey = log.recordUid ? String(log.recordUid) : '';
     const idKey = log.id !== undefined && log.id !== null ? String(log.id) : '';
     const idx = existing.findIndex(
@@ -1100,7 +1167,7 @@ export function saveClientStoredLog(log: any): void {
     } else {
       existing.unshift(log);
     }
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 1000)));
+    safeWriteLogsToLocalStorage(existing);
   } catch {
     // ignore
   }
@@ -1144,7 +1211,7 @@ export function buildLogDedupSig(l: any): string {
 
 export function syncClientStoredLogsWithCloud(cloudLogs: any[]): void {
   try {
-    if (typeof window === 'undefined' || !Array.isArray(cloudLogs) || cloudLogs.length === 0) return;
+    if (!Array.isArray(cloudLogs) || cloudLogs.length === 0) return;
     const deletedSet = getDeletedLogKeysSet();
     const existing = getClientStoredLogs();
     const cloudMap = new Map<string, any>();
@@ -1182,7 +1249,7 @@ export function syncClientStoredLogsWithCloud(cloudLogs: any[]): void {
       if (tA !== tB) return tB - tA;
       return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(merged.slice(0, 1000)));
+    safeWriteLogsToLocalStorage(merged);
   } catch {
     // ignore
   }
@@ -1190,12 +1257,12 @@ export function syncClientStoredLogsWithCloud(cloudLogs: any[]): void {
 
 export function updateFallbackLog(id: string | number, patch: any): void {
   try {
-    const existing = getClientStoredLogs();
+    const existing = [...getClientStoredLogs()];
     const key = String(id);
     const idx = existing.findIndex((e) => String(e.id) === key || String(e.recordUid) === key);
     if (idx >= 0) {
       existing[idx] = { ...existing[idx], ...patch };
-      localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(existing.slice(0, 1000)));
+      safeWriteLogsToLocalStorage(existing);
     }
   } catch {
     // ignore
@@ -1214,7 +1281,7 @@ export function deleteFallbackLog(id: string | number): void {
       }
     }
     const filtered = existing.filter((e) => String(e.id) !== key && String(e.recordUid) !== key && e.isVoided !== 1);
-    localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(filtered.slice(0, 1000)));
+    safeWriteLogsToLocalStorage(filtered);
   } catch {
     // ignore
   }
