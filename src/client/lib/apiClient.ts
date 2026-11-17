@@ -308,7 +308,7 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
       const body = options.json as any;
       const workDate = body?.workDate || body?.date || '2026-11-02';
       const rows = Array.isArray(body?.rows) ? body.rows : [];
-      saveFallbackDailyPlan(workDate, rows);
+      saveFallbackDailyPlan(workDate, rows, true);
       if (isSupabaseConnected()) {
         void pushDailyPlanToSupabase(workDate, rows);
       }
@@ -609,7 +609,6 @@ function handleClientFallback<T>(path: string, options: ApiFetchOptions): T | nu
     }
     if (options.method === 'POST') {
       const body = (options.json || {}) as any;
-      void submitDirectToGoogleAppsScript(body);
       const mockRes = submitDirectToGoogleAppsScript(body);
       return mockRes as unknown as T;
     }

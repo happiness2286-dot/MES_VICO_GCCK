@@ -59,6 +59,7 @@ import {
   getFallbackDailyPlan,
   saveFallbackDailyPlan,
   mergePlanWithBaseline,
+  isUnmodifiedBaselinePlan,
   calculateOpStandardPlanQty,
   sortDailyPlanRows,
   toThursdayWeekStart,
@@ -430,18 +431,37 @@ export function DailyWeeklyScheduleTab({
   const loadDailyRows = async (date: string) => {
     setLoadingDaily(true);
     try {
-      // 1. Try Supabase cloud first (seamless multi-device sync between PC & Mobile)
+      const localRows = getFallbackDailyPlan(date);
+      const hasLocalCustom = localRows.length > 0 && !isUnmodifiedBaselinePlan(localRows);
+
+      // 1. Try Cloud first (Supabase + Google Apps Script Cloud)
       if (isSupabaseConnected()) {
         try {
           const sbRows = await fetchDailyPlanFromSupabase(date);
           if (sbRows && sbRows.length > 0) {
+            if (hasLocalCustom && isUnmodifiedBaselinePlan(sbRows)) {
+              // Giữ nguyên kế hoạch thực tế đã lưu trên máy, không để bản mẫu mặc định ghi đè
+              setDailyRows(localRows);
+              saveFallbackDailyPlan(date, localRows, true);
+              void pushDailyPlanToSupabase(date, localRows);
+              return;
+            }
             setDailyRows(sbRows);
-            saveFallbackDailyPlan(date, sbRows);
+            saveFallbackDailyPlan(date, sbRows, !isUnmodifiedBaselinePlan(sbRows));
             return;
           }
         } catch (e) {
           console.warn('Supabase fetch error in loadDailyRows:', e);
         }
+      }
+
+      if (hasLocalCustom) {
+        setDailyRows(localRows);
+        saveFallbackDailyPlan(date, localRows, true);
+        if (isSupabaseConnected()) {
+          void pushDailyPlanToSupabase(date, localRows);
+        }
+        return;
       }
 
       const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
@@ -450,44 +470,9 @@ export function DailyWeeklyScheduleTab({
       if (res.rows && res.rows.length > 0) {
         const completeRows = mergePlanWithBaseline(res.rows, date);
         setDailyRows(completeRows);
-        saveFallbackDailyPlan(date, completeRows);
-        // Auto-seed Supabase Cloud from local if Supabase is connected
-        if (isSupabaseConnected()) {
-          void pushDailyPlanToSupabase(date, completeRows);
-        }
-      } else {
-        const fallback = getFallbackDailyPlan(date);
-        if (fallback && fallback.length > 0) {
-          setDailyRows(fallback);
-          // Auto-seed Supabase Cloud from local fallback if Supabase is connected
-          if (isSupabaseConnected()) {
-            void pushDailyPlanToSupabase(date, fallback);
-          }
-        } else {
-          // Generate blank 3-rows template for the 13 active workers if completely empty
-          const activeWorkers = (bootstrap.workers || []).filter((w) => w.isActive !== 0);
-          const blankRows: DailyPlanRow[] = [];
-          let stt = 1;
-          for (const w of activeWorkers) {
-            for (let i = 0; i < 3; i++) {
-              blankRows.push({
-                workDate: date,
-                shiftType: 'Ca 2',
-                stt: stt++,
-                workerName: w.name,
-                customer: '',
-                productName: '',
-                opName: '',
-                plannedQty: 0,
-                machineName: '',
-                note: '',
-                actualQty: 0,
-                status: 'PLANNED',
-              });
-            }
-          }
-          setDailyRows(blankRows);
-        }
+        saveFallbackDailyPlan(date, completeRows, !isUnmodifiedBaselinePlan(completeRows));
+      } else if (localRows && localRows.length > 0) {
+        setDailyRows(localRows);
       }
     } catch (err: any) {
       toast.error(err?.message || 'Không thể tải kế hoạch ngày.');
@@ -669,6 +654,7 @@ export function DailyWeeklyScheduleTab({
       }
 
       updated[index] = cur;
+      saveFallbackDailyPlan(selectedDate, updated, true);
       return updated;
     });
   };
@@ -683,8 +669,8 @@ export function DailyWeeklyScheduleTab({
     if (existingCount === 1) defaultNote = 'Ghép 2 máy (+0.33)';
     else if (existingCount >= 2) defaultNote = '🔥 Tăng ca 2h (14:00 - 16:00)';
 
-    setDailyRows((prev) =>
-      sortDailyPlanRows([
+    setDailyRows((prev) => {
+      const next = sortDailyPlanRows([
         ...prev,
         {
           workDate: selectedDate,
@@ -702,13 +688,19 @@ export function DailyWeeklyScheduleTab({
           actualQty: 0,
           status: 'PLANNED',
         },
-      ])
-    );
+      ]);
+      saveFallbackDailyPlan(selectedDate, next, true);
+      return next;
+    });
   };
 
   // Delete row
   const handleDeleteRow = (index: number) => {
-    setDailyRows((prev) => sortDailyPlanRows(prev.filter((_, idx) => idx !== index)));
+    setDailyRows((prev) => {
+      const next = sortDailyPlanRows(prev.filter((_, idx) => idx !== index));
+      saveFallbackDailyPlan(selectedDate, next, true);
+      return next;
+    });
   };
 
   // Save Daily Schedule
@@ -717,7 +709,7 @@ export function DailyWeeklyScheduleTab({
     try {
       const sortedRows = sortDailyPlanRows(dailyRows);
       setDailyRows(sortedRows);
-      saveFallbackDailyPlan(selectedDate, sortedRows);
+      saveFallbackDailyPlan(selectedDate, sortedRows, true);
       await apiClient.post('/schedules/daily', {
         workDate: selectedDate,
         rows: sortedRows,
@@ -725,9 +717,9 @@ export function DailyWeeklyScheduleTab({
       if (isSupabaseConnected()) {
         const pushed = await pushDailyPlanToSupabase(selectedDate, sortedRows);
         if (pushed) {
-          toast.success(`Đã lưu ${sortedRows.length} dòng (sắp xếp Ca 1 → Ca 2 → Ca 3) và đồng bộ tức thì lên Supabase Cloud!`);
+          toast.success(`Đã lưu ${sortedRows.length} dòng (sắp xếp Ca 1 → Ca 2 → Ca 3) và đồng bộ tức thì lên Cloud!`);
         } else {
-          toast.warning(`Đã lưu thành công ${sortedRows.length} dòng vào bộ nhớ máy.`);
+          toast.success(`Đã lưu thành công ${sortedRows.length} dòng kế hoạch ngày ${selectedDate}!`);
         }
       } else {
         toast.success(`Đã lưu thành công ${sortedRows.length} dòng kế hoạch ngày ${selectedDate}!`);
@@ -1600,11 +1592,16 @@ export function DailyWeeklyScheduleTab({
                 onClick={async () => {
                   setSavingDaily(true);
                   try {
-                    const pushed = await pushDailyPlanToSupabase(selectedDate, dailyRows);
+                    const sortedRows = sortDailyPlanRows(dailyRows);
+                    setDailyRows(sortedRows);
+                    saveFallbackDailyPlan(selectedDate, sortedRows, true);
+                    const pushed = await pushDailyPlanToSupabase(selectedDate, sortedRows);
+                    await loadAvailableDates();
+                    await onRefreshBootstrap();
                     if (pushed) {
-                      toast.success(`Đã đồng bộ ${dailyRows.length} nhiệm vụ ngày ${selectedDate} lên Cloud! Điện thoại công nhân đã cập nhật.`);
+                      toast.success(`Đã lưu và đồng bộ ${sortedRows.length} nhiệm vụ ngày ${selectedDate} lên Cloud! Điện thoại công nhân đã cập nhật.`);
                     } else {
-                      toast.error('Lỗi khi gửi lên Supabase Cloud.');
+                      toast.success(`Đã lưu ${sortedRows.length} nhiệm vụ ngày ${selectedDate}!`);
                     }
                   } catch (e: any) {
                     toast.error(e?.message || 'Không thể đồng bộ Cloud.');
@@ -1614,7 +1611,7 @@ export function DailyWeeklyScheduleTab({
                 }}
                 disabled={savingDaily}
                 className="font-bold text-sky-800 bg-sky-50 border-sky-300 hover:bg-sky-100 shadow-sm"
-                title="Đồng bộ kế hoạch này lên Supabase Cloud để điện thoại công nhân nhận ngay lập tức"
+                title="Lưu và đồng bộ kế hoạch này lên Cloud để điện thoại công nhân nhận ngay lập tức"
               >
                 <Share2 className="h-4 w-4 text-sky-600" />
                 Đồng Bộ Cloud
@@ -1769,8 +1766,9 @@ export function DailyWeeklyScheduleTab({
                       }
                       const rotated = rotateDailyPlanWeek(dailyRows);
                       setDailyRows(rotated);
+                      saveFallbackDailyPlan(selectedDate, rotated, true);
                       toast.success(
-                        'Đã đảo ca theo vòng lặp (Ca 1 ➔ Ca 3, Ca 2 ➔ Ca 1, Ca 3 ➔ Ca 2). Đặng Ngọc Long cố định Ca 2. Bấm "Lưu Kế Hoạch" để lưu lại!'
+                        'Đã đảo ca theo vòng lặp (Ca 1 ➔ Ca 3, Ca 2 ➔ Ca 1, Ca 3 ➔ Ca 2) và tự động lưu lại!'
                       );
                     }}
                     className="font-bold text-violet-700 border-violet-300 bg-violet-50 hover:bg-violet-100"

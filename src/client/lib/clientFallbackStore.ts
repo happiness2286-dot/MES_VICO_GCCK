@@ -47,9 +47,9 @@ import { buildConsolidatedQcList } from './qcLogHelper';
 import { canonicalizeCustomerName } from '@shared/customerNormalization';
 import seedData from '../../../data/seed_gcck_1233.json';
 import { isSupabaseConnected, pushLogToSupabase, pushDailyPlanToSupabase } from './supabaseClient';
-import { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows } from './baselinePlan';
+import { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows, isUnmodifiedBaselinePlan } from './baselinePlan';
 
-export { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows } from './baselinePlan';
+export { getBaselineDailyPlan, mergePlanWithBaseline, calculateOpStandardPlanQty, sortDailyPlanRows, isUnmodifiedBaselinePlan } from './baselinePlan';
 
 export const GAS_WEBHOOK_URL =
   'https://script.google.com/macros/s/AKfycbx3YEacwHuxAdYb2yN1qckG4tmydnmmK4f8C_KVtQmUWmpBvJYUh_Jc1DrFZpTeM-bruQ/exec';
@@ -1106,32 +1106,81 @@ export function saveClientStoredLog(log: any): void {
   }
 }
 
+const DELETED_LOG_KEYS_STORAGE = 'GCCK_DELETED_LOG_KEYS_V1';
+
+export function getDeletedLogKeysSet(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(DELETED_LOG_KEYS_STORAGE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed.map(String));
+    }
+  } catch { }
+  return new Set();
+}
+
+function addDeletedLogKey(key: string): void {
+  if (typeof window === 'undefined' || !key) return;
+  try {
+    const set = getDeletedLogKeysSet();
+    set.add(String(key));
+    localStorage.setItem(DELETED_LOG_KEYS_STORAGE, JSON.stringify(Array.from(set).slice(-500)));
+  } catch { }
+}
+
+export function buildLogDedupSig(l: any): string {
+  if (!l) return '';
+  const wDate = String(l.workDate || '').slice(0, 10);
+  const wId = String(l.workerId || l.workerName || '').trim().toUpperCase();
+  const mach = String(l.machineName || '').trim().toLowerCase();
+  const nc = String(l.ncId || l.opName || '').trim().toUpperCase();
+  const ok = Number(l.okQty || 0);
+  const rw = Number(l.reworkQty || 0);
+  const ng = Number(l.scrapQty || 0);
+  const tStr = String(l.timeStr || '').trim().slice(0, 10);
+  return `${wDate}|${wId}|${mach}|${nc}|${ok}|${rw}|${ng}|${tStr}`;
+}
+
 export function syncClientStoredLogsWithCloud(cloudLogs: any[]): void {
   try {
     if (typeof window === 'undefined' || !Array.isArray(cloudLogs) || cloudLogs.length === 0) return;
+    const deletedSet = getDeletedLogKeysSet();
     const existing = getClientStoredLogs();
     const cloudMap = new Map<string, any>();
+    const sigSet = new Set<string>();
+
     for (const c of cloudLogs) {
-      if (!c || (!c.workerName && !c.workerId)) continue;
+      if (!c || (!c.workerName && !c.workerId) || c.isVoided === 1) continue;
       const key = String(c.recordUid || c.id);
+      if (deletedSet.has(key) || deletedSet.has(String(c.id))) continue;
+      const sig = buildLogDedupSig(c);
+      if (sig && sigSet.has(sig)) continue;
+      if (sig) sigSet.add(sig);
       cloudMap.set(key, c);
     }
-    // Preserve only very recent offline logs (< 2 mins old) not yet in cloud
-    const nowMs = Date.now();
+
+    // Preserve ALL valid local logs not yet in cloud (so offline/local phone logs are never lost)
     for (const loc of existing) {
-      if (!loc || (!loc.workerName && !loc.workerId)) continue;
+      if (!loc || (!loc.workerName && !loc.workerId) || loc.isVoided === 1) continue;
       const key = String(loc.recordUid || loc.id);
+      if (deletedSet.has(key) || deletedSet.has(String(loc.id))) continue;
       if (!cloudMap.has(key)) {
-        const createdMs = new Date(loc.createdAt || 0).getTime() || 0;
-        if (nowMs - createdMs < 120000 && loc.isVoided !== 1) {
-          cloudMap.set(key, loc);
-        }
+        const sig = buildLogDedupSig(loc);
+        if (sig && sigSet.has(sig)) continue;
+        if (sig) sigSet.add(sig);
+        cloudMap.set(key, loc);
       }
     }
+
     const merged = Array.from(cloudMap.values()).sort((a, b) => {
+      const dA = String(a.workDate || '').slice(0, 10);
+      const dB = String(b.workDate || '').slice(0, 10);
+      if (dA !== dB) return dB.localeCompare(dA);
       const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
       const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
-      return tB - tA;
+      if (tA !== tB) return tB - tA;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
     localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(merged.slice(0, 1000)));
   } catch {
@@ -1157,6 +1206,13 @@ export function deleteFallbackLog(id: string | number): void {
   try {
     const existing = getClientStoredLogs();
     const key = String(id);
+    addDeletedLogKey(key);
+    for (const e of existing) {
+      if (String(e.id) === key || String(e.recordUid) === key) {
+        if (e.id) addDeletedLogKey(String(e.id));
+        if (e.recordUid) addDeletedLogKey(String(e.recordUid));
+      }
+    }
     const filtered = existing.filter((e) => String(e.id) !== key && String(e.recordUid) !== key && e.isVoided !== 1);
     localStorage.setItem(LOCAL_LOGS_KEY, JSON.stringify(filtered.slice(0, 1000)));
   } catch {
@@ -3041,6 +3097,61 @@ export function getFallbackWeeklyReport(weekStart?: string): WeeklyReportData {
 
 const LOCAL_DAILY_PLAN_PREFIX = 'GCCK_DAILY_SCHEDULE_V2_';
 const LOCAL_DAILY_DATES_KEY = 'GCCK_DAILY_DATES_V2';
+const LOCAL_LATEST_CUSTOM_PLAN_KEY = 'GCCK_LATEST_CUSTOM_DAILY_PLAN_V1';
+const LOCAL_USER_SAVED_DATES_KEY = 'GCCK_USER_SAVED_PLAN_DATES_V1';
+
+function getUserSavedPlanDatesSet(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(LOCAL_USER_SAVED_DATES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed.map(String));
+    }
+  } catch { }
+  return new Set();
+}
+
+function markDateUserSaved(workDate: string): void {
+  if (typeof window === 'undefined' || !workDate) return;
+  try {
+    const set = getUserSavedPlanDatesSet();
+    set.add(workDate);
+    localStorage.setItem(LOCAL_USER_SAVED_DATES_KEY, JSON.stringify(Array.from(set)));
+  } catch { }
+}
+
+function findLatestCustomSavedPlan(): DailyPlanRow[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const rawLatest = localStorage.getItem(LOCAL_LATEST_CUSTOM_PLAN_KEY);
+    if (rawLatest) {
+      const parsed = JSON.parse(rawLatest);
+      if (Array.isArray(parsed) && parsed.length > 0 && !isUnmodifiedBaselinePlan(parsed)) {
+        return parsed;
+      }
+    }
+    const candidateDates: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(LOCAL_DAILY_PLAN_PREFIX)) {
+        const d = k.slice(LOCAL_DAILY_PLAN_PREFIX.length);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) candidateDates.push(d);
+      }
+    }
+    candidateDates.sort((a, b) => b.localeCompare(a));
+    for (const d of candidateDates) {
+      const raw = localStorage.getItem(LOCAL_DAILY_PLAN_PREFIX + d);
+      if (!raw) continue;
+      const rows = JSON.parse(raw);
+      if (Array.isArray(rows) && rows.length > 0 && !isUnmodifiedBaselinePlan(rows)) {
+        localStorage.setItem(LOCAL_LATEST_CUSTOM_PLAN_KEY, JSON.stringify(rows));
+        return rows;
+      }
+    }
+  } catch { }
+  return null;
+}
 
 export function getFallbackDailyDates(): Array<{ workDate: string; rowCount: number; workerCount: number }> {
   if (typeof window !== 'undefined') {
@@ -3057,15 +3168,37 @@ export function getFallbackDailyDates(): Array<{ workDate: string; rowCount: num
   const now = new Date();
   const vDate = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' });
   return [
-    { workDate: vDate, rowCount: 19, workerCount: 11 },
+    { workDate: vDate, rowCount: 22, workerCount: 12 },
   ];
 }
 
-export function saveFallbackDailyPlan(workDate: string, rows: DailyPlanRow[]): void {
+export function saveFallbackDailyPlan(
+  workDate: string,
+  rows: DailyPlanRow[],
+  isExplicitUserSave = false
+): void {
   const sortedRows = sortDailyPlanRows(rows);
   if (typeof window !== 'undefined') {
     try {
+      // Do not overwrite an already custom-saved plan for workDate with an unmodified baseline template
+      const existingRaw = localStorage.getItem(LOCAL_DAILY_PLAN_PREFIX + workDate);
+      if (existingRaw && !isExplicitUserSave && isUnmodifiedBaselinePlan(sortedRows)) {
+        try {
+          const existingRows = JSON.parse(existingRaw);
+          if (Array.isArray(existingRows) && existingRows.length > 0 && !isUnmodifiedBaselinePlan(existingRows)) {
+            return;
+          }
+        } catch { }
+      }
+
       localStorage.setItem(LOCAL_DAILY_PLAN_PREFIX + workDate, JSON.stringify(sortedRows));
+      if (isExplicitUserSave || !isUnmodifiedBaselinePlan(sortedRows)) {
+        markDateUserSaved(workDate);
+        if (sortedRows.length > 0 && !isUnmodifiedBaselinePlan(sortedRows)) {
+          localStorage.setItem(LOCAL_LATEST_CUSTOM_PLAN_KEY, JSON.stringify(sortedRows));
+        }
+      }
+
       const dates = getFallbackDailyDates();
       const existingIdx = dates.findIndex((d) => d.workDate === workDate);
       const workerSet = new Set(sortedRows.map((r) => r.workerName).filter(Boolean));
@@ -3107,7 +3240,7 @@ export function copyFallbackDailyPlan(
     stt: idx + 1,
     status: 'PLANNED',
   }));
-  saveFallbackDailyPlan(targetDate, newRows);
+  saveFallbackDailyPlan(targetDate, newRows, true);
   if (isSupabaseConnected()) {
     void pushDailyPlanToSupabase(targetDate, newRows);
   }
@@ -3151,13 +3284,46 @@ export function getFallbackDailyPlan(workDate: string, shiftType?: string): Dail
       if (raw) {
         const rows: DailyPlanRow[] = JSON.parse(raw);
         if (Array.isArray(rows) && rows.length > 0) {
-          // Safeguard: if stored rows is missing workers, automatically merge with baseline roster
+          const userSavedSet = getUserSavedPlanDatesSet();
+          // Nếu ngày này trước đó chỉ bị tự động gán bản mẫu tĩnh (SFP216 / ALKTOP 1342 M),
+          // ưu tiên lấy kế hoạch thực tế gần nhất mà Quản đốc đã lập
+          if (isUnmodifiedBaselinePlan(rows) && !userSavedSet.has(workDate)) {
+            const customLatest = findLatestCustomSavedPlan();
+            if (customLatest && customLatest.length > 0) {
+              const inherited = sortDailyPlanRows(
+                customLatest.map((r, idx) => ({
+                  ...r,
+                  id: undefined,
+                  workDate,
+                  actualQty: 0,
+                  stt: idx + 1,
+                }))
+              );
+              localStorage.setItem(LOCAL_DAILY_PLAN_PREFIX + workDate, JSON.stringify(inherited));
+              return shiftType ? inherited.filter((r) => r.shiftType === shiftType) : inherited;
+            }
+          }
           const merged = mergePlanWithBaseline(rows, workDate);
           if (merged.length !== rows.length) {
             localStorage.setItem(LOCAL_DAILY_PLAN_PREFIX + workDate, JSON.stringify(merged));
           }
           return shiftType ? merged.filter((r) => r.shiftType === shiftType) : merged;
         }
+      }
+
+      // Khi chuyển sang ngày mới chưa lưu, kế thừa từ kế hoạch thực tế gần nhất của Quản đốc
+      const customLatest = findLatestCustomSavedPlan();
+      if (customLatest && customLatest.length > 0) {
+        const inherited = sortDailyPlanRows(
+          customLatest.map((r, idx) => ({
+            ...r,
+            id: undefined,
+            workDate,
+            actualQty: 0,
+            stt: idx + 1,
+          }))
+        );
+        return shiftType ? inherited.filter((r) => r.shiftType === shiftType) : inherited;
       }
     } catch {
       // ignore

@@ -131,38 +131,17 @@ export function AdminPortal() {
       }
       setLoadError('');
       try {
-        const data = await apiClient.get<BootstrapPayload>('/bootstrap');
         if (isSupabaseConnected()) {
           try {
             const sbLogs = await fetchLogsFromSupabase();
             if (sbLogs && sbLogs.length > 0) {
               syncClientStoredLogsWithCloud(sbLogs);
-              const mergedMap = new Map<string, any>();
-              for (const l of (data.recentLogs || [])) {
-                if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
-              }
-              for (const l of getAllFallbackLogs()) {
-                if (l && (l.workerName || l.workerId) && !l.isVoided) mergedMap.set(l.recordUid || String(l.id), l);
-              }
-              for (const l of sbLogs) {
-                if (!l || (!l.workerName && !l.workerId)) continue;
-                const key = l.recordUid || String(l.id);
-                if (l.isVoided === 1) {
-                  mergedMap.delete(key);
-                } else {
-                  mergedMap.set(key, l);
-                }
-              }
-              data.recentLogs = Array.from(mergedMap.values()).sort((a, b) => {
-                const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
-                const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
-                return tB - tA;
-              });
             }
           } catch (sbErr) {
             console.warn('Supabase fetch logs error in AdminPortal:', sbErr);
           }
         }
+        const data = await apiClient.get<BootstrapPayload>('/bootstrap');
         setBootstrap(data);
       } catch (err: any) {
         // Transparent fallback so user never gets stuck with server offline error

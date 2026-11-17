@@ -447,6 +447,33 @@ export function sortDailyPlanRows(rows: DailyPlanRow[]): DailyPlanRow[] {
 }
 
 /**
+ * Kiểm tra xem danh sách dòng kế hoạch có phải chỉ là bản mẫu mặc định tĩnh (chưa được người dùng chỉnh sửa) hay không.
+ * Dùng để ngăn việc bản mẫu mặc định tự động ghi đè lên kế hoạch thực tế mà Quản đốc đã lập.
+ */
+export function isUnmodifiedBaselinePlan(rows?: DailyPlanRow[] | null): boolean {
+  if (!Array.isArray(rows) || rows.length !== 22) return false;
+  const r0 = rows[0];
+  const r1 = rows[1];
+  const r2 = rows[2];
+  const r5 = rows[5];
+  if (!r0 || !r1 || !r2 || !r5) return false;
+  return (
+    r0.workerName === 'Phạm Văn Tráng' &&
+    r0.productName === 'SFP216' &&
+    Number(r0.plannedQty) === 18 &&
+    r1.workerName === 'Phạm Văn Tráng' &&
+    r1.productName === 'ALKTOP 1342 M' &&
+    Number(r1.plannedQty) === 12 &&
+    r2.workerName === 'Trần Văn Quỳnh' &&
+    r2.productName === 'ISHIZUE 267.4-700' &&
+    Number(r2.plannedQty) === 10 &&
+    r5.workerName === 'Phùng Công Thắng' &&
+    r5.productName === 'Pattern Drawing No 2CG00382' &&
+    Number(r5.plannedQty) === 6
+  );
+}
+
+/**
  * Intelligently returns existing plan if available, or defaults to baseline template
  * if completely empty. Never injects dummy baseline items into an existing configured plan.
  */

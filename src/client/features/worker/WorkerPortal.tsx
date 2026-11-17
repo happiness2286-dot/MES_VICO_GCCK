@@ -289,7 +289,10 @@ export function WorkerPortal() {
     async function loadPlan() {
       let loadedRows: DailyPlanRow[] = [];
 
-      // 1. Try Supabase cloud directly if connected (seamless real-time sync between PC & Mobile)
+      // 1. Check local custom-saved plan first
+      const localRows = getFallbackDailyPlan(workDate);
+
+      // 2. Try Cloud (Supabase + Google Apps Script Cloud)
       if (isSupabaseConnected()) {
         try {
           const sbRows = await fetchDailyPlanFromSupabase(workDate);
@@ -302,7 +305,10 @@ export function WorkerPortal() {
         }
       }
 
-      // 2. Try apiClient endpoint
+      // 3. Fallback to localStorage / apiClient endpoint (WorkerPortal is read-only for daily plan, NEVER pushes/overwrites plan to Cloud)
+      if (loadedRows.length === 0 && localRows.length > 0) {
+        loadedRows = localRows;
+      }
       if (loadedRows.length === 0) {
         try {
           const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
@@ -312,20 +318,6 @@ export function WorkerPortal() {
             loadedRows = res.rows;
           }
         } catch { }
-      }
-
-      // 3. Fallback to localStorage / default demo
-      if (loadedRows.length === 0 && active) {
-        const fallback = getFallbackDailyPlan(workDate);
-        if (fallback && fallback.length > 0) {
-          loadedRows = fallback;
-        }
-      }
-
-      // 4. CRITICAL AUTO-SEED TO SUPABASE:
-      // If we have local plan rows on this device but Supabase has 0 rows, auto-push to Supabase Cloud immediately!
-      if (loadedRows.length > 0 && isSupabaseConnected()) {
-        void pushDailyPlanToSupabase(workDate, loadedRows);
       }
 
       if (active) {
@@ -671,15 +663,11 @@ export function WorkerPortal() {
     async (silent = false) => {
       if (!silent) setLoadingBootstrap(true);
       try {
-        const data = await apiClient.get<BootstrapPayload>('/bootstrap');
-
-        // Fetch Supabase cloud logs if connected
-        let cloudLogs: any[] = [];
+        // Fetch Cloud logs first so getFallbackBootstrap includes all synced 13/11 -> 17/11+ reports
         if (isSupabaseConnected()) {
           try {
             const sbLogs = await fetchLogsFromSupabase();
             if (sbLogs && sbLogs.length > 0) {
-              cloudLogs = sbLogs;
               syncClientStoredLogsWithCloud(sbLogs);
             }
           } catch (sbErr) {
@@ -687,28 +675,8 @@ export function WorkerPortal() {
           }
         }
 
-        const mergedMap = new Map<string, any>();
-        for (const l of (data.recentLogs || [])) {
-          if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
-        }
-        for (const l of getAllFallbackLogs()) {
-          if (l && (l.workerName || l.workerId) && l.isVoided !== 1) mergedMap.set(l.recordUid || String(l.id), l);
-        }
-        for (const l of cloudLogs) {
-          if (!l || (!l.workerName && !l.workerId)) continue;
-          const key = l.recordUid || String(l.id);
-          if (l.isVoided === 1) {
-            mergedMap.delete(key);
-          } else {
-            mergedMap.set(key, l);
-          }
-        }
-        const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
-          const tA = new Date(a.createdAt || a.workDate).getTime() || 0;
-          const tB = new Date(b.createdAt || b.workDate).getTime() || 0;
-          return tB - tA;
-        });
-
+        const data = await apiClient.get<BootstrapPayload>('/bootstrap');
+        const mergedList = getAllFallbackLogs();
         data.recentLogs = mergedList;
 
         // Recalculate todayAccumulated for active user from mergedList so edits/voids are immediately reflected
