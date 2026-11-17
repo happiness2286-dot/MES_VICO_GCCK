@@ -729,8 +729,8 @@ function unpackPlanRowsCompact(workDate: string, compactList: any[]): DailyPlanR
         overtimeHours: /tăng ca\s*(\d+)h/i.test(note)
           ? Number(RegExp.$1)
           : /tăng ca/i.test(note)
-          ? 2
-          : undefined,
+            ? 2
+            : undefined,
       };
     }
     return {
@@ -754,7 +754,9 @@ async function pushDailyPlanToGasCloud(workDate: string, rows: DailyPlanRow[]): 
       }
     }
 
-    await fetchGasInitData();
+    if (Object.keys(gasPlansMapCache).length === 0 && !gasInitDataCache) {
+      await fetchGasInitData();
+    }
     const nextMap: Record<string, any[]> = { ...gasPlansMapCache };
     if (!rows || rows.length === 0) {
       delete nextMap[workDate];
@@ -921,8 +923,8 @@ export async function fetchDailyPlanFromSupabase(workDate: string): Promise<Dail
       overtimeHours: /tăng ca\s*(\d+)h/i.test(r.note || '')
         ? Number(RegExp.$1)
         : /tăng ca/i.test(r.note || '')
-        ? 2
-        : undefined,
+          ? 2
+          : undefined,
     }));
 
     return mergePlanWithBaseline(mapped, workDate);

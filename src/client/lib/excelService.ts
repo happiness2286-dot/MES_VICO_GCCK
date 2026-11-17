@@ -13,9 +13,28 @@ import { VICO_LOGO_BASE64 } from '../components/VicoLogo';
 import { sortDailyPlanRows } from './baselinePlan';
 
 async function createExcelWorkbook(): Promise<ExcelJS.Workbook> {
-  const mod = await import('exceljs');
-  const Lib = ((mod as any).default || mod) as typeof ExcelJS;
-  return new Lib.Workbook();
+  try {
+    const mod = await import('exceljs');
+    const Lib = ((mod as any).default || mod) as typeof ExcelJS;
+    return new Lib.Workbook();
+  } catch {
+    // Fallback if browser tab has a stale chunk hash after a new GitHub Pages deployment
+    if (typeof window !== 'undefined') {
+      if (!(window as any).ExcelJS) {
+        await new Promise<void>((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+          s.onload = () => resolve();
+          s.onerror = () => reject(new Error('Không thể tải thư viện xuất Excel. Vui lòng nhấn Ctrl+F5 để làm mới trang.'));
+          document.head.appendChild(s);
+        });
+      }
+      if ((window as any).ExcelJS?.Workbook) {
+        return new (window as any).ExcelJS.Workbook();
+      }
+    }
+    throw new Error('Vui lòng nhấn Ctrl+F5 tải lại trang để cập nhật phiên bản xuất Excel mới nhất.');
+  }
 }
 
 export interface MasterPurchaseOrderImportRow {

@@ -26,9 +26,10 @@ if (fs.existsSync(distAssets)) {
 const distIndex = path.join(distClient, 'index.html');
 if (fs.existsSync(distIndex)) {
   let content = fs.readFileSync(distIndex, 'utf8');
-  // Ensure relative ./assets paths
-  content = content.replace(/href="\/assets\//g, 'href="./assets/');
-  content = content.replace(/src="\/assets\//g, 'src="./assets/');
+  const ver = Date.now();
+  // Ensure relative ./assets paths with cache-busting query string
+  content = content.replace(/href="(\.?\/)?assets\/([^"]+)"/g, `href="./assets/$2?v=${ver}"`);
+  content = content.replace(/src="(\.?\/)?assets\/([^"]+)"/g, `src="./assets/$2?v=${ver}"`);
 
   // Also include 404 redirect handler if not present
   if (!content.includes('URLSearchParams(window.location.search)')) {

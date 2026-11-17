@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertOctagon,
   AlertTriangle,
@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Plus,
   Printer,
+  QrCode,
   RefreshCw,
   Save,
   Search,
@@ -41,7 +42,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import type { DailyPlanRow, WeeklyReportData, ProductMeta } from '@shared/types';
+import type { DailyPlanRow, WeeklyReportData, ProductMeta, OperationMeta } from '@shared/types';
 import { apiClient } from '@client/lib/apiClient';
 import { formatDateVn, formatNumber, formatVnd } from '@client/lib/formatters';
 import { downloadDailyScheduleExcel, downloadWeeklyReportExcel } from '@client/lib/excelService';
@@ -56,6 +57,7 @@ import {
 import {
   getFallbackBootstrap,
   rotateDailyPlanWeek,
+  getFallbackDailyDates,
   getFallbackDailyPlan,
   saveFallbackDailyPlan,
   mergePlanWithBaseline,
@@ -427,56 +429,70 @@ export function DailyWeeklyScheduleTab({
   const [newWorkerShift, setNewWorkerShift] = useState<string>('Ca 2');
   const [newWorkerLineCount, setNewWorkerLineCount] = useState<number>(3);
 
-  // Load Daily Rows for selectedDate
+  const latestRowsRef = useRef<DailyPlanRow[]>([]);
+  const selectedDateRef = useRef<string>(selectedDate);
+  const isDirtyPlanRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    latestRowsRef.current = dailyRows;
+    selectedDateRef.current = selectedDate;
+    if (!isDirtyPlanRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (isDirtyPlanRef.current && latestRowsRef.current.length > 0) {
+        saveFallbackDailyPlan(selectedDateRef.current, latestRowsRef.current, true);
+        isDirtyPlanRef.current = false;
+      }
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [dailyRows, selectedDate]);
+
+  // Flush any pending unsaved edits immediately when leaving the tab
+  useEffect(() => {
+    return () => {
+      if (isDirtyPlanRef.current && latestRowsRef.current.length > 0) {
+        saveFallbackDailyPlan(selectedDateRef.current, latestRowsRef.current, true);
+        isDirtyPlanRef.current = false;
+      }
+    };
+  }, []);
+
+  // Load Daily Rows for selectedDate (0ms instant local-first render + non-blocking background Cloud check)
   const loadDailyRows = async (date: string) => {
-    setLoadingDaily(true);
-    try {
-      const localRows = getFallbackDailyPlan(date);
-      const hasLocalCustom = localRows.length > 0 && !isUnmodifiedBaselinePlan(localRows);
+    // Flush previous date's dirty edits first if any
+    if (isDirtyPlanRef.current && latestRowsRef.current.length > 0 && selectedDateRef.current !== date) {
+      saveFallbackDailyPlan(selectedDateRef.current, latestRowsRef.current, true);
+      isDirtyPlanRef.current = false;
+    }
 
-      // 1. Try Cloud first (Supabase + Google Apps Script Cloud)
-      if (isSupabaseConnected()) {
-        try {
-          const sbRows = await fetchDailyPlanFromSupabase(date);
-          if (sbRows && sbRows.length > 0) {
-            if (hasLocalCustom && isUnmodifiedBaselinePlan(sbRows)) {
-              // Giữ nguyên kế hoạch thực tế đã lưu trên máy, không để bản mẫu mặc định ghi đè
-              setDailyRows(localRows);
-              saveFallbackDailyPlan(date, localRows, true);
-              void pushDailyPlanToSupabase(date, localRows);
-              return;
-            }
+    const localRows = getFallbackDailyPlan(date);
+    const hasLocalCustom = localRows.length > 0 && !isUnmodifiedBaselinePlan(localRows);
+
+    // 1. Render local rows INSTANTLY in 0ms without blocking spinner
+    if (localRows && localRows.length > 0) {
+      setDailyRows(localRows);
+      setLoadingDaily(false);
+    } else {
+      setLoadingDaily(true);
+    }
+
+    // 2. Check Cloud asynchronously in the background without freezing UI
+    if (isSupabaseConnected()) {
+      try {
+        const sbRows = await fetchDailyPlanFromSupabase(date);
+        if (sbRows && sbRows.length > 0 && selectedDateRef.current === date && !isDirtyPlanRef.current) {
+          if (hasLocalCustom && isUnmodifiedBaselinePlan(sbRows)) {
+            void pushDailyPlanToSupabase(date, localRows);
+          } else if (!hasLocalCustom && !isUnmodifiedBaselinePlan(sbRows)) {
             setDailyRows(sbRows);
-            saveFallbackDailyPlan(date, sbRows, !isUnmodifiedBaselinePlan(sbRows));
-            return;
+            saveFallbackDailyPlan(date, sbRows, true);
           }
-        } catch (e) {
-          console.warn('Supabase fetch error in loadDailyRows:', e);
         }
+      } catch (e) {
+        console.warn('Background Cloud check notice in loadDailyRows:', e);
+      } finally {
+        setLoadingDaily(false);
       }
-
-      if (hasLocalCustom) {
-        setDailyRows(localRows);
-        saveFallbackDailyPlan(date, localRows, true);
-        if (isSupabaseConnected()) {
-          void pushDailyPlanToSupabase(date, localRows);
-        }
-        return;
-      }
-
-      const res = await apiClient.get<{ success: boolean; rows: DailyPlanRow[] }>(
-        `/schedules/daily?date=${encodeURIComponent(date)}`
-      );
-      if (res.rows && res.rows.length > 0) {
-        const completeRows = mergePlanWithBaseline(res.rows, date);
-        setDailyRows(completeRows);
-        saveFallbackDailyPlan(date, completeRows, !isUnmodifiedBaselinePlan(completeRows));
-      } else if (localRows && localRows.length > 0) {
-        setDailyRows(localRows);
-      }
-    } catch (err: any) {
-      toast.error(err?.message || 'Không thể tải kế hoạch ngày.');
-    } finally {
+    } else {
       setLoadingDaily(false);
     }
   };
@@ -485,42 +501,31 @@ export function DailyWeeklyScheduleTab({
     void loadDailyRows(selectedDate);
   }, [selectedDate]);
 
-  // Load list of dates that have daily schedules
+  // Load list of dates that have daily schedules (0ms instant local + background Cloud merge)
   const loadAvailableDates = async () => {
-    setLoadingDates(true);
-    try {
-      let cloudDates: DailyDateMeta[] = [];
-      if (isSupabaseConnected()) {
-        try {
-          const sbDates = await fetchDailyDatesFromSupabase();
-          if (sbDates && sbDates.length > 0) {
-            cloudDates = sbDates;
-          }
-        } catch (e) {
-          console.warn('Supabase fetch dates error:', e);
-        }
+    const localDates = getFallbackDailyDates();
+    if (localDates.length > 0) {
+      setAvailableDates(localDates);
+      if (!sourceCopyDate) {
+        setSourceCopyDate(localDates[0].workDate);
       }
-
-      const res = await apiClient.get<{ success: boolean; dates: DailyDateMeta[] }>(
-        '/schedules/daily-dates'
-      );
-      const mergedMap = new Map<string, DailyDateMeta>();
-      for (const d of cloudDates) mergedMap.set(d.workDate, d);
-      for (const d of (res.dates || [])) {
-        if (!mergedMap.has(d.workDate)) mergedMap.set(d.workDate, d);
-      }
-      const combined = Array.from(mergedMap.values()).sort((a, b) => b.workDate.localeCompare(a.workDate));
-      if (combined.length > 0) {
-        setAvailableDates(combined);
-        if (!sourceCopyDate) {
-          setSourceCopyDate(combined[0].workDate);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load available dates', err);
-    } finally {
-      setLoadingDates(false);
     }
+    if (!isSupabaseConnected()) return;
+
+    try {
+      const sbDates = await fetchDailyDatesFromSupabase();
+      if (sbDates && sbDates.length > 0) {
+        const mergedMap = new Map<string, DailyDateMeta>();
+        for (const d of getFallbackDailyDates()) mergedMap.set(d.workDate, d);
+        for (const d of sbDates) {
+          if (!mergedMap.has(d.workDate)) mergedMap.set(d.workDate, d);
+        }
+        const combined = Array.from(mergedMap.values()).sort((a, b) => b.workDate.localeCompare(a.workDate));
+        if (combined.length > 0) {
+          setAvailableDates(combined);
+        }
+      }
+    } catch { }
   };
 
   useEffect(() => {
@@ -589,8 +594,56 @@ export function DailyWeeklyScheduleTab({
     return Array.from(map.values());
   }, [bootstrap.products, bootstrap.ordersList]);
 
-  // Handle row field change
+  // Pre-indexed O(1) lookup maps for instant 0ms table rendering & dropdown cascade
+  const productsByCustomerMap = useMemo(() => {
+    const map = new Map<string, ProductMeta[]>();
+    for (const p of availableProducts) {
+      const k = (p.customer || '').trim().toLowerCase();
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(p);
+    }
+    return map;
+  }, [availableProducts]);
+
+  const productByNameMap = useMemo(() => {
+    const map = new Map<string, ProductMeta>();
+    for (const p of availableProducts) {
+      if (p.productName) map.set(p.productName, p);
+    }
+    return map;
+  }, [availableProducts]);
+
+  const poByProductNameMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const po of bootstrap.ordersList) {
+      if (po.productName && !map.has(po.productName)) {
+        map.set(po.productName, po);
+      }
+    }
+    return map;
+  }, [bootstrap.ordersList]);
+
+  const { opsBySpIdMap, opsByProductNameMap, opByNcIdMap } = useMemo(() => {
+    const bySp = new Map<string, OperationMeta[]>();
+    const byProd = new Map<string, OperationMeta[]>();
+    const byNc = new Map<string, OperationMeta>();
+    for (const o of bootstrap.operations) {
+      if (o.ncId) byNc.set(o.ncId, o);
+      if (o.spId) {
+        if (!bySp.has(o.spId)) bySp.set(o.spId, []);
+        bySp.get(o.spId)!.push(o);
+      }
+      if (o.productName) {
+        if (!byProd.has(o.productName)) byProd.set(o.productName, []);
+        byProd.get(o.productName)!.push(o);
+      }
+    }
+    return { opsBySpIdMap: bySp, opsByProductNameMap: byProd, opByNcIdMap: byNc };
+  }, [bootstrap.operations]);
+
+  // Handle row field change (0ms in-memory update + debounced background save)
   const handleRowChange = (index: number, field: keyof DailyPlanRow, value: any) => {
+    isDirtyPlanRef.current = true;
     setDailyRows((prev) => {
       const updated = [...prev];
       const cur = { ...updated[index], [field]: value };
@@ -605,8 +658,8 @@ export function DailyWeeklyScheduleTab({
       }
       // If product changes, auto fill spId and customer if empty, and auto-select op and plannedQty by standard norm
       if (field === 'productName') {
-        const prod = availableProducts.find((p) => p.productName === value);
-        const matchedPo = bootstrap.ordersList.find((p) => p.productName === value);
+        const prod = productByNameMap.get(value);
+        const matchedPo = poByProductNameMap.get(value);
         if (prod) {
           cur.spId = prod.spId;
           if (!cur.customer) cur.customer = prod.customer;
@@ -618,19 +671,18 @@ export function DailyWeeklyScheduleTab({
           cur.poId = matchedPo.poId;
         }
 
-        // Auto find operations for this product
-        const opsForProd = bootstrap.operations.filter(
-          (o) => (cur.spId && o.spId === cur.spId) || o.productName === value
-        );
+        // O(1) fast lookup for operations of this product
+        const opsForProd =
+          (cur.spId ? opsBySpIdMap.get(cur.spId) : undefined) ||
+          opsByProductNameMap.get(value) ||
+          [];
         if (opsForProd.length > 0) {
-          // Auto select first operation
           const targetOp = opsForProd[0];
           cur.opName = targetOp.opName;
           cur.ncId = targetOp.ncId;
           if (!cur.machineName && targetOp.defaultMachine) {
             cur.machineName = targetOp.defaultMachine;
           }
-          // Ưu tiên lấy theo định mức công đoạn
           cur.plannedQty = calculateOpStandardPlanQty(targetOp);
         } else {
           cur.opName = 'G/c hoàn thiện (Theo bản vẽ)';
@@ -640,21 +692,21 @@ export function DailyWeeklyScheduleTab({
       }
       // If opName changes, auto fill ncId, default machine, and priority plannedQty by standard norm
       if (field === 'opName') {
-        const op = bootstrap.operations.find(
-          (o) => o.opName === value && (!cur.spId || o.spId === cur.spId)
-        );
+        const candidateOps =
+          (cur.spId ? opsBySpIdMap.get(cur.spId) : undefined) ||
+          (cur.productName ? opsByProductNameMap.get(cur.productName) : undefined) ||
+          bootstrap.operations;
+        const op = candidateOps.find((o) => o.opName === value);
         if (op) {
           cur.ncId = op.ncId;
           if (!cur.machineName && op.defaultMachine) {
             cur.machineName = op.defaultMachine;
           }
-          // Ưu tiên lấy theo định mức công đoạn
           cur.plannedQty = calculateOpStandardPlanQty(op);
         }
       }
 
       updated[index] = cur;
-      saveFallbackDailyPlan(selectedDate, updated, true);
       return updated;
     });
   };
@@ -669,6 +721,7 @@ export function DailyWeeklyScheduleTab({
     if (existingCount === 1) defaultNote = 'Ghép 2 máy (+0.33)';
     else if (existingCount >= 2) defaultNote = '🔥 Tăng ca 2h (14:00 - 16:00)';
 
+    isDirtyPlanRef.current = true;
     setDailyRows((prev) => {
       const next = sortDailyPlanRows([
         ...prev,
@@ -689,43 +742,35 @@ export function DailyWeeklyScheduleTab({
           status: 'PLANNED',
         },
       ]);
-      saveFallbackDailyPlan(selectedDate, next, true);
       return next;
     });
   };
 
   // Delete row
   const handleDeleteRow = (index: number) => {
-    setDailyRows((prev) => {
-      const next = sortDailyPlanRows(prev.filter((_, idx) => idx !== index));
-      saveFallbackDailyPlan(selectedDate, next, true);
-      return next;
-    });
+    isDirtyPlanRef.current = true;
+    setDailyRows((prev) => sortDailyPlanRows(prev.filter((_, idx) => idx !== index)));
   };
 
-  // Save Daily Schedule
+  // Save Daily Schedule (0ms instant save + non-blocking background Cloud push)
   const handleSaveDailySchedule = async () => {
     setSavingDaily(true);
     try {
       const sortedRows = sortDailyPlanRows(dailyRows);
+      isDirtyPlanRef.current = false;
       setDailyRows(sortedRows);
       saveFallbackDailyPlan(selectedDate, sortedRows, true);
-      await apiClient.post('/schedules/daily', {
+      setAvailableDates(getFallbackDailyDates());
+      toast.success(`Đã lưu ${sortedRows.length} dòng (sắp xếp Ca 1 → Ca 2 → Ca 3) và đang đồng bộ ngầm lên Cloud!`);
+
+      // Push to API and Cloud in background without blocking the UI
+      void apiClient.post('/schedules/daily', {
         workDate: selectedDate,
         rows: sortedRows,
-      });
+      }).catch(() => {});
       if (isSupabaseConnected()) {
-        const pushed = await pushDailyPlanToSupabase(selectedDate, sortedRows);
-        if (pushed) {
-          toast.success(`Đã lưu ${sortedRows.length} dòng (sắp xếp Ca 1 → Ca 2 → Ca 3) và đồng bộ tức thì lên Cloud!`);
-        } else {
-          toast.success(`Đã lưu thành công ${sortedRows.length} dòng kế hoạch ngày ${selectedDate}!`);
-        }
-      } else {
-        toast.success(`Đã lưu thành công ${sortedRows.length} dòng kế hoạch ngày ${selectedDate}!`);
+        void pushDailyPlanToSupabase(selectedDate, sortedRows);
       }
-      await loadAvailableDates();
-      await onRefreshBootstrap();
     } catch (err: any) {
       toast.error(err?.message || 'Không thể lưu kế hoạch ngày.');
     } finally {
@@ -1589,20 +1634,20 @@ export function DailyWeeklyScheduleTab({
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={async () => {
+                onClick={() => {
                   setSavingDaily(true);
                   try {
                     const sortedRows = sortDailyPlanRows(dailyRows);
+                    isDirtyPlanRef.current = false;
                     setDailyRows(sortedRows);
                     saveFallbackDailyPlan(selectedDate, sortedRows, true);
-                    const pushed = await pushDailyPlanToSupabase(selectedDate, sortedRows);
-                    await loadAvailableDates();
-                    await onRefreshBootstrap();
-                    if (pushed) {
-                      toast.success(`Đã lưu và đồng bộ ${sortedRows.length} nhiệm vụ ngày ${selectedDate} lên Cloud! Điện thoại công nhân đã cập nhật.`);
-                    } else {
-                      toast.success(`Đã lưu ${sortedRows.length} nhiệm vụ ngày ${selectedDate}!`);
-                    }
+                    setAvailableDates(getFallbackDailyDates());
+                    toast.success(`Đã lưu và đang đồng bộ ${sortedRows.length} nhiệm vụ ngày ${selectedDate} lên Cloud!`);
+                    void pushDailyPlanToSupabase(selectedDate, sortedRows).then((pushed) => {
+                      if (pushed) {
+                        void loadAvailableDates();
+                      }
+                    });
                   } catch (e: any) {
                     toast.error(e?.message || 'Không thể đồng bộ Cloud.');
                   } finally {
@@ -2027,14 +2072,17 @@ export function DailyWeeklyScheduleTab({
                       </thead>
                       <tbody className="divide-y divide-slate-200">
                         {workerRows.map(({ row, originalIdx }, rowSubIdx) => {
-                          // Cascade: products filtered by customer (from availableProducts which merges products + POs)
-                          const filteredProducts = availableProducts.filter(
-                            (p) => !row.customer || (p.customer || '').trim().toLowerCase() === row.customer.trim().toLowerCase()
-                          );
-                          // Cascade: operations filtered by product
-                          let filteredOps = bootstrap.operations.filter(
-                            (o) => (row.spId && o.spId === row.spId) || (row.productName && o.productName === row.productName)
-                          );
+                          // O(1) instant lookup: products filtered by customer
+                          const custKey = (row.customer || '').trim().toLowerCase();
+                          const filteredProducts = custKey
+                            ? productsByCustomerMap.get(custKey) || []
+                            : availableProducts;
+
+                          // O(1) instant lookup: operations filtered by product
+                          let filteredOps =
+                            (row.spId ? opsBySpIdMap.get(row.spId) : undefined) ||
+                            (row.productName ? opsByProductNameMap.get(row.productName) : undefined) ||
+                            [];
                           if (filteredOps.length === 0 && row.productName) {
                             filteredOps = [
                               {
@@ -2051,10 +2099,6 @@ export function DailyWeeklyScheduleTab({
                               } as any,
                             ];
                           }
-
-                          const qrCodeImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${encodeURIComponent(
-                            `GCCK|${row.customer || 'VICO'}|${row.productName}|${row.workerName}`
-                          )}`;
 
                           const isSecondaryMachine = /ghép|0\.33|máy phụ/i.test(String(row.note || ''));
                           const rowPastelClass = isSecondaryMachine
@@ -2150,12 +2194,9 @@ export function DailyWeeklyScheduleTab({
                               {/* Kế Hoạch */}
                               <td className="px-2 py-1.5 text-center">
                                 {(() => {
-                                  const matchedOp = bootstrap.operations.find(
-                                    (o) =>
-                                      (row.ncId && o.ncId === row.ncId) ||
-                                      (o.opName === row.opName && (!row.spId || o.spId === row.spId)) ||
-                                      (o.productName === row.productName && o.opName === row.opName)
-                                  );
+                                  const matchedOp =
+                                    (row.ncId ? opByNcIdMap.get(row.ncId) : undefined) ||
+                                    filteredOps.find((o) => o.opName === row.opName);
                                   const opStdQty = matchedOp ? calculateOpStandardPlanQty(matchedOp) : undefined;
                                   return (
                                     <PlannedQtyCell
@@ -2281,11 +2322,12 @@ export function DailyWeeklyScheduleTab({
 
                               {/* Mã QR */}
                               <td className="px-2 py-1.5 text-center">
-                                <img
-                                  src={qrCodeImgUrl}
-                                  alt="QR"
-                                  className="mx-auto h-7 w-7 rounded border border-slate-200"
-                                />
+                                <span
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-700"
+                                  title={`QR: GCCK|${row.customer || 'VICO'}|${row.productName}|${row.workerName}`}
+                                >
+                                  <QrCode className="h-4 w-4" />
+                                </span>
                               </td>
 
                               {/* Delete button */}

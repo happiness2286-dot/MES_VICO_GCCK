@@ -155,22 +155,28 @@ export function AdminPortal() {
     [user, canEnterManagement, toast]
   );
 
+  const activeTabRef = useRef<AdminTabKey>(activeTab);
+  activeTabRef.current = activeTab;
+
   useEffect(() => {
     if (!authLoading) {
-      void fetchBootstrap(Boolean(bootstrap));
+      void fetchBootstrap(true);
 
-      // Periodic 15s background polling so admin dashboard stays synchronized with mobile worker inputs
+      // Periodic 35s background polling (skipped while editing Daily Schedule to prevent UI lag)
       const pollTimer = setInterval(() => {
+        if (activeTabRef.current === 'daily_schedule') return;
         void fetchBootstrap(true);
-      }, 15000);
+      }, 35000);
 
       // Realtime subscription from Supabase Cloud
       const unsubSb = subscribeSupabaseLogChanges(() => {
+        if (activeTabRef.current === 'daily_schedule') return;
         void fetchBootstrap(true);
       });
 
       // Realtime event when a worker submits a report locally / cross-tab
       const onReportSubmitted = () => {
+        if (activeTabRef.current === 'daily_schedule') return;
         void fetchBootstrap(true);
       };
       window.addEventListener('gcck:report-submitted', onReportSubmitted);
@@ -183,7 +189,7 @@ export function AdminPortal() {
         window.removeEventListener('storage', onReportSubmitted);
       };
     }
-  }, [authLoading, user?.workerId, user?.appRole, fetchBootstrap, bootstrap]);
+  }, [authLoading, user?.workerId, user?.appRole, fetchBootstrap]);
 
   // Synchronize activeTab with URL / Navigation events
   useEffect(() => {
