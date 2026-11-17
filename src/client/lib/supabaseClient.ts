@@ -424,12 +424,16 @@ export async function pushLogToSupabase(log: Partial<ProductionLogDto>): Promise
       batch_cost: log.batchCost || 0,
       kpi_pct: log.kpiPct || 100,
       kpi_status: log.kpiStatus || 'Đạt 100% ĐM',
-      photo_url: log.photoUrl || '',
+      // Tuyệt đối không lưu chuỗi ảnh base64 nặng vào Supabase để tránh tràn băng thông Egress (ảnh đã lưu trên Google Drive qua GAS)
+      photo_url: log.photoUrl && !String(log.photoUrl).startsWith('data:') ? log.photoUrl : '',
       handover_note: log.handoverNote || '',
       material_lot: log.materialLot || '',
       note: log.note || '',
       is_voided: log.isVoided || 0,
     };
+
+    // Làm mới cache GAS để lần tải kế tiếp lấy ngay bản ghi mới nhất
+    gasInitDataCache = null;
 
     if (!supabaseQuotaRestricted) {
       const { error } = await sb.from('production_logs').insert([row]);
